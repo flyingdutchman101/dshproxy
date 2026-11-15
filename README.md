@@ -14,7 +14,27 @@ It is a standalone project. It shares no code or git history with DroidProxy or 
 - Windows, x64 or arm64
 - Node.js 22 or later
 
-## Set up
+## Windows app
+
+`dshgate.exe` is a window and tray icon that runs the gateway and controls it:
+
+- **Accounts**: sign in to ChatGPT, Claude, Gemini or Kimi.
+- **API keys**: add, replace or remove keys.
+- **Lanes**: each ladder, with ✓ can serve, ✗ no account or key, ⏸ sitting out.
+- **DeepSeek Harness**: preview, apply or remove the routes.
+- **Log**: live gateway output.
+
+Closing the window keeps the gateway running in the tray; quit from the tray menu. "Start with Windows" starts it hidden in the tray at sign-in.
+
+Build it once with the C# compiler that ships with Windows (nothing to install):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File app\build.ps1
+```
+
+`dshgate.exe` must stay in this folder, next to `bin\dshgate.js`. It needs Node.js on the PATH.
+
+## Set up from the command line
 
 ```powershell
 npm ci --ignore-scripts

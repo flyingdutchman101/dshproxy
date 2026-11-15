@@ -114,6 +114,38 @@ async function status(out) {
   }
 }
 
+// Everything the Windows app shows, as one JSON document. API key values are
+// never included, only which providers have one.
+async function statusJson() {
+  const state = await app.snapshot();
+  const live = await runningStatus(state.origin);
+  const liveLanes = new Map((live?.lanes || []).map((lane) => [lane.name, new Map(lane.ladder.map((rung) => [rung.model, rung.coolingUntil]))]));
+  return {
+    running: Boolean(live),
+    origin: state.origin,
+    startedAt: live?.startedAt ?? null,
+    backend: live ? live.backend : { name: app.lock.name, version: app.lock.version, running: false, pid: null },
+    home: state.home,
+    accounts: state.accounts.map(({ provider, label, account, disabled, expired }) => ({ provider, label, account, disabled, expired })),
+    loginProviders: Object.entries(accounts.PROVIDERS).map(([key, entry]) => ({ key, label: entry.label })),
+    providers: Object.entries(catalog.API_PROVIDERS).map(([key, entry]) => ({
+      key,
+      label: entry.label,
+      regions: Object.entries(entry.regions).map(([regionKey, region]) => ({ key: regionKey, label: region.label }))
+    })),
+    apiKeys: {
+      readable: Object.entries(state.readable).map(([provider, entry]) => ({ provider, region: entry.region })),
+      unreadable: state.unreadable
+    },
+    lanes: Object.entries(state.settings.lanes).map(([name, ladder]) => ({
+      name,
+      ladder: ladder.map((model) => ({ model, available: state.isAvailable(model), coolingUntil: liveLanes.get(name)?.get(model) ?? null }))
+    })),
+    models: state.models.map((model) => model.id),
+    deepseekHarness: profile.state(state.origin)
+  };
+}
+
 function reportApply(result, dryRun, out) {
   for (const item of result.profiles) {
     const counts = Object.entries(item.routes).map(([key, count]) => `${key} ${count}`).join(", ");
@@ -144,6 +176,7 @@ async function main(argv, out = console.log) {
       return new Promise(() => {});
     }
     case "status":
+      if (flags.has("--json")) return out(JSON.stringify(await statusJson()));
       return status(out);
     case "accounts":
       return printAccounts(await app.snapshot(), out);

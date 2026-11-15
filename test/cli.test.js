@@ -46,6 +46,25 @@ test("an API key given to the CLI is stored encrypted, is usable, and is never s
   assert.ok(!list.stdout.includes(key));
 });
 
+test("the status for the Windows app is one JSON document without key values", (t) => {
+  const home = tempHome(t);
+  // A port nothing listens on, so a gateway running on this machine is not seen.
+  fs.writeFileSync(path.join(home, "settings.json"), JSON.stringify({ port: 65431, backendPort: 65432 }));
+  const key = "sk-test-json-status-must-not-leak-9876543210";
+  assert.equal(run(home, ["key", "set", "deepseek"], `${key}\n`).status, 0);
+  const result = run(home, ["status", "--json"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(!result.stdout.includes(key));
+  const status = JSON.parse(result.stdout);
+  assert.equal(status.running, false);
+  assert.deepEqual(status.apiKeys.readable, [{ provider: "deepseek", region: "international" }]);
+  assert.deepEqual(status.loginProviders.map((item) => item.key), ["codex", "claude", "antigravity", "kimi"]);
+  const main = status.lanes.find((lane) => lane.name === "main");
+  assert.deepEqual(main.ladder.find((rung) => rung.model === "deepseek/deepseek-v4-pro"), { model: "deepseek/deepseek-v4-pro", available: true, coolingUntil: null });
+  assert.equal(main.ladder.find((rung) => rung.model === "gpt-6-astra").available, false);
+  assert.ok(status.models.includes("lane-main"));
+});
+
 test("an empty API key is refused and nothing is saved", (t) => {
   const home = tempHome(t);
   const set = run(home, ["key", "set", "deepseek"], "\n");
