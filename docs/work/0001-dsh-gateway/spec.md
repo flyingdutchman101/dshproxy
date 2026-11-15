@@ -50,9 +50,16 @@ DeepSeek Harness profile
 17. Models of a provider whose saved key cannot be read are kept.
 18. A profile that cannot be parsed stops the sync before any profile is written.
 19. `--dry-run` writes nothing.
-20. `dsh remove` leaves the profile as it was before `dsh apply`.
+20. `dsh remove` leaves the profile text as it was before `dsh apply`, including when `dsh apply` had to add the plugin entry.
 
 Secrets
 
 21. An API key is never passed on the command line and is stored encrypted.
 22. Account listings contain no token.
+
+Robustness (added after review)
+
+23. A client that stops waiting does not count against the model it was waiting for.
+24. A reply that breaks off part-way ends the client's request.
+25. A compressed rejection is judged like a plain one.
+26. A settings file that exists but cannot be read is an error and is not replaced.

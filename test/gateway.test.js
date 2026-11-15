@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("http");
+const zlib = require("zlib");
 
 const { createGateway } = require("../src/gateway/server");
 const { createFailover } = require("../src/gateway/failover");
@@ -26,17 +27,36 @@ async function startBackend(t, answer) {
       const request = { method: req.method, url: req.url, headers: req.headers, raw, model };
       seen.push(request);
       const reply = answer(model, request);
-      res.writeHead(reply.status, { "content-type": "application/json", ...(reply.headers || {}) });
+      // `hang`: never answer. `truncate`: drop the connection part-way.
+      // `gzip`: compress the body when the request allows it.
+      if (reply.hang) return;
+      const headers = { "content-type": "application/json", ...(reply.headers || {}) };
+      if (reply.truncate) {
+        res.writeHead(reply.status, headers);
+        res.write(reply.chunks[0]);
+        setTimeout(() => req.socket.destroy(), 50);
+        return;
+      }
       if (reply.chunks) {
+        res.writeHead(reply.status, headers);
         for (const chunk of reply.chunks) res.write(chunk);
         res.end();
-      } else {
-        res.end(JSON.stringify(reply.body ?? {}));
+        return;
       }
+      let payload = Buffer.from(JSON.stringify(reply.body ?? {}));
+      if (reply.gzip && /gzip/.test(String(req.headers["accept-encoding"] || ""))) {
+        payload = zlib.gzipSync(payload);
+        headers["content-encoding"] = "gzip";
+      }
+      res.writeHead(reply.status, headers);
+      res.end(payload);
     });
   });
   const port = await listen(server);
-  t.after(() => server.close());
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
   return { port, seen };
 }
 
@@ -62,7 +82,8 @@ async function startGateway(t, backendPort, { lanes = LANES, now } = {}) {
   return { url: `http://127.0.0.1:${port}`, logs };
 }
 
-const post = (url, body, headers = {}) => fetch(`${url}/v1/messages`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: typeof body === "string" ? body : JSON.stringify(body) });
+const post = (url, body, headers = {}, signal = undefined) => fetch(`${url}/v1/messages`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: typeof body === "string" ? body : JSON.stringify(body), signal });
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 test("a lane request is served by the first rung", async (t) => {
   const backend = await startBackend(t, (model) => ({ status: 200, body: { served: model } }));
@@ -159,6 +180,83 @@ test("a rejected request is returned to the caller without trying another model"
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: { message: "tools.0.input_schema: field required" } });
   assert.equal(backend.seen.length, 1);
+});
+
+test("a client that gives up waiting does not count against the model", async (t) => {
+  let hang = true;
+  const backend = await startBackend(t, (model) => (hang ? { hang: true } : { status: 200, body: { served: model } }));
+  const { url } = await startGateway(t, backend.port);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await assert.rejects(post(url, session(`task ${attempt}`), {}, AbortSignal.timeout(150)));
+  }
+  await pause(100);
+  hang = false;
+  assert.deepEqual(await (await post(url, session("a new task"))).json(), { served: "gpt-6-astra" });
+});
+
+test("a reply cut off part-way ends the client's request instead of leaving it waiting", async (t) => {
+  const backend = await startBackend(t, () => ({ status: 200, truncate: true, headers: { "content-type": "text/event-stream" }, chunks: ['event: message_start\ndata: {"type":"message_start"}\n\n'] }));
+  const { url } = await startGateway(t, backend.port);
+  const response = await post(url, { model: "lane-main", stream: true });
+  let timer;
+  const outcome = await Promise.race([
+    response.text().then(() => "ended normally", () => "failed"),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve("still waiting"), 3000);
+    })
+  ]);
+  clearTimeout(timer);
+  assert.equal(outcome, "failed");
+});
+
+test("a compressed rejection is judged like a plain one", async (t) => {
+  const tooLong = { error: { message: "prompt is too long: 300000 tokens > 272000 maximum" } };
+  const backend = await startBackend(t, (model) => (model === "gpt-6-astra" ? { status: 400, gzip: true, body: tooLong } : { status: 200, body: { served: model } }));
+  const { url } = await startGateway(t, backend.port);
+  const response = await post(url, session("LONG prompt"), { "accept-encoding": "gzip" });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { served: "claude-fable-5-2" });
+});
+
+test("a server error is returned to the caller twice; the third moves to the next rung", async (t) => {
+  const backend = await startBackend(t, (model) => (model === "gpt-6-astra" ? { status: 502, body: { error: "bad gateway" } } : { status: 200, body: { served: model } }));
+  const { url } = await startGateway(t, backend.port);
+  for (const name of ["one", "two"]) {
+    const response = await post(url, session(name));
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), { error: "bad gateway" });
+  }
+  const third = await post(url, session("three"));
+  assert.equal(third.status, 200);
+  assert.deepEqual(await third.json(), { served: "claude-fable-5-2" });
+});
+
+test("connection-level headers from the backend are not passed on", async (t) => {
+  const backend = await startBackend(t, () => ({ status: 200, headers: { "proxy-connection": "keep-alive", "x-request-id": "abc" }, body: { ok: true } }));
+  const { url } = await startGateway(t, backend.port);
+  const response = await post(url, { model: "claude-opus-5-5" });
+  assert.equal(response.headers.get("proxy-connection"), null);
+  assert.equal(response.headers.get("x-request-id"), "abc");
+  assert.deepEqual(await response.json(), { ok: true });
+});
+
+test("a request over the size limit is refused before it reaches the backend", async (t) => {
+  const backend = await startBackend(t, () => ({ status: 200, body: {} }));
+  const gateway = createGateway({
+    upstream: { host: "127.0.0.1", port: backend.port },
+    resolve: (id) => ({ lane: null, ladder: [id] }),
+    failover: createFailover(),
+    maxBodyBytes: 1024
+  });
+  const port = await listen(gateway);
+  t.after(() => {
+    gateway.closeAllConnections();
+    gateway.close();
+  });
+  const response = await post(`http://127.0.0.1:${port}`, { model: "claude-opus-5-5", padding: "x".repeat(4096) });
+  assert.equal(response.status, 413);
+  assert.equal((await response.json()).error.type, "dshgate_request_too_large");
+  assert.equal(backend.seen.length, 0);
 });
 
 test("a rejection too large to judge is returned whole", async (t) => {

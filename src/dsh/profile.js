@@ -16,6 +16,7 @@ const KEY_REF = "DSHGATE_API_KEY";
 // The gateway ignores the key, but DeepSeek Harness refuses a route whose
 // credential reference resolves to nothing.
 const KEY_PLACEHOLDER = "dshgate-local";
+const ADDED_MARK = " added by dshgate";
 
 // Each model family is declared with its native protocol. Lanes use Anthropic
 // Messages; CLIProxyAPI translates for whichever model serves the request.
@@ -103,8 +104,21 @@ function findEntry(doc) {
   return doc.contents.items.find((item) => YAML.isMap(item) && (item.get("id") === ENTRY_ID || item.get("name") === PLUGIN_NAME)) || null;
 }
 
-function stamp() {
-  return new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
+// A backup name that is not in use yet. Two changes in the same millisecond
+// still get separate files.
+function backupPath(file) {
+  const stamp = new Date().toISOString().replace(/[-:.]/g, "").replace(/Z$/, "");
+  let candidate = `${file}.dshgate-${stamp}.bak`;
+  for (let count = 2; fs.existsSync(candidate); count += 1) candidate = `${file}.dshgate-${stamp}-${count}.bak`;
+  return candidate;
+}
+
+// Written to a temporary file first, so an interrupted write cannot leave a
+// half-written file.
+function writeWhole(file, text) {
+  const temporary = `${file}.dshgate-${process.pid}.tmp`;
+  fs.writeFileSync(temporary, text);
+  fs.renameSync(temporary, file);
 }
 
 function writePatch({ file, existing, doc }, dryRun) {
@@ -112,25 +126,31 @@ function writePatch({ file, existing, doc }, dryRun) {
   if (text === existing) return { changed: false, text };
   if (!dryRun) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    if (existing) fs.copyFileSync(file, `${file}.dshgate-${stamp()}.bak`);
-    fs.writeFileSync(file, text);
+    if (existing) fs.copyFileSync(file, backupPath(file));
+    writeWhole(file, text);
   }
   return { changed: true, text };
 }
 
 // Adds the placeholder credential the routes refer to. A reference that is
-// already there is never overwritten.
+// already there is never overwritten, and a file that is not in the form
+// DeepSeek Harness writes is left alone. No backup copy is made: it would be a
+// second file holding the user's credentials.
 function ensureCredentialRef(home = dshHome(), dryRun = false) {
   const file = path.join(home, ".credentials.yaml");
   try {
     const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
     const doc = existing.trim() ? YAML.parseDocument(existing) : new YAML.Document(null);
-    if (doc.errors.length) return { created: false, reason: `credentials file has YAML errors (${doc.errors[0].message})` };
-    if (!YAML.isMap(doc.contents)) doc.contents = doc.createNode({ version: 1, records: {}, refs: {} });
-    if (!YAML.isMap(doc.get("refs", true))) doc.set("refs", doc.createNode({}));
+    if (doc.errors.length) return { created: false, reason: `the credentials file has YAML errors (${doc.errors[0].message})` };
+    const empty = doc.contents === null || (YAML.isScalar(doc.contents) && doc.contents.value == null);
+    if (!empty && !YAML.isMap(doc.contents)) return { created: false, reason: "the credentials file is not in the expected form; add the DSHGATE_API_KEY reference by hand" };
+    if (empty) doc.contents = doc.createNode({ version: 1, records: {}, refs: {} });
+    const refs = doc.get("refs", true);
+    if (refs === undefined || (YAML.isScalar(refs) && refs.value == null)) doc.set("refs", doc.createNode({}));
+    else if (!YAML.isMap(refs)) return { created: false, reason: "the credentials file is not in the expected form; add the DSHGATE_API_KEY reference by hand" };
     if (doc.getIn(["refs", KEY_REF]) !== undefined) return { created: false, reason: "already present" };
     doc.setIn(["refs", KEY_REF], KEY_PLACEHOLDER);
-    if (!dryRun) fs.writeFileSync(file, doc.toString({ lineWidth: 0 }));
+    if (!dryRun) writeWhole(file, doc.toString({ lineWidth: 0 }));
     return { created: true };
   } catch (error) {
     return { created: false, reason: error.message };
@@ -143,6 +163,8 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
   let entry = findEntry(doc);
   if (!entry) {
     entry = doc.createNode({ id: ENTRY_ID, name: PLUGIN_NAME, config: { providers: {} } });
+    // Marks the entry as dshgate's own, so `remove` can take it out again.
+    entry.get("id", true).comment = ADDED_MARK;
     doc.contents.add(entry);
   }
   let providersNode = entry.getIn(["config", "providers"], true);
@@ -150,6 +172,8 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
     entry.setIn(["config", "providers"], doc.createNode({}));
     providersNode = entry.getIn(["config", "providers"], true);
   }
+  // An empty `{}` would otherwise have the routes written inside the braces.
+  if (!providersNode.items.length) providersNode.flow = false;
   const previous = {};
   for (const key of Object.keys(ROUTES)) {
     const list = providersNode.getIn([key, "models"], true);
@@ -193,14 +217,19 @@ function apply(models, origin, home = dshHome(), options = {}) {
   return { profiles: results, credential: ensureCredentialRef(home, options.dryRun) };
 }
 
-// Removes the gateway's routes. The credential reference is left in place.
+// Removes the gateway's routes, and the plugin entry too when `apply` added it
+// and nothing else is in it. The credential reference is left in place.
 function remove(home = dshHome(), options = {}) {
-  return profiles(home).map((profile) => {
-    const patch = readPatch(profile, home);
-    const providersNode = findEntry(patch.doc)?.getIn(["config", "providers"], true);
+  // Every profile is read before any is written.
+  const patches = profiles(home).map((profile) => ({ profile, patch: readPatch(profile, home) }));
+  return patches.map(({ profile, patch }) => {
+    const entry = findEntry(patch.doc);
+    const providersNode = entry?.getIn(["config", "providers"], true);
     const removed = [];
     if (YAML.isMap(providersNode)) {
       for (const key of Object.keys(ROUTES)) if (providersNode.delete(key)) removed.push(key);
+      const ownEntry = entry.get("id", true)?.comment === ADDED_MARK;
+      if (ownEntry && !providersNode.items.length) patch.doc.contents.items.splice(patch.doc.contents.items.indexOf(entry), 1);
     }
     return { profile, file: patch.file, removed, changed: writePatch(patch, options.dryRun).changed };
   });

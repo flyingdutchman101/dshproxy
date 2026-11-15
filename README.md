@@ -101,6 +101,8 @@ It leaves every other entry, route and comment alone, including VeryCuteDroidPro
 
 It does not change the default model, the delegation lanes or `allowedModels`. To let subagents use a dshgate route, add it to `allowedModels` yourself.
 
+`dsh remove` takes the four routes out again. If `dsh apply` had to add the `llm-pi-ai` entry itself, `dsh remove` takes that out too, unless you have since put other routes in it. The `DSHGATE_API_KEY` reference stays.
+
 ## Files
 
 Everything is under `~/.dshgate` (override with `DSHGATE_HOME`):
@@ -114,11 +116,21 @@ Everything is under `~/.dshgate` (override with `DSHGATE_HOME`):
 | `bin/<version>/` | The installed CLIProxyAPI release |
 | `dshgate.log` | The gateway log |
 
+If `settings.json` exists but cannot be read, every command stops with an error and leaves the file as it is. Fix the file, or move it away to start from the defaults.
+
 ## Security
 
 - The gateway and the backend listen on `127.0.0.1` only. A `host` setting that names any other address is ignored.
 - There is no client authentication. Any program on this machine can use your accounts through the gateway.
 - CLIProxyAPI's Management API and plugins are switched off.
+- A request larger than 256 MB is refused with HTTP 413.
+
+## Known limits
+
+- The gateway sets no time limit on a reply. If the backend stops sending without closing the connection, the request waits until the client gives up.
+- Two conversations that begin with the same first user message, and send no session ID, count as one conversation for the purpose of staying on a rung.
+- An installed backend is not checked again after the first install.
+- Starting two gateways at the same moment for the first time can make one of the installs fail.
 
 ## Updating the backend
 

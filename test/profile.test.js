@@ -222,13 +222,88 @@ test("a machine without DeepSeek Harness profiles is reported, not written to", 
   assert.deepEqual(fs.readdirSync(home), []);
 });
 
-test("removing takes out only the gateway's routes", (t) => {
+test("removing takes out only the gateway's routes and leaves the file as it was", (t) => {
   const home = tempHome(t);
   fs.writeFileSync(patchPath(home), EXISTING);
   profile.apply(MODELS, ORIGIN, home);
   const results = profile.remove(home);
   assert.deepEqual(results[0].removed.sort(), ["dshgate-claude", "dshgate-compat", "dshgate-lanes", "dshgate-openai"]);
-  assert.deepEqual(YAML.parse(fs.readFileSync(patchPath(home), "utf8")), YAML.parse(EXISTING));
+  assert.equal(fs.readFileSync(patchPath(home), "utf8"), EXISTING);
+});
+
+const WITHOUT_ENTRY = "# Your patch layer.\n- id: ui-chat\n  config:\n    transcriptView: standard\n";
+
+test("removing also takes out the plugin entry that applying added", (t) => {
+  const home = tempHome(t);
+  fs.writeFileSync(patchPath(home), WITHOUT_ENTRY);
+  profile.apply(MODELS, ORIGIN, home);
+  profile.remove(home);
+  assert.equal(fs.readFileSync(patchPath(home), "utf8"), WITHOUT_ENTRY);
+});
+
+test("a plugin entry the user wrote is kept when its routes are removed", (t) => {
+  const home = tempHome(t);
+  const own = "- id: llm-pi-ai\n  name: \"@deepseek-ai/dsh-llm-pi-ai\"\n  config:\n    providers: {}\n";
+  fs.writeFileSync(patchPath(home), own);
+  profile.apply(MODELS, ORIGIN, home);
+  profile.remove(home);
+  assert.equal(fs.readFileSync(patchPath(home), "utf8"), own);
+});
+
+test("an entry that applying added is kept while other routes are in it", (t) => {
+  const home = tempHome(t);
+  fs.writeFileSync(patchPath(home), WITHOUT_ENTRY);
+  profile.apply(MODELS, ORIGIN, home);
+  const doc = YAML.parseDocument(fs.readFileSync(patchPath(home), "utf8"));
+  doc.contents.items[1].setIn(["config", "providers", "my-gateway"], { api: "openai-completions", baseURL: "https://gateway.example/v1", models: [{ id: "my-model" }] });
+  fs.writeFileSync(patchPath(home), doc.toString());
+  profile.remove(home);
+  assert.deepEqual(Object.keys(providers(home)), ["my-gateway"]);
+});
+
+test("a profile that cannot be parsed stops a removal before anything is written", (t) => {
+  const home = tempHome(t, ["desktop", "web"]);
+  profile.apply(MODELS, ORIGIN, home);
+  const applied = fs.readFileSync(patchPath(home, "desktop"), "utf8");
+  fs.writeFileSync(patchPath(home, "web"), "- id: llm-pi-ai\n  config: [unclosed\n");
+  assert.throws(() => profile.remove(home), /web\/cordis\.patch\.yml has YAML errors/);
+  assert.equal(fs.readFileSync(patchPath(home, "desktop"), "utf8"), applied);
+});
+
+test("a dry-run removal reports the routes and writes nothing", (t) => {
+  const home = tempHome(t);
+  fs.writeFileSync(patchPath(home), EXISTING);
+  profile.apply(MODELS, ORIGIN, home);
+  const applied = fs.readFileSync(patchPath(home), "utf8");
+  const before = backups(home).length;
+  const results = profile.remove(home, { dryRun: true });
+  assert.equal(results[0].removed.length, 4);
+  assert.equal(results[0].changed, true);
+  assert.equal(fs.readFileSync(patchPath(home), "utf8"), applied);
+  assert.equal(backups(home).length, before);
+});
+
+test("two changes in quick succession each keep their own backup", (t) => {
+  const home = tempHome(t);
+  fs.writeFileSync(patchPath(home), EXISTING);
+  profile.apply(MODELS, ORIGIN, home);
+  const afterFirst = fs.readFileSync(patchPath(home), "utf8");
+  profile.apply([...MODELS, ...API_KEY], ORIGIN, home);
+  const saved = backups(home).map((file) => fs.readFileSync(path.join(home, "profiles", "desktop", file), "utf8"));
+  assert.equal(saved.length, 2);
+  assert.ok(saved.includes(EXISTING));
+  assert.ok(saved.includes(afterFirst));
+});
+
+test("a credentials file of an unexpected shape is left alone and reported", (t) => {
+  const home = tempHome(t);
+  const file = path.join(home, ".credentials.yaml");
+  const odd = "- something\n- else\n";
+  fs.writeFileSync(file, odd);
+  const result = profile.apply(MODELS, ORIGIN, home);
+  assert.equal(result.credential.created, false);
+  assert.match(result.credential.reason, /not in the expected form/);
+  assert.equal(fs.readFileSync(file, "utf8"), odd);
 });
 
 test("the state reports whether the routes point at this gateway", (t) => {

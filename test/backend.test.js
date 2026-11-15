@@ -9,7 +9,8 @@ const YAML = require("yaml");
 
 const { render } = require("../src/backend/config");
 const { install, binaryPath, assetFor } = require("../src/backend/install");
-const { reclaimOrphan } = require("../src/backend/supervisor");
+const { reclaimOrphan, createSupervisor } = require("../src/backend/supervisor");
+const http = require("http");
 const secrets = require("../src/secrets");
 const accounts = require("../src/accounts");
 
@@ -178,6 +179,21 @@ test("a process that is not this gateway's backend is never stopped", async (t) 
   assert.equal(await reclaimOrphan({ pidFile, binary, processPath: async () => binary, kill }), false);
 
   assert.deepEqual(killed, []);
+});
+
+test("a port held by another program stops the start and leaves that program running", async (t) => {
+  const other = http.createServer((_req, res) => res.end("other program"));
+  await new Promise((resolve) => other.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    other.closeAllConnections();
+    other.close();
+  });
+  const { port } = other.address();
+  const dir = tempDir(t);
+  const supervisor = createSupervisor({ binary: path.join(dir, "cli-proxy-api.exe"), configPath: path.join(dir, "config.yaml"), host: "127.0.0.1", port, pidFile: path.join(dir, "backend.pid") });
+  await assert.rejects(supervisor.start(), /already in use/);
+  assert.equal(supervisor.state().running, false);
+  assert.equal(await (await fetch(`http://127.0.0.1:${port}/`)).text(), "other program");
 });
 
 test("a saved key decrypts with its key and with no other", () => {

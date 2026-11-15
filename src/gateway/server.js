@@ -1,4 +1,5 @@
 const http = require("http");
+const zlib = require("zlib");
 const { prepareBody } = require("./request");
 const { needsBody } = require("./failover");
 
@@ -10,6 +11,23 @@ const HOP_BY_HOP = ["connection", "keep-alive", "transfer-encoding", "upgrade", 
 const STATUS_PATH = "/dshgate/status";
 // Error replies are small. Anything larger is passed on without being judged.
 const MAX_JUDGED_BYTES = 64 * 1024;
+const MAX_JUDGED_TEXT = 1024 * 1024;
+// Requests carry whole conversations with images, so the limit is generous.
+const MAX_BODY_BYTES = 256 * 1024 * 1024;
+
+const DECODERS = {
+  gzip: zlib.gunzipSync,
+  "x-gzip": zlib.gunzipSync,
+  deflate: zlib.inflateSync,
+  br: zlib.brotliDecompressSync,
+  zstd: zlib.zstdDecompressSync
+};
+
+function withoutHopByHop(headers) {
+  const kept = { ...headers };
+  for (const name of HOP_BY_HOP) delete kept[name];
+  return kept;
+}
 
 function sendJson(res, status, value) {
   if (res.destroyed) return;
@@ -39,11 +57,24 @@ function readSmall(stream, chunks) {
   });
 }
 
+// Text of an error reply, or undefined when it cannot be decoded. The client
+// still receives the original bytes.
+function decodedText(buffer, encoding) {
+  if (!encoding) return buffer.toString("utf8");
+  const decode = DECODERS[String(encoding).trim().toLowerCase()];
+  if (!decode) return undefined;
+  try {
+    return decode(buffer, { maxOutputLength: MAX_JUDGED_TEXT }).toString("utf8");
+  } catch {
+    return undefined;
+  }
+}
+
 // `resolve(modelId)` returns { lane, ladder }: the lane name (or null) and the
 // models to try in order. `describe(model)` returns { efforts, upstream } for
 // a model the catalog knows, or {} otherwise. `sessions` keeps a conversation
 // on the rung that served it.
-function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}) }) {
+function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}), maxBodyBytes = MAX_BODY_BYTES }) {
   const forward = (req, headers, body, track) => new Promise((resolvePromise, reject) => {
     const out = http.request({
       host: upstream.host,
@@ -58,8 +89,7 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
   });
 
   async function handle(req, res, raw) {
-    const headers = { ...req.headers };
-    for (const name of HOP_BY_HOP) delete headers[name];
+    const headers = withoutHopByHop(req.headers);
 
     // Stop the upstream work when the client goes away.
     let active = null;
@@ -72,7 +102,17 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
     // `read` holds the part of the reply that was already taken off the stream.
     const relay = (upstreamRes, extra = {}, read = null) => {
       active = upstreamRes;
-      res.writeHead(upstreamRes.statusCode || 502, { ...upstreamRes.headers, ...extra });
+      if (res.destroyed) {
+        upstreamRes.destroy();
+        return;
+      }
+      // A reply that breaks off part-way must end the client's request too;
+      // otherwise the client waits for the rest forever.
+      upstreamRes.on("error", () => res.destroy());
+      upstreamRes.on("close", () => {
+        if (!upstreamRes.complete && !res.writableEnded) res.destroy();
+      });
+      res.writeHead(upstreamRes.statusCode || 502, { ...withoutHopByHop(upstreamRes.headers), ...extra });
       if (read) for (const chunk of read) res.write(chunk);
       if (upstreamRes.readableEnded) res.end();
       else {
@@ -99,7 +139,7 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       try {
         relay(await forward(req, headers, raw, track));
       } catch (error) {
-        unreachable(error);
+        if (!res.destroyed) unreachable(error);
       }
       return;
     }
@@ -126,8 +166,11 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       try {
         upstreamRes = await forward(req, { ...headers }, prepareBody(raw, model, describe(model)), track);
       } catch (error) {
+        // The client left and the attempt was cancelled: that says nothing
+        // about the model.
+        if (res.destroyed) return;
         const verdict = failover.report(model, 0);
-        if (verdict.failover && next && !res.destroyed) {
+        if (verdict.failover && next) {
           log(`${label}: ${model} ${verdict.reason}; using ${next}`);
           continue;
         }
@@ -140,10 +183,16 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       const code = upstreamRes.statusCode;
       let read = null;
       let text;
-      if (next && needsBody(code) && !upstreamRes.headers["content-encoding"]) {
+      if (next && needsBody(code)) {
         read = [];
-        const whole = await readSmall(upstreamRes, read);
-        if (whole) text = whole.toString("utf8");
+        let whole;
+        try {
+          whole = await readSmall(upstreamRes, read);
+        } catch (error) {
+          if (!res.destroyed) unreachable(error);
+          return;
+        }
+        if (whole) text = decodedText(whole, upstreamRes.headers["content-encoding"]);
       }
 
       const verdict = failover.report(model, code, upstreamRes.headers["retry-after"], text);
@@ -162,14 +211,29 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
   }
 
   return http.createServer((req, res) => {
+    // Writing to a client that has gone away must not stop the gateway.
+    res.on("error", () => {});
     if (req.method === "GET" && req.url === STATUS_PATH) {
       sendJson(res, 200, status());
       return;
     }
     const chunks = [];
-    req.on("data", (chunk) => chunks.push(chunk));
+    let size = 0;
+    let tooLarge = false;
+    req.on("data", (chunk) => {
+      if (tooLarge) return;
+      size += chunk.length;
+      if (size > maxBodyBytes) {
+        tooLarge = true;
+        chunks.length = 0;
+        sendJson(res, 413, { error: { type: "dshgate_request_too_large", message: `The request is larger than ${maxBodyBytes} bytes.` } });
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on("error", () => res.destroy());
     req.on("end", () => {
+      if (tooLarge) return;
       handle(req, res, Buffer.concat(chunks)).catch((error) => {
         log(`request failed: ${error.message}`);
         sendJson(res, 500, { error: { type: "dshgate_internal", message: error.message } });

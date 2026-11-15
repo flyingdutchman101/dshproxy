@@ -19,7 +19,7 @@ const CAPACITY = new Set([402, 429, 503, 529]);
 const TRANSIENT = new Set([0, 500, 502, 504]);
 const REJECTION = new Set([400, 404, 413, 422]);
 
-const TOO_LONG = /context_length_exceeded|context_window_exceeded|maximum context length|prompt is too long|input is too long|too many tokens|exceeds? the (model'?s? )?(maximum )?context/i;
+const TOO_LONG = /context_length_exceeded|context_window_exceeded|maximum context length|prompt is too long|input is too long|exceeds? the (model'?s? )?(maximum )?context/i;
 const UNAVAILABLE = /unknown provider for model|model_not_found|auth_unavailable|no auth available/i;
 
 // True when the response text is needed to judge this status.

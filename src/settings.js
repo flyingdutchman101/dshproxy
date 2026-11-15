@@ -88,18 +88,37 @@ function sanitize(value = {}) {
   };
 }
 
+// A missing file gives the defaults. A file that is there but cannot be read
+// is an error: carrying on with the defaults would let the next save replace
+// it, and the saved API keys and ladders with it.
 function load(home = homeDir()) {
+  const file = paths(home).settings;
+  let text;
   try {
-    return sanitize(JSON.parse(fs.readFileSync(paths(home).settings, "utf8")));
-  } catch {
-    return sanitize({});
+    text = fs.readFileSync(file, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return sanitize({});
+    throw new Error(`${file} cannot be read (${error.message}).`);
   }
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${file} is not valid JSON (${error.message}). Fix it, or move it away to start from the defaults.`);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${file} does not hold a settings object. Fix it, or move it away to start from the defaults.`);
+  return sanitize(value);
 }
 
+// Written to a temporary file first, so an interrupted save cannot leave a
+// half-written settings file.
 function save(settings, home = homeDir()) {
   const clean = sanitize(settings);
+  const file = paths(home).settings;
+  const temporary = `${file}.${process.pid}.tmp`;
   fs.mkdirSync(home, { recursive: true });
-  fs.writeFileSync(paths(home).settings, `${JSON.stringify(clean, null, 2)}\n`);
+  fs.writeFileSync(temporary, `${JSON.stringify(clean, null, 2)}\n`);
+  fs.renameSync(temporary, file);
   return clean;
 }
 
