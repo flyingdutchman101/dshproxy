@@ -8,6 +8,7 @@ const { render } = require("./backend/config");
 const { install } = require("./backend/install");
 const { STATUS_PATH } = require("./gateway/server");
 const fs = require("fs");
+const { readLock, compareVersions } = require("./backend/updater");
 
 const HELP = `dshgate ${app.version} - local model gateway for DeepSeek Harness
 
@@ -23,6 +24,8 @@ Usage:
   dshgate dsh apply [--dry-run]       Write the models into every DeepSeek Harness profile
   dshgate dsh status                  Show what DeepSeek Harness currently has
   dshgate dsh remove [--dry-run]      Remove dshgate's routes from DeepSeek Harness
+  dshgate backend version             Show the CLIProxyAPI version in use
+  dshgate backend rollback            Go back to the previous CLIProxyAPI version
 
 Settings and data: ${settingsFile.homeDir()}`;
 
@@ -120,11 +123,17 @@ async function statusJson() {
   const state = await app.snapshot();
   const live = await runningStatus(state.origin);
   const liveLanes = new Map((live?.lanes || []).map((lane) => [lane.name, new Map(lane.ladder.map((rung) => [rung.model, rung.coolingUntil]))]));
+  const lock = app.currentLock(state.home);
   return {
     running: Boolean(live),
     origin: state.origin,
     startedAt: live?.startedAt ?? null,
-    backend: live ? live.backend : { name: app.lock.name, version: app.lock.version, running: false, pid: null },
+    backend: live ? live.backend : { name: lock.name, version: lock.version, running: false, pid: null },
+    backendLock: { version: lock.version, publishedAt: lock.publishedAt || null, previous: lock.previous ? lock.previous.version : null },
+    update: live?.update || null,
+    discovery: state.discovery,
+    modelList: state.listed.map(({ id, name, account, api, contextWindow, maxTokens, efforts, isNew, offered, reason, created }) => ({ id, name, account, api, contextWindow, maxTokens, efforts, isNew, offered, reason, created })),
+    suggestions: state.suggestions,
     home: state.home,
     accounts: state.accounts.map(({ provider, label, account, disabled, expired }) => ({ provider, label, account, disabled, expired })),
     loginProviders: Object.entries(accounts.PROVIDERS).map(([key, entry]) => ({ key, label: entry.label })),
@@ -158,6 +167,21 @@ function reportApply(result, dryRun, out) {
   if (!dryRun && result.profiles.some((item) => item.changed)) out("Restart DeepSeek Harness to load the new routes.");
 }
 
+// Puts the previous backend version back in the lock file. Returns false when
+// there is none (or it is older than the shipped version).
+function rollbackLock(out) {
+  const file = app.writableLockFile();
+  const current = readLock(file);
+  if (!current.previous || compareVersions(current.previous.version, app.shippedLock().version) < 0) {
+    out("There is no previous backend version to go back to.");
+    return false;
+  }
+  fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(current.previous, null, 2)}\n`);
+  fs.renameSync(`${file}.tmp`, file);
+  out(`Back on CLIProxyAPI ${current.previous.version} (from ${current.version}).`);
+  return true;
+}
+
 async function main(argv, out = console.log) {
   const [command, ...rest] = argv;
   const flags = new Set(rest.filter((item) => item.startsWith("--")));
@@ -166,10 +190,51 @@ async function main(argv, out = console.log) {
 
   switch (command) {
     case "start": {
-      const running = await daemon.start({ print: out });
+      // Restarting after an update or rollback: stop and wait until the ports
+      // are free, then start on the version now in the lock file. If that
+      // version will not start, go back to the previous one.
+      let running = null;
+      let restarting = false;
+      const launch = () => daemon.start({ print: out, restart: restartGateway }).then((started) => {
+        running = started;
+      });
+      const startWithRetries = async () => {
+        let lastError = null;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          try {
+            await launch();
+            return;
+          } catch (error) {
+            lastError = error;
+            await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+          }
+        }
+        throw lastError;
+      };
+      async function restartGateway() {
+        if (restarting) return;
+        restarting = true;
+        try {
+          out("Restarting the gateway...");
+          await running.stop();
+          try {
+            await startWithRetries();
+          } catch (error) {
+            out(`The gateway did not start on the new backend version: ${error.message}`);
+            const rolled = rollbackLock(out);
+            if (!rolled) process.exit(1);
+            await startWithRetries();
+          }
+        } catch (error) {
+          out(`Restart failed: ${error.message}`);
+          process.exit(1);
+        } finally {
+          restarting = false;
+        }
+      }
+      await launch();
       const shutdown = () => {
-        running.stop();
-        process.exit(0);
+        Promise.resolve(running.stop()).finally(() => process.exit(0));
       };
       process.on("SIGINT", shutdown);
       process.on("SIGTERM", shutdown);
@@ -182,7 +247,7 @@ async function main(argv, out = console.log) {
       return printAccounts(await app.snapshot(), out);
     case "login": {
       const state = await app.snapshot();
-      const backend = await install(app.lock, state.paths.binDir, { log: out });
+      const backend = await install(app.currentLock(state.home), state.paths.binDir, { log: out });
       fs.mkdirSync(state.authDir, { recursive: true });
       fs.writeFileSync(state.paths.config, render({ host: state.settings.host, port: state.settings.backendPort, authDir: state.authDir, requestRetry: state.settings.requestRetry, providers: state.readable }));
       const code = await accounts.login(args[0], { binary: backend.path, configPath: state.paths.config });
@@ -231,6 +296,21 @@ async function main(argv, out = console.log) {
         return undefined;
       }
       throw new Error("Usage: dshgate dsh apply|status|remove [--dry-run]");
+    }
+    case "backend": {
+      // Works without a running gateway, so a version that will not start
+      // can still be undone.
+      if (args[0] === "rollback") {
+        if (!rollbackLock(out)) process.exitCode = 1;
+        else out("Start dshgate again to use it.");
+        return undefined;
+      }
+      if (args[0] === "version") {
+        const lock = app.currentLock();
+        out(`CLIProxyAPI ${lock.version}${lock.previous ? ` (previous ${lock.previous.version} kept)` : ""}`);
+        return undefined;
+      }
+      throw new Error("Usage: dshgate backend version|rollback");
     }
     case undefined:
     case "help":

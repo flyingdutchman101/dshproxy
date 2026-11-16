@@ -200,9 +200,11 @@ const laneName = (id) => (typeof id === "string" && id.startsWith(LANE_PREFIX) ?
 // are the smallest on the ladder, so a request sized for the lane fits every
 // rung. It offers every reasoning level; the gateway maps the chosen level to
 // the nearest one the serving rung accepts.
-function laneModels(lanes) {
+// `lookup(id)` can supply sizes from the model catalog; the hand-written list
+// is used for anything it does not know.
+function laneModels(lanes, lookup = () => null) {
   return Object.entries(lanes || {}).map(([name, ladder]) => {
-    const known = ladder.map(findModel).filter(Boolean);
+    const known = ladder.map((id) => lookup(id) || findModel(id)).filter(Boolean);
     return {
       id: laneId(name),
       name: `Lane · ${name}`,

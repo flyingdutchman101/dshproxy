@@ -8,9 +8,52 @@ const catalog = require("./catalog");
 const secrets = require("./secrets");
 const settingsFile = require("./settings");
 const { availability } = require("./lanes");
+const { parseCatalog, buildModels, listModels, suggestions } = require("./models");
 
-const lock = require("../backend.lock.json");
 const { version } = require("../package.json");
+const { compareVersions } = require("./backend/updater");
+
+// The backend version shipped with dshgate, and the one an update installed.
+const SHIPPED_LOCK = path.join(__dirname, "..", "backend.lock.json");
+
+function lockFile(home = settingsFile.homeDir()) {
+  return path.join(home, "backend.lock.json");
+}
+
+// The backend version to run: an installed update when it is at least as new
+// as the shipped one, otherwise the shipped one. Read fresh every time, so an
+// update or rollback takes effect on the next start.
+function shippedLock() {
+  return JSON.parse(fs.readFileSync(SHIPPED_LOCK, "utf8"));
+}
+
+function currentLock(home = settingsFile.homeDir()) {
+  const shipped = shippedLock();
+  try {
+    const installed = JSON.parse(fs.readFileSync(lockFile(home), "utf8"));
+    if (installed?.version && installed.assets && compareVersions(installed.version, shipped.version) >= 0) return installed;
+  } catch {
+    // no update installed
+  }
+  return shipped;
+}
+
+// The lock file updates write to. Created from the shipped lock on first use.
+function writableLockFile(home = settingsFile.homeDir()) {
+  const file = lockFile(home);
+  // Also rewritten when the shipped version has overtaken it.
+  let stale = false;
+  try {
+    stale = compareVersions(JSON.parse(fs.readFileSync(file, "utf8")).version, shippedLock().version) < 0;
+  } catch {
+    stale = true;
+  }
+  if (stale) {
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(file, `${JSON.stringify(currentLock(home), null, 2)}\n`);
+  }
+  return file;
+}
 
 function masterKeyFile(home) {
   return path.join(home, "master.key");
@@ -57,18 +100,54 @@ function removeProviderKey(provider, home) {
   return true;
 }
 
+// The model catalog and the backend's served list, as last saved by the
+// running gateway. Missing files mean the hand-written list is used.
+function discoveryFile(home = settingsFile.homeDir()) {
+  return path.join(home, "models.json");
+}
+
+function readDiscovery(home = settingsFile.homeDir()) {
+  try {
+    const saved = JSON.parse(fs.readFileSync(discoveryFile(home), "utf8"));
+    return { catalog: saved.catalog || null, served: Array.isArray(saved.served) ? saved.served : [], fetchedAt: saved.fetchedAt || null, catalogError: saved.catalogError || null };
+  } catch {
+    return { catalog: null, served: [], fetchedAt: null, catalogError: null };
+  }
+}
+
+function saveDiscovery(home, value) {
+  const file = discoveryFile(home);
+  const temporary = `${file}.${process.pid}.tmp`;
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(temporary, JSON.stringify(value));
+  fs.renameSync(temporary, file);
+}
+
 // The models that can serve right now, with the lanes that have at least one
-// such model on their ladder.
-function offeredModels(settings, activeAccounts, readable) {
-  const isAvailable = availability({ accounts: activeAccounts, providers: readable });
+// such model on their ladder. Subscription models come from what the backend
+// serves and the model catalog, so new models need no dshgate update.
+function offeredModels(settings, activeAccounts, readable, discovery = { catalog: null, served: [] }) {
+  const options = {
+    catalog: parseCatalog(discovery.catalog),
+    served: discovery.served,
+    accounts: activeAccounts,
+    extra: settings.models.extra,
+    hidden: settings.models.hidden
+  };
+  const subscription = buildModels(options);
+  const offeredIds = new Set(subscription.map((model) => model.id));
+  const baseAvailable = availability({ accounts: activeAccounts, providers: readable });
+  // A subscription model is available when it is offered; API-key models as before.
+  const isAvailable = (id) => offeredIds.has(id) || (!catalog.findModel(id)?.account && baseAvailable(id));
   const real = [
-    ...catalog.subscriptionModels().filter((model) => activeAccounts.has(model.account)),
+    ...subscription,
     ...Object.entries(readable).flatMap(([provider, entry]) => catalog.providerModels(provider, entry.region))
   ];
+  const sizes = new Map(real.map((model) => [model.id, model]));
   const lanes = catalog.laneModels(Object.fromEntries(Object.entries(settings.lanes)
     .map(([name, ladder]) => [name, ladder.filter(isAvailable)])
-    .filter(([, ladder]) => ladder.length)));
-  return { models: [...lanes, ...real], isAvailable };
+    .filter(([, ladder]) => ladder.length)), (id) => sizes.get(id));
+  return { models: [...lanes, ...real], isAvailable, listed: listModels(options), suggestions: suggestions(settings.lanes, subscription) };
 }
 
 async function snapshot(home = settingsFile.homeDir()) {
@@ -76,6 +155,7 @@ async function snapshot(home = settingsFile.homeDir()) {
   const authDir = settingsFile.authDirFor(settings, home);
   const { readable, unreadable } = await readProviders(settings, home);
   const activeAccounts = accounts.activeProviders(authDir);
+  const discovery = readDiscovery(home);
   return {
     home,
     settings,
@@ -86,7 +166,8 @@ async function snapshot(home = settingsFile.homeDir()) {
     activeAccounts,
     readable,
     unreadable,
-    ...offeredModels(settings, activeAccounts, readable)
+    discovery: { fetchedAt: discovery.fetchedAt, catalogError: discovery.catalogError, hasCatalog: Boolean(discovery.catalog) },
+    ...offeredModels(settings, activeAccounts, readable, discovery)
   };
 }
 
@@ -100,4 +181,4 @@ function appendLog(file, line) {
   }
 }
 
-module.exports = { lock, version, snapshot, readProviders, saveProviderKey, removeProviderKey, offeredModels, appendLog };
+module.exports = { version, shippedLock, currentLock, writableLockFile, readDiscovery, saveDiscovery, snapshot, readProviders, saveProviderKey, removeProviderKey, offeredModels, appendLog };

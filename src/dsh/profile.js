@@ -46,7 +46,7 @@ function modelEntry(model, existing) {
   const entry = {
     id: model.id,
     name: model.name,
-    input: declaredInput(existing) || [...DEFAULT_INPUT],
+    input: declaredInput(existing) || (Array.isArray(model.input) && model.input.length ? [...model.input] : [...DEFAULT_INPUT]),
     contextWindow: model.contextWindow,
     maxTokens: model.maxTokens,
     reasoningEfforts: model.efforts.length ? Object.fromEntries(model.efforts.map((level) => [level, level])) : false
@@ -206,10 +206,23 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
   };
 }
 
+// Options: `only` limits the profiles written; `onlyApplied` writes only the
+// profiles that already hold a dshgate route (used by automatic syncs, which
+// must never add dshgate to a profile the user did not apply it to).
+function hasRoutes(profile, home) {
+  const providersNode = findEntry(readPatch(profile, home).doc)?.getIn(["config", "providers"], true);
+  return YAML.isMap(providersNode) && Object.keys(ROUTES).some((key) => providersNode.has(key));
+}
+
 function apply(models, origin, home = dshHome(), options = {}) {
-  const names = profiles(home);
+  let names = profiles(home);
   if (!names.length) throw new Error("DeepSeek Harness profiles were not found. Open DeepSeek Harness once, then try again.");
   if (!models.length) throw new Error("No models are available yet. Sign in to an account or add an API key first.");
+  if (options.only) names = names.filter((name) => options.only.includes(name));
+  if (options.onlyApplied) {
+    names = names.filter((name) => hasRoutes(name, home));
+    if (!names.length) return { profiles: [], credential: { created: false, reason: "no profile has dshgate routes" } };
+  }
   // Every profile is checked before any is written, so one unreadable profile
   // does not leave the others half-applied.
   for (const profile of names) readPatch(profile, home);

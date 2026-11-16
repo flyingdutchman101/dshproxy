@@ -712,6 +712,20 @@ namespace Dshgate
         private readonly ComboBox keyProviderCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
         private readonly ComboBox keyRegionCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
         private readonly ListView lanesList = new ListView();
+        private readonly ListView modelsList = new ListView();
+        private readonly Label modelsNote = new Label { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
+        private readonly FlowLayoutPanel suggestionsPanel = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.FromArgb(239, 246, 255), Padding = new Padding(8, 6, 8, 6), Visible = false };
+        private readonly FlowLayoutPanel updateBar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Color.FromArgb(239, 246, 255), Padding = new Padding(12, 6, 12, 6), Visible = false };
+        private readonly Label updateLabel = new Label { AutoSize = true, Margin = new Padding(0, 7, 12, 0) };
+        private readonly Button updateButton = new Button { Text = "Update...", AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold), ForeColor = Theme.Accent };
+        private readonly Button rollbackButton = new Button { Text = "Roll back...", AutoSize = true };
+        private ArrayList modelRows = new ArrayList();
+        private bool showHiddenModels;
+        private bool fillingModels;
+        private string modelsKey = "";
+        private string suggestionsKey = "";
+        private Dictionary<string, object> lastUpdate;
+        private string previousBackend = "";
         private readonly ListView profilesList = new ListView();
         private readonly TextBox logBox = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, WordWrap = false, Dock = DockStyle.Fill, Font = new Font("Consolas", 9f), BackColor = Color.White };
         private readonly CheckBox autostartBox = new CheckBox { Text = "Start with Windows", AutoSize = true };
@@ -833,6 +847,13 @@ namespace Dshgate
             header.Controls.Add(stateStack, 0, 0);
             header.Controls.Add(buttons, 1, 0);
 
+            // Shown when a newer CLIProxyAPI is available or a rollback is possible.
+            updateBar.Controls.Add(updateLabel);
+            updateBar.Controls.Add(updateButton);
+            updateBar.Controls.Add(rollbackButton);
+            updateButton.Click += (s, e) => ApplyUpdate();
+            rollbackButton.Click += (s, e) => Rollback();
+
             // Accounts and limits
             var addAccount = new Button { Text = "+ Add account", AutoSize = true, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
             addAccount.Click += (s, e) => AddAccount();
@@ -878,6 +899,32 @@ namespace Dshgate
                 Note("A lane tries each model in order until one answers. \u2713 can serve, \u2717 no account or key, \u23F8 sitting out after running out of quota."),
                 Row(editLanes)));
 
+            // Models
+            modelsList.View = View.Details;
+            modelsList.CheckBoxes = true;
+            foreach (var c in new[] { new object[] { "Model", 230 }, new object[] { "Service", 150 }, new object[] { "Context", 90 }, new object[] { "Output", 80 }, new object[] { "Reasoning", 190 }, new object[] { "Status", 170 } }) modelsList.Columns.Add((string)c[0], (int)c[1]);
+            modelsList.FullRowSelect = true;
+            modelsList.Dock = DockStyle.Fill;
+            var modelLogos = new ImageList { ImageSize = new Size(18, 18), ColorDepth = ColorDepth.Depth32Bit };
+            foreach (var name in new[] { "claude", "codex", "antigravity", "kimi" })
+            {
+                var image = Logos.Sized(name, 18);
+                if (image != null) modelLogos.Images.Add(name, image);
+            }
+            modelsList.SmallImageList = modelLogos;
+            modelsList.ItemCheck += (s, e) => OnModelChecked(e);
+            var checkModels = new Button { Text = "Check for new models", AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
+            checkModels.Click += (s, e) => RefreshModels();
+            var showAll = new CheckBox { Text = "Show hidden models", AutoSize = true, Margin = new Padding(12, 7, 0, 0) };
+            showAll.CheckedChanged += (s, e) => { showHiddenModels = showAll.Checked; FillModels(); };
+            var modelsPage = Page("Models", modelsList,
+                Note("Ticked models are offered to DeepSeek Harness. New models are found automatically every 3 hours; when the list changes, the dshgate routes in DeepSeek Harness are updated (restart DeepSeek Harness to see them)."),
+                Row(checkModels, showAll, modelsNote));
+            modelsPage.Controls.Add(suggestionsPanel);
+            suggestionsPanel.BringToFront();
+            modelsList.BringToFront();
+            tabs.TabPages.Add(modelsPage);
+
             // DeepSeek Harness
             profilesList.View = View.Details;
             foreach (var c in new[] { "Profile", "Routes", "Models", "Points at this gateway" }) profilesList.Columns.Add(c, 200);
@@ -910,6 +957,7 @@ namespace Dshgate
             bottom.Controls.Add(autostartBox, 1, 0);
 
             Controls.Add(tabs);
+            Controls.Add(updateBar);
             Controls.Add(bottom);
             Controls.Add(header);
             ShowAccountsMessage("Starting...", Theme.Muted);
@@ -1130,6 +1178,17 @@ namespace Dshgate
                 lanesList.Items.Add(new ListViewItem(new[] { "lane-" + Json.Str(Json.Get(lane, "name")), string.Join("   \u2192   ", parts.ToArray()) }));
             }
             lanesList.EndUpdate();
+
+            // Models and backend updates
+            modelRows = Json.Arr(Json.Get(status, "modelList"));
+            var discovery = Json.Obj(Json.Get(status, "discovery"));
+            var fetchedAt = Format.ParseTime(Json.Str(Json.Get(discovery, "fetchedAt")));
+            var catalogError = Json.Str(Json.Get(discovery, "catalogError"));
+            modelsNote.Text = catalogError.Length > 0 ? "Model catalog not reachable: " + catalogError
+                : fetchedAt.HasValue ? "Last checked " + Format.Ago(fetchedAt.Value) + "." : "Not checked yet.";
+            FillModels();
+            FillSuggestions(Json.Arr(Json.Get(status, "suggestions")));
+            ShowUpdate(Json.Obj(Json.Get(status, "update")), Json.Obj(Json.Get(status, "backendLock")));
 
             // DeepSeek Harness
             var harness = Json.Obj(Json.Get(status, "deepseekHarness"));
@@ -1485,6 +1544,245 @@ namespace Dshgate
                     AppendLog(done);
                     RefreshStatus();
                     LoadLimits(true);
+                }));
+            });
+        }
+
+        // ---------- models ----------
+
+        private static readonly Dictionary<string, string> ServiceLabels = new Dictionary<string, string>
+        {
+            { "claude", "Claude" }, { "codex", "ChatGPT" }, { "antigravity", "Gemini (Google)" }, { "kimi", "Kimi" }
+        };
+
+        private static string Tokens(double value)
+        {
+            if (value >= 1000000) return (value / 1000000).ToString("0.##", CultureInfo.InvariantCulture) + "M";
+            if (value >= 1000) return Math.Round(value / 1000).ToString(CultureInfo.InvariantCulture) + "K";
+            return value.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private void FillModels()
+        {
+            var visible = new List<Dictionary<string, object>>();
+            foreach (var item in modelRows)
+            {
+                var m = Json.Obj(item);
+                var reason = Json.Str(Json.Get(m, "reason"));
+                var offered = Json.Bool(m, "offered");
+                if (offered || showHiddenModels || reason == "switched off") visible.Add(m);
+            }
+            // New models first, then by service and name.
+            visible.Sort((a, b) =>
+            {
+                var na = Json.Bool(a, "isNew") && Json.Bool(a, "offered") ? 0 : 1;
+                var nb = Json.Bool(b, "isNew") && Json.Bool(b, "offered") ? 0 : 1;
+                if (na != nb) return na - nb;
+                var sa = string.Compare(Json.Str(Json.Get(a, "account")), Json.Str(Json.Get(b, "account")), StringComparison.Ordinal);
+                return sa != 0 ? sa : string.Compare(Json.Str(Json.Get(a, "id")), Json.Str(Json.Get(b, "id")), StringComparison.Ordinal);
+            });
+            var key = Json.Serializer.Serialize(visible) + showHiddenModels;
+            if (key == modelsKey) return;
+            modelsKey = key;
+            fillingModels = true;
+            modelsList.BeginUpdate();
+            modelsList.Items.Clear();
+            foreach (var m in visible)
+            {
+                var reason = Json.Str(Json.Get(m, "reason"));
+                var offered = Json.Bool(m, "offered");
+                var efforts = new List<string>();
+                foreach (var e in Json.Arr(Json.Get(m, "efforts"))) efforts.Add(Json.Str(e));
+                string label;
+                switch (reason)
+                {
+                    case "new": label = "NEW \u00B7 found automatically"; break;
+                    case "known": label = "Offered"; break;
+                    case "switched on": label = "Offered (you switched it on)"; break;
+                    case "switched off": label = "Off (you switched it off)"; break;
+                    case "older generation": label = "Hidden: older generation"; break;
+                    case "not a chat model": label = "Hidden: not a chat model"; break;
+                    case "not in the catalog": label = "Hidden: no details known"; break;
+                    default: label = reason; break;
+                }
+                string service;
+                ServiceLabels.TryGetValue(Json.Str(Json.Get(m, "account")), out service);
+                var row = new ListViewItem(new[]
+                {
+                    Json.Str(Json.Get(m, "id")),
+                    service ?? Json.Str(Json.Get(m, "account")),
+                    Tokens(Json.Num(m, "contextWindow", 0)),
+                    Tokens(Json.Num(m, "maxTokens", 0)),
+                    efforts.Count > 0 ? string.Join(", ", efforts.ToArray()) : "none",
+                    label
+                })
+                {
+                    Checked = offered,
+                    Tag = Json.Str(Json.Get(m, "id")),
+                    ImageKey = Json.Str(Json.Get(m, "account")),
+                    ToolTipText = Json.Str(Json.Get(m, "name"))
+                };
+                if (reason == "new" && offered) { row.ForeColor = Theme.Accent; row.Font = new Font(modelsList.Font, FontStyle.Bold); }
+                else if (!offered) row.ForeColor = Theme.Muted;
+                modelsList.Items.Add(row);
+            }
+            modelsList.EndUpdate();
+            fillingModels = false;
+        }
+
+        private void OnModelChecked(ItemCheckEventArgs e)
+        {
+            if (fillingModels) return;
+            var id = modelsList.Items[e.Index].Tag as string;
+            if (id == null) return;
+            if (!running)
+            {
+                e.NewValue = e.CurrentValue;
+                MessageBox.Show(this, "Start the gateway first.", "Models", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            var on = e.NewValue == CheckState.Checked;
+            ControlInBackground("models/choose", new Dictionary<string, object> { { "id", id }, { "offered", on } }, result =>
+            {
+                AppendLog((on ? "Offering " : "No longer offering ") + id + (Json.Bool(result, "harnessChanged") ? "; DeepSeek Harness routes updated. Restart DeepSeek Harness to see it." : "."));
+                modelsKey = "";
+                RefreshStatus();
+            });
+        }
+
+        private void RefreshModels()
+        {
+            if (!running)
+            {
+                MessageBox.Show(this, "Start the gateway first.", "Models", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            modelsNote.Text = "Checking for new models...";
+            ControlInBackground("models/refresh", new Dictionary<string, object>(), result =>
+            {
+                modelsKey = "";
+                var error = Json.Str(Json.Get(result, "catalogError"));
+                var changed = Json.Bool(result, "harnessChanged");
+                AppendLog("Checked for new models" + (error.Length > 0 ? " (catalog not reachable: " + error + ")" : "") + (changed ? "; DeepSeek Harness routes updated." : "."));
+                RefreshStatus();
+                if (changed) tray.ShowBalloonTip(5000, "DeepSeek Harness routes updated", "New models are offered. Restart DeepSeek Harness to see them.", ToolTipIcon.Info);
+            });
+        }
+
+        private void FillSuggestions(ArrayList list)
+        {
+            var key = Json.Serializer.Serialize(list);
+            if (key == suggestionsKey) return;
+            suggestionsKey = key;
+            suggestionsPanel.SuspendLayout();
+            suggestionsPanel.Controls.Clear();
+            foreach (var item in list)
+            {
+                var s = Json.Obj(item);
+                var from = Json.Str(Json.Get(s, "from"));
+                var to = Json.Str(Json.Get(s, "to"));
+                var lanes = new List<string>();
+                foreach (var l in Json.Arr(Json.Get(s, "lanes"))) lanes.Add(Json.Str(l));
+                var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 2, 0, 2) };
+                row.Controls.Add(new Label { Text = string.Format("Newer model: {0} could replace {1} on lane {2}.", to, from, string.Join(", ", lanes.ToArray())), AutoSize = true, Margin = new Padding(0, 7, 10, 0) });
+                var use = new Button { Text = "Use " + to, AutoSize = true };
+                var lanesCopy = lanes.ToArray();
+                use.Click += (s2, e2) => ReplaceOnLanes(from, to, lanesCopy);
+                row.Controls.Add(use);
+                suggestionsPanel.Controls.Add(row);
+            }
+            suggestionsPanel.Visible = list.Count > 0;
+            suggestionsPanel.ResumeLayout();
+        }
+
+        private void ReplaceOnLanes(string from, string to, string[] lanes)
+        {
+            var answer = MessageBox.Show(this, string.Format("Put {0} in place of {1} on lane {2}?\n\nThe rest of each ladder stays as it is. You can change it back in settings.json.", to, from, string.Join(", ", lanes)), "Lanes", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes) return;
+            ControlInBackground("lanes/replace", new Dictionary<string, object> { { "from", from }, { "to", to }, { "lanes", lanes } }, result =>
+            {
+                AppendLog(string.Format("{0} now replaces {1} on lane {2}.", to, from, string.Join(", ", lanes)));
+                suggestionsKey = "";
+                RefreshStatus();
+            });
+        }
+
+        // ---------- backend updates ----------
+
+        private void ShowUpdate(Dictionary<string, object> update, Dictionary<string, object> lockInfo)
+        {
+            lastUpdate = update;
+            previousBackend = Json.Str(Json.Get(lockInfo, "previous"));
+            var available = Json.Bool(update, "available");
+            var current = Json.Str(Json.Get(lockInfo, "version"));
+            if (available)
+            {
+                var published = Format.ParseTime(Json.Str(Json.Get(update, "publishedAt")));
+                updateLabel.Text = string.Format("CLIProxyAPI {0} is available (you run {1}){2}. Updating tries it first and keeps {1} for rollback.",
+                    Json.Str(Json.Get(update, "latest")), current, published.HasValue ? ", released " + published.Value.ToString("d MMM HH:mm", CultureInfo.CurrentCulture) : "");
+            }
+            else if (previousBackend.Length > 0)
+            {
+                updateLabel.Text = string.Format("Running CLIProxyAPI {0}. The previous version {1} is kept.", current, previousBackend);
+            }
+            updateButton.Visible = available;
+            rollbackButton.Visible = previousBackend.Length > 0;
+            updateBar.Visible = running && (available || previousBackend.Length > 0);
+        }
+
+        private void ApplyUpdate()
+        {
+            if (lastUpdate == null || !Json.Bool(lastUpdate, "available")) return;
+            var latest = Json.Str(Json.Get(lastUpdate, "latest"));
+            var answer = MessageBox.Show(this,
+                string.Format("Update the backend to CLIProxyAPI {0}?\n\n1. Download it and check it against the release's published checksum.\n2. Start it on a spare port and send one short request through each signed-in account (uses a tiny bit of quota).\n3. Only if that passes: restart dshgate on {0}, about 5 seconds offline.\n\nIf anything fails, dshgate stays on the version you have.", latest),
+                "Update CLIProxyAPI", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes) return;
+            updateButton.Enabled = false;
+            updateLabel.Text = "Downloading and trying CLIProxyAPI " + latest + "... this takes up to a minute.";
+            ControlInBackground("update/apply", new Dictionary<string, object>(), result =>
+            {
+                updateButton.Enabled = true;
+                var checks = new List<string>();
+                foreach (var c in Json.Arr(Json.Get(result, "checks"))) checks.Add("\u2022 " + Json.Str(c));
+                var ok = Json.Bool(result, "ok");
+                AppendLog(Json.Str(Json.Get(result, "message")));
+                MessageBox.Show(this, Json.Str(Json.Get(result, "message")) + (checks.Count > 0 ? "\n\nTrial run:\n" + string.Join("\n", checks.ToArray()) : "") + (ok ? "\n\ndshgate is restarting on the new version." : ""),
+                    "Update CLIProxyAPI", MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            }, 300000, () => updateButton.Enabled = true);
+        }
+
+        private void Rollback()
+        {
+            if (previousBackend.Length == 0) return;
+            var answer = MessageBox.Show(this, string.Format("Go back to CLIProxyAPI {0}?\n\ndshgate restarts, about 5 seconds offline.", previousBackend), "Roll back", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes) return;
+            ControlInBackground("update/rollback", new Dictionary<string, object>(), result => AppendLog(Json.Str(Json.Get(result, "message"))));
+        }
+
+        // Calls the control API off the UI thread and reports a failure.
+        private void ControlInBackground(string path, Dictionary<string, object> body, Action<Dictionary<string, object>> done, int timeoutMs = 60000, Action failed = null)
+        {
+            UseWaitCursor = true;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                Dictionary<string, object> result = null;
+                string failure = null;
+                try { result = control.Call("POST", path, body, timeoutMs); }
+                catch (ControlException error) { failure = error.Message; }
+                catch (WebException error) { failure = error.Message; }
+                BeginInvoke(new Action(() =>
+                {
+                    UseWaitCursor = false;
+                    if (failure != null)
+                    {
+                        if (failed != null) failed();
+                        modelsKey = "";
+                        MessageBox.Show(this, failure, "dshgate", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        RefreshStatus();
+                        return;
+                    }
+                    done(result);
                 }));
             });
         }

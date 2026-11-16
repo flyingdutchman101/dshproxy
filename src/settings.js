@@ -85,8 +85,15 @@ function sanitize(value = {}) {
     cooldownMinutes: Number.isFinite(cooldown) && cooldown >= 1 && cooldown <= 360 ? cooldown : DEFAULTS.cooldownMinutes,
     failureThreshold: intIn(value.failureThreshold, 1, 10, DEFAULTS.failureThreshold),
     lanes: sanitizeLanes(value.lanes),
-    providers: sanitizeProviders(value.providers)
+    providers: sanitizeProviders(value.providers),
+    models: sanitizeModels(value.models)
   };
+}
+
+// Models the user switched on (hidden by default) or off (offered by default).
+function sanitizeModels(value) {
+  const list = (items) => [...new Set((Array.isArray(items) ? items : []).map((item) => String(item).trim()).filter((item) => /^[A-Za-z0-9._:/-]{1,80}$/.test(item)))].slice(0, 200);
+  return { extra: list(value?.extra), hidden: list(value?.hidden) };
 }
 
 // A missing file gives the defaults. A file that is there but cannot be read

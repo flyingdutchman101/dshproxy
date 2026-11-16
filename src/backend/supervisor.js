@@ -146,12 +146,22 @@ function createSupervisor({ binary, configPath, host, port, pidFile = null, log 
     throw new Error(`The backend did not answer on ${host}:${port} within ${Math.round(timeoutMs / 1000)}s.`);
   }
 
+  // Resolves once the backend process has exited (or after 10 s).
   function stop() {
     stopping = true;
     clearTimeout(restartTimer);
+    const exiting = child;
     if (child) child.kill();
     child = null;
     if (pidFile) fs.rmSync(pidFile, { force: true });
+    if (!exiting || exiting.exitCode !== null) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, 10000);
+      exiting.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   }
 
   return { start, stop, state: () => ({ running: Boolean(child), pid: child?.pid ?? null, restarts: restarts.length }) };

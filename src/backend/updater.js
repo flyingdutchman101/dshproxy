@@ -1,0 +1,144 @@
+// Updates the CLIProxyAPI version in backend.lock.json.
+//
+// An update is never switched to blindly: the new version is downloaded and
+// checked against the checksum the release publishes, started on a spare
+// port, and asked to answer through each signed-in account. Only if that
+// trial passes does the lock change and the gateway restart. The version it
+// replaces is kept, so a rollback is one step.
+
+const fs = require("fs");
+
+const REPO = "router-for-me/CLIProxyAPI";
+const LATEST_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+const DOWNLOAD_PREFIX = `https://github.com/${REPO}/releases/download/`;
+const ASSET_KEYS = { windows_amd64: "win32-x64", windows_aarch64: "win32-arm64" };
+
+function parts(version) {
+  return String(version).replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+}
+
+function compareVersions(a, b) {
+  const left = parts(a);
+  const right = parts(b);
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const diff = (left[index] || 0) - (right[index] || 0);
+    if (diff) return diff;
+  }
+  return 0;
+}
+
+// "<sha256>  <file name>" per line, as goreleaser writes it.
+function parseChecksums(text) {
+  const sums = new Map();
+  for (const line of String(text).split(/\r?\n/)) {
+    const match = /^([0-9a-f]{64})\s+\*?(\S+)\s*$/i.exec(line.trim());
+    if (match) sums.set(match[2], match[1].toLowerCase());
+  }
+  return sums;
+}
+
+// The lock for a release: both Windows downloads, each with the checksum the
+// release published. Every address must be under the official release path.
+function lockFromRelease(release, sums) {
+  const version = String(release.tag_name).replace(/^v/, "");
+  // The version becomes a folder name, so only plain release numbers pass.
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`"${release.tag_name}" is not a release version.`);
+  const assets = {};
+  for (const [suffix, key] of Object.entries(ASSET_KEYS)) {
+    const name = `CLIProxyAPI_${version}_${suffix}.zip`;
+    const asset = (release.assets || []).find((item) => item.name === name);
+    if (!asset) throw new Error(`Release ${version} has no ${name}.`);
+    const url = String(asset.browser_download_url);
+    if (!url.startsWith(`${DOWNLOAD_PREFIX}v${version}/`)) throw new Error(`${url} is not an official CLIProxyAPI download.`);
+    const sha256 = sums.get(name);
+    if (!sha256) throw new Error(`Release ${version} has no checksum for ${name}.`);
+    assets[key] = { url, sha256 };
+  }
+  return { name: "CLIProxyAPI", version, source: `https://github.com/${REPO}/releases/tag/v${version}`, publishedAt: release.published_at || null, assets };
+}
+
+// Asks GitHub for the latest release. Returns { available, current, latest,
+// lock?, publishedAt? }.
+async function checkForUpdate(current, { fetchImpl = fetch, timeoutMs = 20000 } = {}) {
+  const response = await fetchImpl(LATEST_URL, { headers: { accept: "application/vnd.github+json", "user-agent": "dshgate" }, signal: AbortSignal.timeout(timeoutMs) });
+  if (!response.ok) throw new Error(`GitHub answered HTTP ${response.status}.`);
+  const release = await response.json();
+  const latest = String(release.tag_name || "").replace(/^v/, "");
+  if (!latest || release.draft || release.prerelease || compareVersions(latest, current.version) <= 0) {
+    return { available: false, current: current.version, latest: latest || current.version };
+  }
+  const sumsAsset = (release.assets || []).find((asset) => asset.name === "checksums.txt");
+  if (!sumsAsset) throw new Error(`Release ${latest} publishes no checksums, so it is not offered.`);
+  if (!String(sumsAsset.browser_download_url).startsWith(`${DOWNLOAD_PREFIX}v${latest}/`)) throw new Error(`The checksums for ${latest} are not an official CLIProxyAPI download.`);
+  const sums = await fetchImpl(sumsAsset.browser_download_url, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!sums.ok) throw new Error(`The checksums for ${latest} could not be downloaded (HTTP ${sums.status}).`);
+  const lock = lockFromRelease(release, parseChecksums(await sums.text()));
+  return { available: true, current: current.version, latest, publishedAt: lock.publishedAt, lock };
+}
+
+function readLock(file) {
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function writeLock(file, lock) {
+  const temporary = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(lock, null, 2)}\n`);
+  fs.renameSync(temporary, file);
+}
+
+// `install(lock)` downloads and checks a version; `trial(binary, lock)` runs
+// it on a spare port and returns { ok, checks }; `restart()` restarts the
+// gateway on the version now in the lock file. `current()` returns the lock
+// actually running (the lock file can be older than the shipped version);
+// `floor` is the shipped version, below which a rollback is refused.
+function createUpdater({ lockFile, binDir, install, trial, restart, current: currentLock = () => readLock(lockFile), floor = null, log = () => {} }) {
+  let running = false;
+
+  async function apply(next) {
+    if (running) throw new Error("An update is already running.");
+    if (typeof restart !== "function") return { ok: false, message: "This gateway cannot restart itself, so it cannot switch versions. Start it from the dshgate app.", checks: [] };
+    running = true;
+    try {
+      const current = currentLock();
+      let installed;
+      try {
+        installed = await install(next, binDir);
+      } catch (error) {
+        return { ok: false, message: error.message, checks: [] };
+      }
+      log(`trying CLIProxyAPI ${next.version} on a spare port`);
+      const result = await trial(installed.path, next);
+      if (!result.ok) {
+        log(`CLIProxyAPI ${next.version} did not pass its trial; staying on ${current.version}`);
+        return { ok: false, message: `CLIProxyAPI ${next.version} did not pass its trial, so dshgate stays on ${current.version}.`, checks: result.checks || [] };
+      }
+      const { previous, ...currentWithoutPrevious } = current;
+      writeLock(lockFile, { ...next, previous: currentWithoutPrevious });
+      log(`switched to CLIProxyAPI ${next.version} (previous ${current.version} kept for rollback)`);
+      await restart();
+      return { ok: true, message: `Updated to CLIProxyAPI ${next.version}.`, checks: result.checks || [] };
+    } finally {
+      running = false;
+    }
+  }
+
+  async function rollback() {
+    if (running) throw new Error("An update is already running.");
+    running = true;
+    try {
+      const current = readLock(lockFile);
+      if (!current.previous) throw new Error("There is no previous version to go back to.");
+      if (floor && compareVersions(current.previous.version, floor) < 0) throw new Error(`CLIProxyAPI ${current.previous.version} is older than the version this dshgate ships with (${floor}).`);
+      writeLock(lockFile, current.previous);
+      log(`rolled back from CLIProxyAPI ${current.version} to ${current.previous.version}`);
+      await restart();
+      return { ok: true, message: `Back on CLIProxyAPI ${current.previous.version}.` };
+    } finally {
+      running = false;
+    }
+  }
+
+  return { apply, rollback, isRunning: () => running };
+}
+
+module.exports = { LATEST_URL, compareVersions, parseChecksums, lockFromRelease, checkForUpdate, createUpdater, readLock };

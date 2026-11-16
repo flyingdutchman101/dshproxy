@@ -314,3 +314,24 @@ test("the state reports whether the routes point at this gateway", (t) => {
   // The gateway moved to another port: the routes are stale.
   assert.equal(profile.state("http://127.0.0.1:9000", home).applied, false);
 });
+
+test("a sync touches only the profiles that already have dshgate routes", (t) => {
+  const home = tempHome(t, ["desktop", "web"]);
+  fs.writeFileSync(patchPath(home, "web"), EXISTING);
+  profile.apply(MODELS, ORIGIN, home, { only: ["desktop"] });
+  const before = fs.readFileSync(patchPath(home, "web"), "utf8");
+  const result = profile.apply([...MODELS, model("claude-opus-5", "claude")], ORIGIN, home, { onlyApplied: true });
+  assert.deepEqual(result.profiles.map((item) => item.profile), ["desktop"]);
+  assert.ok(ids(providers(home)["dshgate-claude"]).includes("claude-opus-5"));
+  assert.equal(fs.readFileSync(patchPath(home, "web"), "utf8"), before);
+  assert.equal(backups(home, "web").length, 0);
+});
+
+test("a sync with no applied profile writes nothing, not even the credential reference", (t) => {
+  const home = tempHome(t, ["desktop"]);
+  fs.writeFileSync(patchPath(home), EXISTING);
+  const result = profile.apply(MODELS, ORIGIN, home, { onlyApplied: true });
+  assert.deepEqual(result.profiles, []);
+  assert.equal(result.credential.created, false);
+  assert.equal(fs.readFileSync(patchPath(home), "utf8"), EXISTING);
+});

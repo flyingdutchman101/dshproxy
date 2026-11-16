@@ -140,6 +140,19 @@ Everything is under `~/.dshgate` (override with `DSHGATE_HOME`):
 
 If `settings.json` exists but cannot be read, every command stops with an error and leaves the file as it is. Fix the file, or move it away to start from the defaults.
 
+## New models and backend updates
+
+**Models are found automatically.** About 3 seconds after start and then every 3 hours, dshgate reads which models the backend serves to your accounts and CLIProxyAPI's public model catalog ([models.router-for.me](https://models.router-for.me/models.json)) for each model's context size, output limit and reasoning levels. A current-generation chat model that your accounts serve is offered without a dshgate update. Image models, older generations and models the catalog does not describe are hidden; switch any model on or off on the **Models** tab (saved as `models.extra` / `models.hidden` in settings.json). When the offered list changes, dshgate updates its routes in the DeepSeek Harness profiles that already have them (each backed up first) and asks you to restart DeepSeek Harness. Profiles you never applied dshgate to are not touched.
+
+**Lanes are never changed for you.** When a newer version of a model on a lane appears (for example Fable 5.3 for Fable 5.2), the Models tab suggests it; nothing changes until you press **Use** and confirm.
+
+**Backend updates.** Every 6 hours dshgate asks GitHub for the latest CLIProxyAPI release (no drafts or pre-releases). When one is newer, the app shows **Update...**. Updating:
+1. downloads the release's Windows zip and checks it against the `checksums.txt` that release publishes (addresses outside the official release path are refused);
+2. starts it on a spare loopback port with your accounts and sends one short request per signed-in service (an out-of-quota answer does not count against it);
+3. only if that passes, switches `~/.dshgate/backend.lock.json` to it, keeps the version it replaces, and restarts the gateway (a few seconds offline).
+
+If the new version will not start, dshgate goes back to the previous one by itself. **Roll back...** in the app, or `dshgate backend rollback` with the gateway stopped, returns to the previous version. The version shipped in the repo's `backend.lock.json` is the floor: an older update is ignored.
+
 ## Sign-in and limits
 
 Sign-in and limits run through CLIProxyAPI's Management API, which the gateway switches on with a new random key every start (the backend keeps only a hash of it). The gateway never reads or sends a token itself:

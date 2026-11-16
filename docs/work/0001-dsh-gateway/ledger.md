@@ -58,6 +58,14 @@ Signed in through the app: ChatGPT (weekly limit at 0%), Claude (weekly 22%), Ge
 - Limits before and after differed by at most 0.2 points.
 - `dsh apply` on the real `desktop` and `web` profiles: only the `dshgate-*` routes changed; backups written.
 
+## Model discovery and backend updates (2026-11-16)
+
+- Discovery against the real catalog and accounts offered 10 new models (claude-fable-5, claude-opus-5, claude-sonnet-5, gpt-6-sol, gpt-6-chat-thinking, gemini-4-hydrogen-xhigh, gemini-3-flash, gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemini-3.8-flash-tiered); claude-opus-5, gemini-4-hydrogen-xhigh and gemini-3.5-flash-lite answered through dshgate. 26 served models stay hidden (image, older generations). DeepSeek Harness routes in `desktop` and `web` were re-applied automatically (both had dshgate routes).
+- First trial against real binaries failed for both 8.0.72 and 8.0.75: the backend lists 0 models for its first seconds. Fixed by waiting up to 30 s for the model list; both then passed.
+- Real update 8.0.72 → 8.0.75 through the control API: trial passed (ChatGPT 429 not counted), switched, restarted, lane-scout and claude-opus-5 answered. Real rollback to 8.0.72 worked; then updated to 8.0.75 again, which is what runs now.
+- Review: first reviewer (Gemini 4 Carbon) died without output; second (Gemini 4 Argon) found no blockers and 8 should-fix items. Fixed with red-first tests: syncs run one at a time and record success only after writing; automatic syncs write only profiles that already have dshgate routes (and add no credential reference otherwise); update and rollback share one lock; rollback below the shipped version refused; updates start from the running version; no download without a restart path; release versions must be plain numbers and the checksum URL official; dated IDs not taken as newer; more old generations hidden; catalog context capped at 2M. Also: stop waits for the backend to exit, restart retries and falls back to the previous version, `dshgate backend rollback` works offline, the trial falls back to another model of the service when its probe model is not listed. Kept: the trial shares the real auth folder (a copy would rotate refresh tokens away from the running backend); the risk is documented in trial.js.
+- Not done: a test that drives `runTrial` itself (it needs a real backend binary); checks are live-only.
+
 ## Not checked
 
 - Any request served by a real model through the gateway. Failover was tested against a stand-in backend only.
