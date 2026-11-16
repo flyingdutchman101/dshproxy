@@ -23,7 +23,7 @@ function availability({ accounts, providers }) {
 // which covers models that are not part of any lane. `accountOf(id)` lets the
 // ordering prefer the picked model's own provider: a Claude pick should be
 // answered by another Claude model before a Gemini one.
-function createResolver({ lanes, isAvailable, siblings = () => [], accountOf = () => null }) {
+function createResolver({ lanes, isAvailable, siblings = () => [], accountOf = () => null, rank = () => Number.MAX_SAFE_INTEGER }) {
   return (id) => {
     const name = laneName(id);
     const ladder = name ? lanes()[name] : null;
@@ -42,7 +42,10 @@ function createResolver({ lanes, isAvailable, siblings = () => [], accountOf = (
     const family = (model) => String(model).split("-")[0];
     const sameFamily = accountFallbacks.filter((model) => family(model) === family(id));
     const otherFamily = accountFallbacks.filter((model) => family(model) !== family(id));
-    const orderedAccount = [...sameFamily, ...otherFamily];
+    // Within the family, the catalog order decides: a Claude pick falls back to
+    // the strongest Claude sibling rather than whichever comes first.
+    const byRank = (a, b) => rank(a) - rank(b);
+    const orderedAccount = [...sameFamily.sort(byRank), ...otherFamily.sort(byRank)];
     const account = accountOf(id);
     const sameProvider = account != null && laneFallbacks.length > 0 && laneFallbacks.every((model) => accountOf(model) === account);
     const ordered = sameProvider ? [...laneFallbacks, ...orderedAccount] : [...orderedAccount, ...laneFallbacks];

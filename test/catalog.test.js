@@ -136,3 +136,16 @@ test("a Claude-via-Google pick prefers its own family on that account", () => {
   });
   assert.deepEqual(resolve("ag-c55o-high").fallbacks, ["ag-c55s-high", "gemini-4-carbon-high"]);
 });
+
+test("a throttled Claude pick falls back to the strongest Claude sibling", () => {
+  const catalog = ["claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
+  const rank = (id) => catalog.indexOf(id);
+  const resolve = createResolver({
+    lanes: () => ({}),
+    isAvailable: () => true,
+    siblings: (id) => (id === "claude-fable-5-2" ? catalog : []),
+    accountOf: () => "claude",
+    rank
+  });
+  assert.deepEqual(resolve("claude-fable-5-2").fallbacks, ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
+});

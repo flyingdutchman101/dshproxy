@@ -86,6 +86,12 @@ async function start({ home, print = console.log, restart = null } = {}) {
     return offered.isAvailable(model) || availability({ accounts: activeAccounts(), providers: state.readable })(model);
   };
 
+  // Catalog order, so a fallback prefers the stronger model of the family.
+  const catalogRank = (() => {
+    const order = new Map(SUBSCRIPTION_MODELS.map((model, index) => [model.id, index]));
+    return (id) => order.get(id) ?? Number.MAX_SAFE_INTEGER;
+  })();
+
   // The other models a subscription account serves, so a forced pick that is out
   // of quota can be answered by a sibling from the same provider.
   let siblingCache = { at: 0, lists: [], accounts: new Map() };
@@ -330,7 +336,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
 
   const gateway = createGateway({
     upstream: { host: settings.host, port: settings.backendPort },
-    resolve: createResolver({ lanes: () => settings.lanes, isAvailable, siblings, accountOf: (model) => siblingCache.accounts.get(model) || null }),
+    resolve: createResolver({ lanes: () => settings.lanes, isAvailable, siblings, accountOf: (model) => siblingCache.accounts.get(model) || null, rank: catalogRank }),
     describe,
     // Which models can take an image. Read from the offered models (their
     // input lists) and refreshed on the same cache as the accounts.
