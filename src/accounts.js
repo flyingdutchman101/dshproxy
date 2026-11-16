@@ -46,6 +46,19 @@ function list(authDir) {
   }).filter(Boolean);
 }
 
+// The non-secret IDs a usage call needs, read from a credential file. Tokens
+// in the same file are not returned.
+function details(authDir, file) {
+  if (typeof file !== "string" || path.basename(file) !== file || !file.endsWith(".json")) return null;
+  try {
+    const data = JSON.parse(fs.readFileSync(path.join(authDir, file), "utf8"));
+    const text = (value) => (typeof value === "string" && value.trim() ? value.trim() : null);
+    return { accountId: text(data.account_id), projectId: text(data.project_id), plan: text(data.plan_type) || text(data.organization_name) };
+  } catch {
+    return null;
+  }
+}
+
 // Providers with at least one account that is not disabled.
 function activeProviders(authDir) {
   return new Set(list(authDir).filter((account) => !account.disabled).map((account) => account.provider));
@@ -63,4 +76,4 @@ function login(provider, { binary, configPath }) {
   });
 }
 
-module.exports = { PROVIDERS, providerKey, list, activeProviders, login };
+module.exports = { PROVIDERS, providerKey, list, details, activeProviders, login };

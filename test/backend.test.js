@@ -32,6 +32,23 @@ test("the backend listens on this machine only, with management switched off", (
   assert.equal(config.oauth["auth-dir"], BASE.authDir);
 });
 
+test("a management key switches the Management API on for this machine only", () => {
+  const config = YAML.parse(render({ ...BASE, managementKey: "k".repeat(64) }));
+  assert.equal(config.management["secret-key"], "k".repeat(64));
+  assert.equal(config.management["allow-remote"], false);
+  assert.equal(config.management["disable-control-panel"], true);
+});
+
+test("account details give the IDs a usage call needs and never a token", (t) => {
+  const dir = tempDir(t);
+  fs.writeFileSync(path.join(dir, "codex-a.json"), JSON.stringify({ type: "codex", account_id: "acct-1", plan_type: "pro", access_token: "tok-a", refresh_token: "tok-b" }));
+  fs.writeFileSync(path.join(dir, "antigravity-b.json"), JSON.stringify({ type: "antigravity", project_id: "proj-1", access_token: "tok-c" }));
+  assert.deepEqual(accounts.details(dir, "codex-a.json"), { accountId: "acct-1", projectId: null, plan: "pro" });
+  assert.deepEqual(accounts.details(dir, "antigravity-b.json"), { accountId: null, projectId: "proj-1", plan: null });
+  assert.equal(accounts.details(dir, "..\\codex-a.json"), null);
+  assert.equal(accounts.details(dir, "missing.json"), null);
+});
+
 test("the backend never blacks out a credential on its own", () => {
   const config = YAML.parse(render(BASE));
   assert.equal(config.routing.cooldown["disable-cooling"], true);

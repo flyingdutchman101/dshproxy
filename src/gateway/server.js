@@ -74,7 +74,9 @@ function decodedText(buffer, encoding) {
 // models to try in order. `describe(model)` returns { efforts, upstream } for
 // a model the catalog knows, or {} otherwise. `sessions` keeps a conversation
 // on the rung that served it.
-function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}), maxBodyBytes = MAX_BODY_BYTES }) {
+// `control(req, res)` handles the app's control calls and returns true when it
+// took the request.
+function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}), control = null, maxBodyBytes = MAX_BODY_BYTES }) {
   const forward = (req, headers, body, track) => new Promise((resolvePromise, reject) => {
     const out = http.request({
       host: upstream.host,
@@ -215,6 +217,10 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
     res.on("error", () => {});
     if (req.method === "GET" && req.url === STATUS_PATH) {
       sendJson(res, 200, status());
+      return;
+    }
+    if (control && req.url.startsWith("/dshgate/control/")) {
+      control(req, res).catch((error) => sendJson(res, 500, { error: error.message }));
       return;
     }
     const chunks = [];

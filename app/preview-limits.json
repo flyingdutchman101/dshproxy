@@ -1,0 +1,90 @@
+﻿{
+    "fetchedAt":  "2026-11-16T00:00:00.000Z",
+    "accounts":  [
+                     {
+                         "file":  "claude-sample.json",
+                         "provider":  "claude",
+                         "label":  "Claude",
+                         "account":  "you@example.com",
+                         "plan":  "Max",
+                         "disabled":  false,
+                         "supported":  true,
+                         "error":  null,
+                         "windows":  [
+                                         {
+                                             "title":  "5-hour",
+                                             "kind":  "short",
+                                             "usedPercent":  23,
+                                             "leftPercent":  77,
+                                             "resetsAt":  "2026-11-16T02:48:28Z"
+                                         },
+                                         {
+                                             "title":  "Weekly",
+                                             "kind":  "weekly",
+                                             "usedPercent":  81,
+                                             "leftPercent":  19,
+                                             "resetsAt":  "2026-11-20T04:18:28Z"
+                                         },
+                                         {
+                                             "title":  "Weekly (Opus)",
+                                             "kind":  "weekly",
+                                             "usedPercent":  94,
+                                             "leftPercent":  6,
+                                             "resetsAt":  "2026-11-20T04:18:28Z"
+                                         }
+                                     ]
+                     },
+                     {
+                         "file":  "codex-sample.json",
+                         "provider":  "codex",
+                         "label":  "ChatGPT (Codex)",
+                         "account":  "you@example.com",
+                         "plan":  "pro",
+                         "disabled":  false,
+                         "supported":  true,
+                         "error":  null,
+                         "windows":  [
+                                         {
+                                             "title":  "5-hour",
+                                             "kind":  "short",
+                                             "usedPercent":  5,
+                                             "leftPercent":  95,
+                                             "resetsAt":  "2026-11-16T01:30:28Z"
+                                         },
+                                         {
+                                             "title":  "Monthly",
+                                             "kind":  "monthly",
+                                             "usedPercent":  42,
+                                             "leftPercent":  58,
+                                             "resetsAt":  "2026-12-01T00:18:28Z"
+                                         }
+                                     ]
+                     },
+                     {
+                         "file":  "antigravity-sample.json",
+                         "provider":  "antigravity",
+                         "label":  "Gemini (Antigravity)",
+                         "account":  "you@gmail.com",
+                         "plan":  null,
+                         "disabled":  false,
+                         "supported":  true,
+                         "error":  "Gemini refused the account (HTTP 401). Sign in again.",
+                         "windows":  [
+
+                                     ]
+                     },
+                     {
+                         "file":  "kimi-sample.json",
+                         "provider":  "kimi",
+                         "label":  "Kimi",
+                         "account":  "Kimi User",
+                         "plan":  null,
+                         "disabled":  true,
+                         "supported":  false,
+                         "error":  null,
+                         "windows":  [
+
+                                     ]
+                     }
+                 ]
+}

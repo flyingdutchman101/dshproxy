@@ -5,12 +5,14 @@ const YAML = require("yaml");
 const { API_PROVIDERS, providerRegion, providerModels } = require("../catalog");
 
 // `providers` is { [providerKey]: { region, apiKey } } with readable keys only.
-function render({ host, port, authDir, requestRetry = 3, providers = {} }) {
+// `managementKey` switches the Management API on for loopback callers that
+// send it; the backend replaces it with a hash when it starts. Without one the
+// Management API is off.
+function render({ host, port, authDir, requestRetry = 3, providers = {}, managementKey = "" }) {
   const config = {
     "config-version": 8,
     server: { host, port },
-    // An empty secret key switches the Management API off altogether.
-    management: { "allow-remote": false, "secret-key": "", "disable-control-panel": true },
+    management: { "allow-remote": false, "secret-key": managementKey, "disable-control-panel": true },
     routing: {
       strategy: "round-robin",
       "session-affinity": true,

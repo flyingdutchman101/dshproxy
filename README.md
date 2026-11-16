@@ -18,7 +18,7 @@ It is a standalone project. It shares no code or git history with DroidProxy or 
 
 `dshgate.exe` is a window and tray icon that runs the gateway and controls it:
 
-- **Accounts**: sign in to ChatGPT, Claude, Gemini or Kimi.
+- **Accounts**: one card per subscription with its plan and, for each limit window (5-hour, daily, weekly, monthly), a bar of what is left and when it resets. Bars turn amber below 30% and red below 10%, and a tray notification warns once when a limit drops to 10%. Pause, resume or sign out of an account (signing out asks first). **+ Add account** walks through sign-in: pick the service, the provider's page opens in your browser, and the window confirms which account was added. Kimi shows a short code to type instead.
 - **API keys**: add, replace or remove keys.
 - **Lanes**: each ladder, with ✓ can serve, ✗ no account or key, ⏸ sitting out.
 - **DeepSeek Harness**: preview, apply or remove the routes.
@@ -138,11 +138,20 @@ Everything is under `~/.dshgate` (override with `DSHGATE_HOME`):
 
 If `settings.json` exists but cannot be read, every command stops with an error and leaves the file as it is. Fix the file, or move it away to start from the defaults.
 
+## Sign-in and limits
+
+Sign-in and limits run through CLIProxyAPI's Management API, which the gateway switches on with a new random key every start (the backend keeps only a hash of it). The gateway never reads or sends a token itself:
+
+- **Sign-in**: the backend creates the provider's sign-in link. The provider sends the browser back to a fixed address on this machine (port 54545 for Claude, 1455 for ChatGPT, 51121 for Gemini); dshgate listens there on loopback only while a sign-in is open, passes the address to the backend, and shows a confirmation page. The backend exchanges the code and saves the account. A sign-in left open expires after 5 minutes.
+- **Limits**: the backend calls each provider's usage endpoint with the account's own token. ChatGPT, Claude and Gemini report limits; Kimi does not. Limits are read at most once a minute.
+
+The Windows app reaches these through a control API on the gateway (`/dshgate/control/`). Each call needs the token in `~/.dshgate/control.token`, which is new every start, and calls that come from a web page are refused.
+
 ## Security
 
 - The gateway and the backend listen on `127.0.0.1` only. A `host` setting that names any other address is ignored.
 - There is no client authentication. Any program on this machine can use your accounts through the gateway.
-- CLIProxyAPI's Management API and plugins are switched off.
+- CLIProxyAPI's plugins are switched off. Its Management API accepts only callers on this machine that hold the key generated at start, and its web control panel is off.
 - A request larger than 256 MB is refused with HTTP 413.
 
 ## Known limits
@@ -170,6 +179,6 @@ Compared with VeryCuteDroidProxy, dshgate leaves these out:
 - Factory Droid model sync, Factory modes and the Workstream manager
 - A window, tray icon or installer
 - Auto routing by task type, and routing by remaining quota or weekly pace
-- Quota and usage display
+- Routing that uses the remaining limits (limits are shown, not yet used to pick a model)
 - Voice and video generation
 - The Claude `Anthropic-Beta` rewrite and the removal of old thinking blocks

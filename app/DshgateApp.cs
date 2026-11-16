@@ -1,16 +1,20 @@
 // dshgate for Windows: a window and tray icon that run and control the gateway.
 //
-// The app owns no logic of its own. It starts `node bin/dshgate.js start` as a
-// hidden child process, shows `dshgate status --json`, and runs the other CLI
-// commands when a button is pressed. Built with the C# compiler that ships with
-// Windows (see app/build.ps1).
+// The app owns no gateway logic. It starts `node bin/dshgate.js start` as a
+// hidden child process, reads `dshgate status --json`, and talks to the
+// running gateway's local control API for sign-in, accounts and limits. Built
+// with the C# compiler that ships with Windows (see app/build.ps1), so the
+// code stays within C# 5.
 
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.IO;
+using System.Net;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -24,7 +28,8 @@ namespace Dshgate
         private static void Main(string[] args)
         {
             bool created;
-            using (var mutex = new Mutex(true, "dshgate-windows-app", out created))
+            var previewing = Array.IndexOf(args, "--preview-limits") >= 0;
+            using (var mutex = new Mutex(true, previewing ? "dshgate-windows-app-preview" : "dshgate-windows-app", out created))
             {
                 if (!created)
                 {
@@ -33,8 +38,117 @@ namespace Dshgate
                 }
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                Application.Run(new MainForm(Array.IndexOf(args, "--hidden") >= 0));
+                // --preview-limits <file.json>: shows the Accounts tab with
+                // sample limits and starts nothing. Used to check the layout.
+                var preview = Array.IndexOf(args, "--preview-limits");
+                if (preview >= 0 && preview + 1 < args.Length)
+                {
+                    Application.Run(new MainForm(false, File.ReadAllText(args[preview + 1])));
+                    return;
+                }
+                Application.Run(new MainForm(Array.IndexOf(args, "--hidden") >= 0, null));
             }
+        }
+    }
+
+    internal static class Theme
+    {
+        public static readonly Color Ok = Color.FromArgb(22, 128, 61);
+        public static readonly Color Warn = Color.FromArgb(180, 110, 0);
+        public static readonly Color Bad = Color.FromArgb(185, 28, 28);
+        public static readonly Color Muted = Color.FromArgb(100, 100, 100);
+        public static readonly Color Accent = Color.FromArgb(37, 99, 235);
+        public static readonly Color Card = Color.White;
+        public static readonly Color Page = Color.FromArgb(244, 245, 247);
+        public static readonly Color Track = Color.FromArgb(229, 231, 235);
+
+        public static Color ForLeft(double left)
+        {
+            if (left <= 10) return Bad;
+            if (left <= 30) return Warn;
+            return Ok;
+        }
+    }
+
+    internal static class Json
+    {
+        public static readonly JavaScriptSerializer Serializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+
+        public static string Str(object value)
+        {
+            return value == null ? "" : Convert.ToString(value, CultureInfo.InvariantCulture);
+        }
+
+        public static Dictionary<string, object> Obj(object value)
+        {
+            return value as Dictionary<string, object> ?? new Dictionary<string, object>();
+        }
+
+        // DeserializeObject returns lists as object[]; Deserialize<T> returns
+        // ArrayList. Both are accepted.
+        public static ArrayList Arr(object value)
+        {
+            var list = value as ArrayList;
+            if (list != null) return list;
+            var array = value as object[];
+            return array != null ? new ArrayList(array) : new ArrayList();
+        }
+
+        public static object Get(Dictionary<string, object> map, string key)
+        {
+            object value;
+            return map != null && map.TryGetValue(key, out value) ? value : null;
+        }
+
+        public static bool Bool(Dictionary<string, object> map, string key)
+        {
+            var value = Get(map, key);
+            return value is bool && (bool)value;
+        }
+
+        public static double Num(Dictionary<string, object> map, string key, double fallback)
+        {
+            var value = Get(map, key);
+            if (value == null) return fallback;
+            try { return Convert.ToDouble(value, CultureInfo.InvariantCulture); }
+            catch (FormatException) { return fallback; }
+            catch (InvalidCastException) { return fallback; }
+        }
+    }
+
+    internal static class Format
+    {
+        public static DateTime? ParseTime(string iso)
+        {
+            if (string.IsNullOrEmpty(iso)) return null;
+            DateTime parsed;
+            if (DateTime.TryParse(iso, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out parsed)) return parsed.ToLocalTime();
+            return null;
+        }
+
+        public static string Until(DateTime when)
+        {
+            var span = when - DateTime.Now;
+            if (span.TotalSeconds <= 0) return "now";
+            if (span.TotalMinutes < 60) return string.Format("{0} min", Math.Max(1, (int)Math.Ceiling(span.TotalMinutes)));
+            if (span.TotalHours < 24) return string.Format("{0} h {1} min", (int)span.TotalHours, span.Minutes);
+            return string.Format("{0} d {1} h", (int)span.TotalDays, span.Hours);
+        }
+
+        public static string Reset(string iso)
+        {
+            var when = ParseTime(iso);
+            if (!when.HasValue) return "reset time not reported";
+            var day = when.Value.Date == DateTime.Today ? "today" : when.Value.Date == DateTime.Today.AddDays(1) ? "tomorrow" : when.Value.ToString("ddd d MMM", CultureInfo.CurrentCulture);
+            return string.Format("resets in {0} ({1} {2})", Until(when.Value), day, when.Value.ToString("HH:mm", CultureInfo.CurrentCulture));
+        }
+
+        public static string Ago(DateTime when)
+        {
+            var span = DateTime.Now - when;
+            if (span.TotalSeconds < 45) return "just now";
+            if (span.TotalMinutes < 60) return string.Format("{0} min ago", (int)Math.Round(span.TotalMinutes));
+            return when.ToString("HH:mm", CultureInfo.CurrentCulture);
         }
     }
 
@@ -83,25 +197,21 @@ namespace Dshgate
             return "\"" + arg.Replace("\"", "\\\"") + "\"";
         }
 
-        private ProcessStartInfo Info(string[] args, bool hidden)
+        private ProcessStartInfo Info(string[] args)
         {
             var parts = new List<string> { Quote(Path.Combine(Root, "bin", "dshgate.js")) };
             foreach (var arg in args) parts.Add(Quote(arg));
-            var info = new ProcessStartInfo(Node, string.Join(" ", parts.ToArray()))
+            return new ProcessStartInfo(Node, string.Join(" ", parts.ToArray()))
             {
                 WorkingDirectory = Root,
                 UseShellExecute = false,
-                CreateNoWindow = hidden
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
             };
-            if (hidden)
-            {
-                info.RedirectStandardOutput = true;
-                info.RedirectStandardError = true;
-                info.RedirectStandardInput = true;
-                info.StandardOutputEncoding = Encoding.UTF8;
-                info.StandardErrorEncoding = Encoding.UTF8;
-            }
-            return info;
         }
 
         public sealed class Result
@@ -115,7 +225,7 @@ namespace Dshgate
         // which is how API keys are passed: never on the command line.
         public Result Run(string[] args, string input, int timeoutMs)
         {
-            using (var process = Process.Start(Info(args, true)))
+            using (var process = Process.Start(Info(args)))
             {
                 var output = process.StandardOutput.ReadToEndAsync();
                 var errors = process.StandardError.ReadToEndAsync();
@@ -130,44 +240,419 @@ namespace Dshgate
             }
         }
 
-        // Starts a long-running hidden process (the gateway).
+        // Starts the long-running gateway, hidden.
         public Process StartHidden(string[] args)
         {
-            var info = Info(args, true);
+            var info = Info(args);
             info.RedirectStandardInput = false;
             return Process.Start(info);
         }
+    }
 
-        // Opens a console window for a command that needs the user, such as a
-        // browser sign-in.
-        public Process StartInConsole(string[] args)
+    internal sealed class ControlException : Exception
+    {
+        public ControlException(string message) : base(message) { }
+    }
+
+    // Calls the running gateway's local control API. The token is read from
+    // the data folder on every call, because the gateway makes a new one each
+    // time it starts.
+    internal sealed class GatewayControl
+    {
+        private readonly Func<string> origin;
+
+        public GatewayControl(Func<string> origin)
         {
-            return Process.Start(Info(args, false));
+            this.origin = origin;
+        }
+
+        public static string Home()
+        {
+            var home = Environment.GetEnvironmentVariable("DSHGATE_HOME");
+            return string.IsNullOrEmpty(home) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dshgate") : home;
+        }
+
+        private static string Token()
+        {
+            var file = Path.Combine(Home(), "control.token");
+            if (!File.Exists(file)) throw new ControlException("The gateway is not running. Press Start first.");
+            return File.ReadAllText(file).Trim();
+        }
+
+        public Dictionary<string, object> Call(string method, string path, object body, int timeoutMs)
+        {
+            var request = (HttpWebRequest)WebRequest.Create(origin() + "/dshgate/control/" + path);
+            request.Method = method;
+            request.Timeout = timeoutMs;
+            request.ReadWriteTimeout = timeoutMs;
+            request.Headers["x-dshgate-token"] = Token();
+            request.Accept = "application/json";
+            if (body != null)
+            {
+                var bytes = Encoding.UTF8.GetBytes(Json.Serializer.Serialize(body));
+                request.ContentType = "application/json";
+                request.ContentLength = bytes.Length;
+                using (var stream = request.GetRequestStream()) stream.Write(bytes, 0, bytes.Length);
+            }
+            try
+            {
+                using (var response = (HttpWebResponse)request.GetResponse())
+                using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                {
+                    return Json.Obj(Json.Serializer.DeserializeObject(reader.ReadToEnd()));
+                }
+            }
+            catch (WebException error)
+            {
+                var response = error.Response as HttpWebResponse;
+                if (response == null) throw new ControlException("The gateway did not answer. Is it running?");
+                using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                {
+                    var text = reader.ReadToEnd();
+                    try { throw new ControlException(Json.Str(Json.Get(Json.Obj(Json.Serializer.DeserializeObject(text)), "error"))); }
+                    catch (ArgumentException) { throw new ControlException(text.Length > 0 ? text : error.Message); }
+                }
+            }
+        }
+    }
+
+    // A horizontal bar showing how much of a limit is left.
+    internal sealed class Meter : System.Windows.Forms.Control
+    {
+        private double left;
+
+        public Meter()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            Height = 12;
+            Margin = new Padding(8, 7, 8, 7);
+        }
+
+        public double LeftPercent
+        {
+            get { return left; }
+            set { left = Math.Max(0, Math.Min(100, value)); Invalidate(); }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.Clear(Parent != null ? Parent.BackColor : Theme.Card);
+            var bounds = new RectangleF(0, 0, Width - 1, Height - 1);
+            using (var track = new SolidBrush(Theme.Track)) FillRounded(e.Graphics, track, bounds);
+            var width = (float)((Width - 1) * left / 100.0);
+            if (width >= 2)
+            {
+                using (var fill = new SolidBrush(Theme.ForLeft(left))) FillRounded(e.Graphics, fill, new RectangleF(0, 0, width, Height - 1));
+            }
+        }
+
+        private static void FillRounded(Graphics g, Brush brush, RectangleF r)
+        {
+            var radius = Math.Min(r.Height, r.Width);
+            using (var path = new GraphicsPath())
+            {
+                path.AddArc(r.X, r.Y, radius, r.Height, 90, 180);
+                path.AddArc(r.Right - radius, r.Y, radius, r.Height, 270, 180);
+                path.CloseFigure();
+                g.FillPath(brush, path);
+            }
+        }
+    }
+
+    // Guides the user through one sign-in and confirms the result.
+    internal sealed class SignInDialog : Form
+    {
+        private readonly GatewayControl control;
+        private readonly ArrayList providers;
+        private readonly Panel body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20) };
+        private readonly FlowLayoutPanel buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 48, Padding = new Padding(12, 8, 12, 8) };
+        private readonly System.Windows.Forms.Timer poll = new System.Windows.Forms.Timer { Interval = 1500 };
+        private string sessionId;
+        private string sessionLabel;
+        private bool busy;
+
+        public string SignedInAs;
+
+        // The services the gateway can sign in to, used when the status has not
+        // been read yet.
+        private static ArrayList DefaultProviders()
+        {
+            var list = new ArrayList();
+            foreach (var pair in new[] { new[] { "claude", "Claude" }, new[] { "codex", "ChatGPT (Codex)" }, new[] { "antigravity", "Gemini (Antigravity)" }, new[] { "kimi", "Kimi" } })
+            {
+                list.Add(new Dictionary<string, object> { { "key", pair[0] }, { "label", pair[1] } });
+            }
+            return list;
+        }
+
+        public SignInDialog(GatewayControl control, ArrayList providers)
+        {
+            this.control = control;
+            this.providers = providers != null && providers.Count > 0 ? providers : DefaultProviders();
+            Text = "Add an account";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MinimizeBox = false;
+            MaximizeBox = false;
+            ShowInTaskbar = false;
+            ClientSize = new Size(520, 470);
+            Font = new Font("Segoe UI", 9.5f);
+            BackColor = Theme.Card;
+            Controls.Add(body);
+            Controls.Add(buttons);
+            poll.Tick += (s, e) => Poll();
+            FormClosing += (s, e) =>
+            {
+                poll.Stop();
+                if (sessionId != null) CancelSession();
+            };
+            ShowChoices();
+        }
+
+        private void Reset(params Button[] actions)
+        {
+            body.Controls.Clear();
+            buttons.Controls.Clear();
+            foreach (var action in actions) buttons.Controls.Add(action);
+        }
+
+        private static Label Heading(string text)
+        {
+            return new Label { Text = text, Dock = DockStyle.Top, Height = 34, Font = new Font("Segoe UI", 13f, FontStyle.Bold) };
+        }
+
+        private static Label Text2(string text, Color color)
+        {
+            return new Label { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 44, ForeColor = color };
+        }
+
+        private Button Close2(string text)
+        {
+            var button = new Button { Text = text, Width = 96, Height = 30 };
+            button.Click += (s, e) => Close();
+            return button;
+        }
+
+        private static readonly Dictionary<string, string> Descriptions = new Dictionary<string, string>
+        {
+            { "claude", "Claude Pro or Max. Opens claude.ai." },
+            { "codex", "ChatGPT Plus or Pro. Opens chatgpt.com." },
+            { "antigravity", "Google AI Pro or Ultra. Opens accounts.google.com." },
+            { "kimi", "Kimi Code. You type a short code on kimi.com." }
+        };
+
+        private void ShowChoices()
+        {
+            sessionId = null;
+            Reset(Close2("Cancel"));
+            var list = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(0, 6, 0, 0) };
+            foreach (var item in providers)
+            {
+                var provider = Json.Obj(item);
+                var key = Json.Str(Json.Get(provider, "key"));
+                var label = Json.Str(Json.Get(provider, "label"));
+                string description;
+                Descriptions.TryGetValue(key, out description);
+                var choice = new Button
+                {
+                    Text = label + Environment.NewLine + (description ?? ""),
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Width = 470,
+                    Height = 58,
+                    Margin = new Padding(0, 0, 0, 8),
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Theme.Page,
+                    Padding = new Padding(10, 0, 0, 0)
+                };
+                choice.FlatAppearance.BorderColor = Theme.Track;
+                choice.Click += (s, e) => Begin(key, label);
+                list.Controls.Add(choice);
+            }
+            body.Controls.Add(list);
+            body.Controls.Add(Text2("Pick the subscription to sign in to. Your browser opens to the provider's own sign-in page; dshgate never sees your password.", Theme.Muted));
+            body.Controls.Add(Heading("Add an account"));
+        }
+
+        private void Begin(string key, string label)
+        {
+            if (busy) return;
+            busy = true;
+            sessionLabel = label;
+            Reset(Close2("Cancel"));
+            body.Controls.Add(Text2("Asking the provider for a sign-in link...", Theme.Muted));
+            body.Controls.Add(Heading("Signing in to " + label));
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                Dictionary<string, object> started = null;
+                string failure = null;
+                try { started = control.Call("POST", "login/start", new Dictionary<string, object> { { "provider", key } }, 30000); }
+                catch (ControlException error) { failure = error.Message; }
+                catch (WebException error) { failure = error.Message; }
+                BeginInvoke(new Action(() =>
+                {
+                    busy = false;
+                    if (failure != null) { ShowFailure(failure, key, label); return; }
+                    ShowWaiting(started, key, label);
+                }));
+            });
+        }
+
+        private void ShowWaiting(Dictionary<string, object> started, string key, string label)
+        {
+            sessionId = Json.Str(Json.Get(started, "id"));
+            var url = Json.Str(Json.Get(started, "url"));
+            var device = Json.Str(Json.Get(started, "flow")) == "device";
+            var code = Json.Str(Json.Get(started, "userCode"));
+
+            var cancel = new Button { Text = "Cancel", Width = 96, Height = 30 };
+            cancel.Click += (s, e) => { CancelSession(); ShowChoices(); };
+            var reopen = new Button { Text = "Open page again", Width = 130, Height = 30 };
+            reopen.Click += (s, e) => OpenBrowser(url);
+            var copy = new Button { Text = "Copy link", Width = 96, Height = 30 };
+            copy.Click += (s, e) => Clipboard.SetText(url);
+            Reset(cancel, reopen, copy);
+
+            var progress = new ProgressBar { Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 30, Dock = DockStyle.Top, Height = 8 };
+            var waiting = Text2("Waiting for you to finish in your browser. This window updates by itself; the sign-in expires after 5 minutes.", Theme.Muted);
+            body.Controls.Add(waiting);
+            body.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 14 });
+            body.Controls.Add(progress);
+            body.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 14 });
+            if (device && code.Length > 0)
+            {
+                var codeRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 56, FlowDirection = FlowDirection.LeftToRight };
+                var codeLabel = new Label { Text = code, AutoSize = true, Font = new Font("Consolas", 22f, FontStyle.Bold), ForeColor = Theme.Accent, Margin = new Padding(0, 4, 16, 0) };
+                var copyCode = new Button { Text = "Copy code", Width = 96, Height = 30, Margin = new Padding(0, 12, 0, 0) };
+                copyCode.Click += (s, e) => Clipboard.SetText(code);
+                codeRow.Controls.Add(codeLabel);
+                codeRow.Controls.Add(copyCode);
+                body.Controls.Add(codeRow);
+                body.Controls.Add(Text2("Enter this code on the " + label + " page that opened:", Color.Black));
+            }
+            else
+            {
+                body.Controls.Add(Text2("Sign in on the " + label + " page that opened and approve access. When it says you are signed in, come back here.", Color.Black));
+            }
+            body.Controls.Add(Heading("Signing in to " + label));
+            OpenBrowser(url);
+            poll.Start();
+        }
+
+        private static void OpenBrowser(string url)
+        {
+            // Only web addresses are opened; anything else is ignored.
+            Uri parsed;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out parsed) || parsed.Scheme != Uri.UriSchemeHttps) return;
+            try { Process.Start(new ProcessStartInfo(parsed.AbsoluteUri) { UseShellExecute = true }); }
+            catch (System.ComponentModel.Win32Exception) { }
+        }
+
+        private void Poll()
+        {
+            if (sessionId == null || busy) return;
+            busy = true;
+            var id = sessionId;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                Dictionary<string, object> status = null;
+                string failure = null;
+                try { status = control.Call("GET", "login/status?id=" + Uri.EscapeDataString(id), null, 15000); }
+                catch (ControlException error) { failure = error.Message; }
+                catch (WebException error) { failure = error.Message; }
+                BeginInvoke(new Action(() =>
+                {
+                    busy = false;
+                    if (id != sessionId) return;
+                    if (failure != null) return;
+                    var state = Json.Str(Json.Get(status, "status"));
+                    if (state == "ok")
+                    {
+                        poll.Stop();
+                        sessionId = null;
+                        ShowSuccess(Json.Str(Json.Get(status, "account")));
+                    }
+                    else if (state == "error")
+                    {
+                        poll.Stop();
+                        sessionId = null;
+                        ShowFailure(Json.Str(Json.Get(status, "error")), null, sessionLabel);
+                    }
+                }));
+            });
+        }
+
+        private void CancelSession()
+        {
+            var id = sessionId;
+            sessionId = null;
+            poll.Stop();
+            if (id == null) return;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try { control.Call("POST", "login/cancel", new Dictionary<string, object> { { "id", id } }, 10000); }
+                catch (ControlException) { }
+                catch (WebException) { }
+            });
+        }
+
+        private void ShowSuccess(string account)
+        {
+            SignedInAs = account.Length > 0 ? account : sessionLabel;
+            var done = new Button { Text = "Done", Width = 96, Height = 30, DialogResult = DialogResult.OK };
+            var another = new Button { Text = "Add another", Width = 110, Height = 30 };
+            another.Click += (s, e) => ShowChoices();
+            Reset(done, another);
+            AcceptButton = done;
+            body.Controls.Add(Text2("dshgate can now use this subscription. Its limits appear on the Accounts tab within a minute.", Theme.Muted));
+            body.Controls.Add(new Label { Text = account.Length > 0 ? account : "", Dock = DockStyle.Top, Height = 28, Font = new Font("Segoe UI", 11f) });
+            body.Controls.Add(new Label { Text = "\u2713  Signed in to " + sessionLabel, Dock = DockStyle.Top, Height = 40, Font = new Font("Segoe UI", 14f, FontStyle.Bold), ForeColor = Theme.Ok });
+        }
+
+        private void ShowFailure(string message, string key, string label)
+        {
+            var back = new Button { Text = "Back", Width = 96, Height = 30 };
+            back.Click += (s, e) => ShowChoices();
+            Reset(Close2("Close"), back);
+            if (key != null)
+            {
+                var retry = new Button { Text = "Try again", Width = 96, Height = 30 };
+                retry.Click += (s, e) => Begin(key, label);
+                buttons.Controls.Add(retry);
+            }
+            body.Controls.Add(Text2(message, Color.Black));
+            body.Controls.Add(new Label { Text = "Sign-in to " + label + " did not finish", Dock = DockStyle.Top, Height = 40, Font = new Font("Segoe UI", 13f, FontStyle.Bold), ForeColor = Theme.Bad });
         }
     }
 
     internal sealed class MainForm : Form
     {
-        private static readonly Color Ok = Color.FromArgb(22, 128, 61);
-        private static readonly Color Bad = Color.FromArgb(185, 28, 28);
-        private static readonly Color Muted = Color.FromArgb(100, 100, 100);
-
         private readonly Cli cli;
+        private readonly GatewayControl control;
         private readonly bool startHidden;
-        private readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         private readonly NotifyIcon tray = new NotifyIcon();
         private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
+        private readonly System.Windows.Forms.Timer limitsTimer = new System.Windows.Forms.Timer();
         private Process gateway;
         private bool quitting;
         private bool refreshing;
+        private bool loadingLimits;
         private bool balloonShown;
+        private bool running;
+        private bool shownOnce;
+        private string lastOrigin = "http://127.0.0.1:8417";
+        private ArrayList loginProviders = new ArrayList();
+        private ArrayList providers = new ArrayList();
+        private DateTime? limitsAt;
+        private readonly HashSet<string> warned = new HashSet<string>();
 
         private readonly Label stateLabel = new Label { AutoSize = true, Font = new Font("Segoe UI", 12f, FontStyle.Bold) };
-        private readonly Label detailLabel = new Label { AutoSize = true, ForeColor = Muted };
+        private readonly Label detailLabel = new Label { AutoSize = true, ForeColor = Theme.Muted };
+        private readonly Label lowestLabel = new Label { AutoSize = true };
         private readonly Button startButton = new Button { Text = "Start", Width = 90 };
         private readonly Button stopButton = new Button { Text = "Stop", Width = 90 };
-        private readonly ListView accountsList = new ListView();
-        private readonly ComboBox loginCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
+        private readonly Panel accountsPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.Page, Padding = new Padding(4) };
+        private readonly Label limitsNote = new Label { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
         private readonly ListView keysList = new ListView();
         private readonly ComboBox keyProviderCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
         private readonly ComboBox keyRegionCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
@@ -175,13 +660,15 @@ namespace Dshgate
         private readonly ListView profilesList = new ListView();
         private readonly TextBox logBox = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, WordWrap = false, Dock = DockStyle.Fill, Font = new Font("Consolas", 9f), BackColor = Color.White };
         private readonly CheckBox autostartBox = new CheckBox { Text = "Start with Windows", AutoSize = true };
-        private readonly Label footer = new Label { AutoSize = true, ForeColor = Muted };
+        private readonly Label footer = new Label { AutoSize = true, ForeColor = Theme.Muted };
+        private readonly TabControl tabs = new TabControl { Dock = DockStyle.Fill };
 
-        private ArrayList providers = new ArrayList();
+        private readonly string previewLimits;
 
-        public MainForm(bool hidden)
+        public MainForm(bool hidden, string previewLimits)
         {
             startHidden = hidden;
+            this.previewLimits = previewLimits;
             var root = Cli.FindRoot();
             var node = Cli.FindNode();
             if (root == null || node == null)
@@ -190,11 +677,12 @@ namespace Dshgate
                 Environment.Exit(1);
             }
             cli = new Cli(root, node);
+            control = new GatewayControl(() => lastOrigin);
 
             Text = "dshgate";
-            Width = 980;
-            Height = 720;
-            MinimumSize = new Size(820, 560);
+            Width = 1000;
+            Height = 760;
+            MinimumSize = new Size(860, 600);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9f);
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (ArgumentException) { }
@@ -209,8 +697,11 @@ namespace Dshgate
 
             timer.Interval = 3000;
             timer.Tick += (s, e) => RefreshStatus();
+            limitsTimer.Interval = 60000;
+            limitsTimer.Tick += (s, e) => LoadLimits(false);
             Shown += (s, e) => OnShownOnce();
             FormClosing += OnClosing;
+            accountsPanel.Resize += (s, e) => FitCards();
         }
 
         protected override void SetVisibleCore(bool value)
@@ -225,41 +716,45 @@ namespace Dshgate
             base.SetVisibleCore(value);
         }
 
-        private bool shownOnce;
         private void OnShownOnce()
         {
             if (shownOnce) return;
             shownOnce = true;
+            if (previewLimits != null)
+            {
+                Text = "dshgate (preview)";
+                tray.Visible = false;
+                stateLabel.Text = "Preview";
+                stateLabel.ForeColor = Theme.Accent;
+                detailLabel.Text = "Sample limits. Nothing is running.";
+                limitsAt = DateTime.Now;
+                ShowLimits(Json.Arr(Json.Get(Json.Obj(Json.Serializer.DeserializeObject(previewLimits)), "accounts")));
+                return;
+            }
             BeginInvoke(new Action(() =>
             {
                 StartGateway();
                 RefreshStatus();
                 timer.Start();
+                limitsTimer.Start();
             }));
         }
 
         // ---------- layout ----------
 
-        private static ListView NewList(params string[] columns)
-        {
-            var list = new ListView { View = View.Details, FullRowSelect = true, HideSelection = false, Dock = DockStyle.Fill, HeaderStyle = ColumnHeaderStyle.Nonclickable };
-            foreach (var column in columns) list.Columns.Add(column, 150);
-            return list;
-        }
-
-        private static FlowLayoutPanel Row(params Control[] controls)
+        private static FlowLayoutPanel Row(params System.Windows.Forms.Control[] controls)
         {
             var row = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, Padding = new Padding(0, 6, 0, 0) };
-            foreach (var control in controls) row.Controls.Add(control);
+            foreach (var item in controls) row.Controls.Add(item);
             return row;
         }
 
         private static Label Note(string text)
         {
-            return new Label { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 38, ForeColor = Muted };
+            return new Label { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 38, ForeColor = Theme.Muted };
         }
 
-        private TabPage Page(string title, Control body, Control top, Control bottom)
+        private static TabPage Page(string title, System.Windows.Forms.Control body, System.Windows.Forms.Control top, System.Windows.Forms.Control bottom)
         {
             var page = new TabPage(title) { Padding = new Padding(10) };
             page.Controls.Add(body);
@@ -270,32 +765,29 @@ namespace Dshgate
 
         private void BuildLayout()
         {
-            var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = 72, ColumnCount = 2, Padding = new Padding(12, 8, 12, 8) };
+            var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = 86, ColumnCount = 2, Padding = new Padding(12, 8, 12, 8) };
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             var stateStack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Dock = DockStyle.Fill, WrapContents = false };
             stateStack.Controls.Add(stateLabel);
             stateStack.Controls.Add(detailLabel);
+            stateStack.Controls.Add(lowestLabel);
             var buttons = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Anchor = AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(0, 6, 0, 0) };
             buttons.Controls.Add(startButton);
             buttons.Controls.Add(stopButton);
             header.Controls.Add(stateStack, 0, 0);
             header.Controls.Add(buttons, 1, 0);
 
-            var tabs = new TabControl { Dock = DockStyle.Fill };
-
-            // Accounts
-            accountsList.View = View.Details;
-            foreach (var c in new[] { "Service", "Account", "State" }) accountsList.Columns.Add(c, c == "Account" ? 320 : 180);
-            accountsList.FullRowSelect = true;
-            accountsList.Dock = DockStyle.Fill;
-            var loginButton = new Button { Text = "Sign in", Width = 100 };
-            loginButton.Click += (s, e) => SignIn();
+            // Accounts and limits
+            var addAccount = new Button { Text = "+ Add account", AutoSize = true, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
+            addAccount.Click += (s, e) => AddAccount();
+            var refreshLimits = new Button { Text = "Refresh limits", AutoSize = true };
+            refreshLimits.Click += (s, e) => LoadLimits(true);
             var authFolder = new Button { Text = "Open credentials folder", AutoSize = true };
             authFolder.Click += (s, e) => OpenFolder("auth");
-            tabs.TabPages.Add(Page("Accounts", accountsList,
-                Note("Subscription accounts the gateway can use. Signing in opens your browser; the account appears here when you finish."),
-                Row(new Label { Text = "Sign in to:", AutoSize = true, Padding = new Padding(0, 6, 0, 0) }, loginCombo, loginButton, authFolder)));
+            tabs.TabPages.Add(Page("Accounts", accountsPanel,
+                Note("Subscription accounts and how much of each limit is left. Bars turn amber below 30% and red below 10%."),
+                Row(addAccount, refreshLimits, authFolder, limitsNote)));
 
             // API keys
             keysList.View = View.Details;
@@ -314,7 +806,7 @@ namespace Dshgate
             // Lanes
             lanesList.View = View.Details;
             lanesList.Columns.Add("Lane", 110);
-            lanesList.Columns.Add("Ladder (first to last)", 760);
+            lanesList.Columns.Add("Ladder (first to last)", 780);
             lanesList.FullRowSelect = true;
             lanesList.Dock = DockStyle.Fill;
             var editLanes = new Button { Text = "Edit lanes (settings.json)", AutoSize = true };
@@ -329,7 +821,7 @@ namespace Dshgate
             profilesList.FullRowSelect = true;
             profilesList.Dock = DockStyle.Fill;
             var preview = new Button { Text = "Preview changes", AutoSize = true };
-            preview.Click += (s, e) => RunAndShow(new[] { "dsh", "apply", "--dry-run" }, "Preview");
+            preview.Click += (s, e) => RunAndShow(new[] { "dsh", "apply", "--dry-run" }, "Preview", false);
             var apply = new Button { Text = "Apply to DeepSeek Harness", AutoSize = true };
             apply.Click += (s, e) => ApplyToHarness();
             var remove = new Button { Text = "Remove from DeepSeek Harness", AutoSize = true };
@@ -346,6 +838,8 @@ namespace Dshgate
             logPage.Controls.Add(Row(openLogFolder));
             tabs.TabPages.Add(logPage);
 
+            tabs.SelectedIndexChanged += (s, e) => { if (tabs.SelectedIndex == 0) LoadLimits(false); };
+
             var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 34, ColumnCount = 2, Padding = new Padding(12, 4, 12, 4) };
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -355,6 +849,7 @@ namespace Dshgate
             Controls.Add(tabs);
             Controls.Add(bottom);
             Controls.Add(header);
+            ShowAccountsMessage("Starting...", Theme.Muted);
         }
 
         private void BuildTray()
@@ -364,12 +859,15 @@ namespace Dshgate
             tray.Visible = true;
             var menu = new ContextMenuStrip();
             menu.Items.Add("Open dshgate", null, (s, e) => ShowWindow());
+            menu.Items.Add("Add account...", null, (s, e) => { ShowWindow(); AddAccount(); });
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Start gateway", null, (s, e) => StartGateway());
             menu.Items.Add("Stop gateway", null, (s, e) => StopGateway());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Quit", null, (s, e) => Quit());
             tray.ContextMenuStrip = menu;
             tray.DoubleClick += (s, e) => ShowWindow();
+            tray.BalloonTipClicked += (s, e) => { ShowWindow(); tabs.SelectedIndex = 0; };
         }
 
         private void ShowWindow()
@@ -381,7 +879,7 @@ namespace Dshgate
 
         private void OnClosing(object sender, FormClosingEventArgs e)
         {
-            if (quitting || e.CloseReason == CloseReason.WindowsShutDown) return;
+            if (quitting || previewLimits != null || e.CloseReason == CloseReason.WindowsShutDown) return;
             // Closing the window keeps the gateway running in the tray.
             e.Cancel = true;
             Hide();
@@ -396,6 +894,7 @@ namespace Dshgate
         {
             quitting = true;
             timer.Stop();
+            limitsTimer.Stop();
             StopGateway();
             tray.Visible = false;
             Application.Exit();
@@ -419,14 +918,12 @@ namespace Dshgate
         {
             try
             {
-                var request = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(lastOrigin + "/dshgate/status");
+                var request = (HttpWebRequest)WebRequest.Create(lastOrigin + "/dshgate/status");
                 request.Timeout = 1500;
-                using (var response = (System.Net.HttpWebResponse)request.GetResponse()) return (int)response.StatusCode == 200;
+                using (var response = (HttpWebResponse)request.GetResponse()) return (int)response.StatusCode == 200;
             }
-            catch (System.Net.WebException) { return false; }
+            catch (WebException) { return false; }
         }
-
-        private string lastOrigin = "http://127.0.0.1:8417";
 
         private void StartGateway()
         {
@@ -471,6 +968,7 @@ namespace Dshgate
                 AppendLog("Could not stop the gateway: " + error.Message);
             }
             gateway = null;
+            try { File.Delete(Path.Combine(GatewayControl.Home(), "control.token")); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
 
         // ---------- status ----------
@@ -489,142 +987,110 @@ namespace Dshgate
             });
         }
 
-        private static string Str(object value)
-        {
-            return value == null ? "" : Convert.ToString(value);
-        }
-
-        private static Dictionary<string, object> Obj(object value)
-        {
-            return value as Dictionary<string, object> ?? new Dictionary<string, object>();
-        }
-
-        private static ArrayList Arr(object value)
-        {
-            return value as ArrayList ?? new ArrayList();
-        }
-
         private void ShowStatus(Cli.Result result)
         {
             if (result.Code != 0)
             {
                 stateLabel.Text = "Status unavailable";
-                stateLabel.ForeColor = Bad;
+                stateLabel.ForeColor = Theme.Bad;
                 detailLabel.Text = result.Err.Trim();
                 return;
             }
             Dictionary<string, object> status;
-            try { status = json.Deserialize<Dictionary<string, object>>(result.Out); }
+            try { status = Json.Obj(Json.Serializer.DeserializeObject(result.Out)); }
             catch (ArgumentException) { return; }
 
-            var running = status.ContainsKey("running") && (bool)status["running"];
-            lastOrigin = Str(status["origin"]);
-            var backend = Obj(status["backend"]);
-            var accounts = Arr(status["accounts"]);
-            var models = Arr(status["models"]);
+            var wasRunning = running;
+            running = Json.Bool(status, "running");
+            lastOrigin = Json.Str(Json.Get(status, "origin"));
+            var backend = Json.Obj(Json.Get(status, "backend"));
+            var models = Json.Arr(Json.Get(status, "models"));
+            var accountCount = Json.Arr(Json.Get(status, "accounts")).Count;
 
             stateLabel.Text = running ? "Running" : "Stopped";
-            stateLabel.ForeColor = running ? Ok : Bad;
+            stateLabel.ForeColor = running ? Theme.Ok : Theme.Bad;
             detailLabel.Text = running
-                ? string.Format("{0}  \u00B7  {1} {2}  \u00B7  {3} models offered", lastOrigin, Str(backend["name"]), Str(backend["version"]), models.Count)
+                ? string.Format("{0}  \u00B7  {1} {2}  \u00B7  {3} account{4}  \u00B7  {5} models offered", lastOrigin, Json.Str(Json.Get(backend, "name")), Json.Str(Json.Get(backend, "version")), accountCount, accountCount == 1 ? "" : "s", models.Count)
                 : "The gateway is not running. Press Start.";
             startButton.Enabled = !running;
             stopButton.Enabled = running;
             tray.Text = running ? "dshgate: running" : "dshgate: stopped";
-            footer.Text = "Data: " + Str(status["home"]) + "    Program: " + cli.Root;
+            footer.Text = "Data: " + Json.Str(Json.Get(status, "home")) + "    Program: " + cli.Root;
+            loginProviders = Json.Arr(Json.Get(status, "loginProviders"));
 
-            // Accounts
-            accountsList.BeginUpdate();
-            accountsList.Items.Clear();
-            foreach (var item in accounts)
-            {
-                var account = Obj(item);
-                var disabled = account.ContainsKey("disabled") && (bool)account["disabled"];
-                var row = new ListViewItem(new[] { Str(account["label"]), Str(account["account"]), disabled ? "Disabled" : "Active" });
-                row.ForeColor = disabled ? Muted : Color.Black;
-                accountsList.Items.Add(row);
-            }
-            if (accounts.Count == 0) accountsList.Items.Add(new ListViewItem(new[] { "No accounts yet", "Pick a service below and press Sign in.", "" }) { ForeColor = Muted });
-            accountsList.EndUpdate();
-            if (loginCombo.Items.Count == 0)
-            {
-                foreach (var item in Arr(status["loginProviders"])) loginCombo.Items.Add(new Choice(Str(Obj(item)["key"]), Str(Obj(item)["label"])));
-                if (loginCombo.Items.Count > 0) loginCombo.SelectedIndex = 0;
-            }
+            if (running && !wasRunning) LoadLimits(false);
+            if (!running) ShowAccountsMessage("The gateway is not running. Press Start to see accounts and limits.", Theme.Muted);
 
             // API keys
-            var keys = Obj(status["apiKeys"]);
+            var keys = Json.Obj(Json.Get(status, "apiKeys"));
             var readable = new Dictionary<string, string>();
-            foreach (var item in Arr(keys["readable"])) readable[Str(Obj(item)["provider"])] = Str(Obj(item)["region"]);
+            foreach (var item in Json.Arr(Json.Get(keys, "readable"))) readable[Json.Str(Json.Get(Json.Obj(item), "provider"))] = Json.Str(Json.Get(Json.Obj(item), "region"));
             var unreadable = new HashSet<string>();
-            foreach (var item in Arr(keys["unreadable"])) unreadable.Add(Str(item));
-            providers = Arr(status["providers"]);
+            foreach (var item in Json.Arr(Json.Get(keys, "unreadable"))) unreadable.Add(Json.Str(item));
+            providers = Json.Arr(Json.Get(status, "providers"));
             keysList.BeginUpdate();
             keysList.Items.Clear();
             foreach (var item in providers)
             {
-                var provider = Obj(item);
-                var key = Str(provider["key"]);
+                var provider = Json.Obj(item);
+                var key = Json.Str(Json.Get(provider, "key"));
                 string state;
                 Color color;
-                if (readable.ContainsKey(key)) { state = "Saved"; color = Ok; }
-                else if (unreadable.Contains(key)) { state = "Saved, cannot be read: add it again"; color = Bad; }
-                else { state = "Not set"; color = Muted; }
+                if (readable.ContainsKey(key)) { state = "Saved"; color = Theme.Ok; }
+                else if (unreadable.Contains(key)) { state = "Saved, cannot be read: add it again"; color = Theme.Bad; }
+                else { state = "Not set"; color = Theme.Muted; }
                 var region = readable.ContainsKey(key) ? RegionLabel(provider, readable[key]) : "";
-                keysList.Items.Add(new ListViewItem(new[] { Str(provider["label"]), region, state }) { ForeColor = color, Tag = key });
+                keysList.Items.Add(new ListViewItem(new[] { Json.Str(Json.Get(provider, "label")), region, state }) { ForeColor = color, Tag = key });
             }
             keysList.EndUpdate();
             if (keyProviderCombo.Items.Count == 0)
             {
-                foreach (var item in providers) keyProviderCombo.Items.Add(new Choice(Str(Obj(item)["key"]), Str(Obj(item)["label"])));
+                foreach (var item in providers) keyProviderCombo.Items.Add(new Choice(Json.Str(Json.Get(Json.Obj(item), "key")), Json.Str(Json.Get(Json.Obj(item), "label"))));
                 if (keyProviderCombo.Items.Count > 0) keyProviderCombo.SelectedIndex = 0;
             }
 
             // Lanes
             lanesList.BeginUpdate();
             lanesList.Items.Clear();
-            foreach (var item in Arr(status["lanes"]))
+            foreach (var item in Json.Arr(Json.Get(status, "lanes")))
             {
-                var lane = Obj(item);
+                var lane = Json.Obj(item);
                 var parts = new List<string>();
-                foreach (var rungItem in Arr(lane["ladder"]))
+                foreach (var rungItem in Json.Arr(Json.Get(lane, "ladder")))
                 {
-                    var rung = Obj(rungItem);
-                    var available = rung.ContainsKey("available") && (bool)rung["available"];
-                    var cooling = Str(rung["coolingUntil"]);
+                    var rung = Json.Obj(rungItem);
+                    var available = Json.Bool(rung, "available");
+                    var cooling = Json.Str(Json.Get(rung, "coolingUntil"));
                     var mark = !available ? "\u2717" : cooling.Length > 0 ? "\u23F8" : "\u2713";
-                    parts.Add(mark + " " + Str(rung["model"]));
+                    parts.Add(mark + " " + Json.Str(Json.Get(rung, "model")));
                 }
-                lanesList.Items.Add(new ListViewItem(new[] { "lane-" + Str(lane["name"]), string.Join("   \u2192   ", parts.ToArray()) }));
+                lanesList.Items.Add(new ListViewItem(new[] { "lane-" + Json.Str(Json.Get(lane, "name")), string.Join("   \u2192   ", parts.ToArray()) }));
             }
             lanesList.EndUpdate();
 
             // DeepSeek Harness
-            var harness = Obj(status["deepseekHarness"]);
+            var harness = Json.Obj(Json.Get(status, "deepseekHarness"));
             profilesList.BeginUpdate();
             profilesList.Items.Clear();
-            foreach (var item in Arr(harness["profiles"]))
+            foreach (var item in Json.Arr(Json.Get(harness, "profiles")))
             {
-                var p = Obj(item);
-                var routes = Arr(p["routes"]);
+                var p = Json.Obj(item);
+                var routes = Json.Arr(Json.Get(p, "routes"));
                 var count = 0;
-                foreach (var route in routes) count += Convert.ToInt32(Obj(route)["models"]);
-                var error = Str(p["error"]);
-                var current = p.ContainsKey("current") && (bool)p["current"];
-                string pointing = error.Length > 0 ? error : routes.Count == 0 ? "Not applied" : current ? "Yes" : "No: apply again";
-                profilesList.Items.Add(new ListViewItem(new[] { Str(p["profile"]), routes.Count.ToString(), count.ToString(), pointing })
-                {
-                    ForeColor = routes.Count > 0 && current ? Ok : Muted
-                });
+                foreach (var route in routes) count += (int)Json.Num(Json.Obj(route), "models", 0);
+                var error = Json.Str(Json.Get(p, "error"));
+                var current = Json.Bool(p, "current");
+                var pointing = error.Length > 0 ? error : routes.Count == 0 ? "Not applied" : current ? "Yes" : "No: apply again";
+                profilesList.Items.Add(new ListViewItem(new[] { Json.Str(Json.Get(p, "profile")), routes.Count.ToString(), count.ToString(), pointing }) { ForeColor = routes.Count > 0 && current ? Theme.Ok : Theme.Muted });
             }
             profilesList.EndUpdate();
         }
 
         private static string RegionLabel(Dictionary<string, object> provider, string regionKey)
         {
-            foreach (var item in Arr(provider["regions"]))
+            foreach (var item in Json.Arr(Json.Get(provider, "regions")))
             {
-                if (Str(Obj(item)["key"]) == regionKey) return Str(Obj(item)["label"]);
+                if (Json.Str(Json.Get(Json.Obj(item), "key")) == regionKey) return Json.Str(Json.Get(Json.Obj(item), "label"));
             }
             return regionKey;
         }
@@ -636,29 +1102,233 @@ namespace Dshgate
             if (choice == null) return;
             foreach (var item in providers)
             {
-                var provider = Obj(item);
-                if (Str(provider["key"]) != choice.Key) continue;
-                foreach (var region in Arr(provider["regions"])) keyRegionCombo.Items.Add(new Choice(Str(Obj(region)["key"]), Str(Obj(region)["label"])));
+                var provider = Json.Obj(item);
+                if (Json.Str(Json.Get(provider, "key")) != choice.Key) continue;
+                foreach (var region in Json.Arr(Json.Get(provider, "regions"))) keyRegionCombo.Items.Add(new Choice(Json.Str(Json.Get(Json.Obj(region), "key")), Json.Str(Json.Get(Json.Obj(region), "label"))));
             }
             if (keyRegionCombo.Items.Count > 0) keyRegionCombo.SelectedIndex = 0;
         }
 
-        // ---------- actions ----------
+        // ---------- accounts and limits ----------
 
-        private void SignIn()
+        private void ShowAccountsMessage(string text, Color color)
         {
-            var choice = loginCombo.SelectedItem as Choice;
-            if (choice == null) return;
-            try
+            accountsPanel.Controls.Clear();
+            accountsPanel.Controls.Add(new Label { Text = text, Dock = DockStyle.Top, Height = 60, ForeColor = color, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 10f) });
+        }
+
+        private void LoadLimits(bool force)
+        {
+            if (!running || loadingLimits) return;
+            if (!force && !Visible && limitsAt.HasValue && (DateTime.Now - limitsAt.Value).TotalMinutes < 10) return;
+            loadingLimits = true;
+            limitsNote.Text = "Reading limits...";
+            ThreadPool.QueueUserWorkItem(_ =>
             {
-                cli.StartInConsole(new[] { "login", choice.Key });
-                AppendLog("Sign-in for " + choice.Label + " opened in a new window. Finish it in your browser.");
+                Dictionary<string, object> result = null;
+                string failure = null;
+                try { result = control.Call("GET", "limits" + (force ? "?refresh=1" : ""), null, 60000); }
+                catch (ControlException error) { failure = error.Message; }
+                catch (WebException error) { failure = error.Message; }
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        loadingLimits = false;
+                        if (failure != null)
+                        {
+                            limitsNote.Text = "Could not read limits: " + failure;
+                            return;
+                        }
+                        limitsAt = DateTime.Now;
+                        ShowLimits(Json.Arr(Json.Get(result, "accounts")));
+                    }));
+                }
+                catch (InvalidOperationException) { loadingLimits = false; }
+            });
+        }
+
+        private void ShowLimits(ArrayList accounts)
+        {
+            limitsNote.Text = "Limits updated " + Format.Ago(limitsAt.Value) + ". They refresh every minute.";
+            accountsPanel.SuspendLayout();
+            accountsPanel.Controls.Clear();
+            if (accounts.Count == 0)
+            {
+                ShowAccountsMessage("No accounts yet. Press \"+ Add account\" to sign in to Claude, ChatGPT, Gemini or Kimi.", Theme.Muted);
+                lowestLabel.Text = "";
+                accountsPanel.ResumeLayout();
+                return;
             }
-            catch (System.ComponentModel.Win32Exception error)
+            string lowestText = null;
+            double lowest = 101;
+            // Docked to the top, so they are added last-first.
+            for (var index = accounts.Count - 1; index >= 0; index -= 1)
             {
-                MessageBox.Show(this, error.Message, "Sign in", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                var account = Json.Obj(accounts[index]);
+                accountsPanel.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 10, BackColor = Theme.Page });
+                accountsPanel.Controls.Add(BuildCard(account));
+                foreach (var item in Json.Arr(Json.Get(account, "windows")))
+                {
+                    var w = Json.Obj(item);
+                    var left = Json.Num(w, "leftPercent", 100);
+                    if (left < lowest)
+                    {
+                        lowest = left;
+                        lowestText = string.Format("Lowest limit: {0} {1}, {2:0}% left", Json.Str(Json.Get(account, "label")), Json.Str(Json.Get(w, "title")), left);
+                    }
+                    WarnIfLow(account, w, left);
+                }
+            }
+            lowestLabel.Text = lowestText ?? "";
+            lowestLabel.ForeColor = lowestText == null ? Theme.Muted : Theme.ForLeft(lowest);
+            accountsPanel.ResumeLayout();
+            FitCards();
+        }
+
+        private void FitCards()
+        {
+            var width = accountsPanel.ClientSize.Width - accountsPanel.Padding.Horizontal;
+            foreach (System.Windows.Forms.Control item in accountsPanel.Controls)
+            {
+                var card = item as TableLayoutPanel;
+                if (card != null) card.Width = Math.Max(400, width);
             }
         }
+
+        private TableLayoutPanel BuildCard(Dictionary<string, object> account)
+        {
+            var file = Json.Str(Json.Get(account, "file"));
+            var label = Json.Str(Json.Get(account, "label"));
+            var email = Json.Str(Json.Get(account, "account"));
+            var plan = Json.Str(Json.Get(account, "plan"));
+            var disabled = Json.Bool(account, "disabled");
+            var error = Json.Str(Json.Get(account, "error"));
+            var supported = Json.Bool(account, "supported");
+            var windows = Json.Arr(Json.Get(account, "windows"));
+
+            var card = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 3,
+                BackColor = Theme.Card,
+                Padding = new Padding(14, 10, 14, 12)
+            };
+            card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
+            card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 340));
+
+            var title = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
+            title.Controls.Add(new Label { Text = label, AutoSize = true, Font = new Font("Segoe UI", 11f, FontStyle.Bold), Margin = new Padding(0, 2, 8, 0) });
+            title.Controls.Add(new Label { Text = email, AutoSize = true, Font = new Font("Segoe UI", 10f), Margin = new Padding(0, 4, 8, 0) });
+            if (plan.Length > 0) title.Controls.Add(new Label { Text = plan, AutoSize = true, BackColor = Color.FromArgb(219, 234, 254), ForeColor = Theme.Accent, Padding = new Padding(6, 2, 6, 2), Margin = new Padding(0, 4, 8, 0) });
+            title.Controls.Add(new Label { Text = disabled ? "Paused" : "Active", AutoSize = true, ForeColor = disabled ? Theme.Muted : Theme.Ok, Margin = new Padding(0, 5, 0, 0) });
+            card.Controls.Add(title, 0, 0);
+            card.SetColumnSpan(title, 2);
+
+            var actions = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Dock = DockStyle.Fill, Margin = new Padding(0) };
+            var signOut = new Button { Text = "Sign out...", AutoSize = true };
+            signOut.Click += (s, e) => SignOut(file, label, email);
+            var pause = new Button { Text = disabled ? "Resume" : "Pause", AutoSize = true };
+            pause.Click += (s, e) => SetPaused(file, label, email, !disabled);
+            actions.Controls.Add(signOut);
+            actions.Controls.Add(pause);
+            card.Controls.Add(actions, 2, 0);
+
+            var row = 1;
+            foreach (var item in windows)
+            {
+                var w = Json.Obj(item);
+                var left = Json.Num(w, "leftPercent", 0);
+                card.Controls.Add(new Label { Text = Json.Str(Json.Get(w, "title")), AutoSize = true, Margin = new Padding(0, 4, 0, 4), Font = new Font("Segoe UI", 9.5f) }, 0, row);
+                card.Controls.Add(new Meter { LeftPercent = left, Dock = DockStyle.Fill }, 1, row);
+                card.Controls.Add(new Label { Text = string.Format("{0:0}% left \u00B7 {1}", left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 4, 0, 4) }, 2, row);
+                row += 1;
+            }
+            string note = null;
+            if (disabled) note = "Paused: dshgate does not use this account until you resume it.";
+            else if (!supported) note = label + " does not report its limits.";
+            else if (error.Length > 0) note = error;
+            if (note != null)
+            {
+                var noteLabel = new Label { Text = note, AutoSize = true, ForeColor = error.Length > 0 && !disabled && supported ? Theme.Bad : Theme.Muted, Margin = new Padding(0, 4, 0, 0) };
+                card.Controls.Add(noteLabel, 0, row);
+                card.SetColumnSpan(noteLabel, 3);
+            }
+            return card;
+        }
+
+        private void WarnIfLow(Dictionary<string, object> account, Dictionary<string, object> window, double left)
+        {
+            if (left > 10) return;
+            var key = Json.Str(Json.Get(account, "file")) + "|" + Json.Str(Json.Get(window, "title")) + "|" + Json.Str(Json.Get(window, "resetsAt"));
+            if (!warned.Add(key)) return;
+            tray.ShowBalloonTip(6000, string.Format("{0}: {1:0}% left", Json.Str(Json.Get(account, "label")), left),
+                string.Format("{0} limit for {1}, {2}. dshgate moves to the next model when it runs out.", Json.Str(Json.Get(window, "title")), Json.Str(Json.Get(account, "account")), Format.Reset(Json.Str(Json.Get(window, "resetsAt")))),
+                ToolTipIcon.Warning);
+        }
+
+        private void AddAccount()
+        {
+            if (!running)
+            {
+                MessageBox.Show(this, "Start the gateway first. Sign-in runs through it.", "Add account", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            using (var dialog = new SignInDialog(control, loginProviders))
+            {
+                dialog.ShowDialog(this);
+                if (dialog.SignedInAs != null)
+                {
+                    AppendLog("Signed in: " + dialog.SignedInAs);
+                    tabs.SelectedIndex = 0;
+                    RefreshStatus();
+                    LoadLimits(true);
+                }
+            }
+        }
+
+        private void SignOut(string file, string label, string email)
+        {
+            var answer = MessageBox.Show(this,
+                string.Format("Sign out of {0} ({1})?\n\ndshgate stops using this account and deletes its saved sign-in. Lanes move to their other models. You can sign in again at any time.", label, email),
+                "Sign out", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes) return;
+            AccountCall("accounts/remove", new Dictionary<string, object> { { "file", file } }, "Signed out of " + label + " (" + email + ").");
+        }
+
+        private void SetPaused(string file, string label, string email, bool pause)
+        {
+            AccountCall("accounts/disable", new Dictionary<string, object> { { "file", file }, { "disabled", pause } }, (pause ? "Paused " : "Resumed ") + label + " (" + email + ").");
+        }
+
+        private void AccountCall(string path, Dictionary<string, object> body, string done)
+        {
+            UseWaitCursor = true;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                string failure = null;
+                try { control.Call("POST", path, body, 30000); }
+                catch (ControlException error) { failure = error.Message; }
+                catch (WebException error) { failure = error.Message; }
+                BeginInvoke(new Action(() =>
+                {
+                    UseWaitCursor = false;
+                    if (failure != null)
+                    {
+                        MessageBox.Show(this, failure, "Account", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                    AppendLog(done);
+                    RefreshStatus();
+                    LoadLimits(true);
+                }));
+            });
+        }
+
+        // ---------- other actions ----------
 
         private void AddKey()
         {
@@ -676,25 +1346,25 @@ namespace Dshgate
             if (keysList.SelectedItems.Count == 0) return;
             var key = keysList.SelectedItems[0].Tag as string;
             if (key == null) return;
-            if (MessageBox.Show(this, "Remove the saved " + keysList.SelectedItems[0].Text + " key?", "API key", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+            if (MessageBox.Show(this, "Remove the saved " + keysList.SelectedItems[0].Text + " key?", "API key", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
             RunInBackground(new[] { "key", "remove", key }, null, "API key", true);
         }
 
         private void ApplyToHarness()
         {
-            if (MessageBox.Show(this, "Write the dshgate routes into every DeepSeek Harness profile?\n\nEach profile is backed up first, and nothing else in it is changed. Restart DeepSeek Harness afterwards.", "DeepSeek Harness", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
-            RunAndShow(new[] { "dsh", "apply" }, "DeepSeek Harness");
+            if (MessageBox.Show(this, "Write the dshgate routes into every DeepSeek Harness profile?\n\nEach profile is backed up first, and nothing else in it is changed. Restart DeepSeek Harness afterwards.", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            RunAndShow(new[] { "dsh", "apply" }, "DeepSeek Harness", false);
         }
 
         private void RemoveFromHarness()
         {
-            if (MessageBox.Show(this, "Remove the dshgate routes from every DeepSeek Harness profile?", "DeepSeek Harness", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
-            RunAndShow(new[] { "dsh", "remove" }, "DeepSeek Harness");
+            if (MessageBox.Show(this, "Remove the dshgate routes from every DeepSeek Harness profile?", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            RunAndShow(new[] { "dsh", "remove" }, "DeepSeek Harness", false);
         }
 
-        private void RunAndShow(string[] args, string title)
+        private void RunAndShow(string[] args, string title, bool restartHint)
         {
-            RunInBackground(args, null, title, false);
+            RunInBackground(args, null, title, restartHint);
         }
 
         private void RunInBackground(string[] args, string input, string title, bool restartHint)
@@ -729,8 +1399,7 @@ namespace Dshgate
 
         private void OpenFolder(string sub)
         {
-            var home = Environment.GetEnvironmentVariable("DSHGATE_HOME");
-            if (string.IsNullOrEmpty(home)) home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dshgate");
+            var home = GatewayControl.Home();
             var folder = sub.Length > 0 ? Path.Combine(home, sub) : home;
             if (!Directory.Exists(folder)) folder = home;
             if (Directory.Exists(folder)) Process.Start("explorer.exe", "\"" + folder + "\"");
@@ -738,9 +1407,7 @@ namespace Dshgate
 
         private void EditSettings()
         {
-            var home = Environment.GetEnvironmentVariable("DSHGATE_HOME");
-            if (string.IsNullOrEmpty(home)) home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dshgate");
-            var file = Path.Combine(home, "settings.json");
+            var file = Path.Combine(GatewayControl.Home(), "settings.json");
             if (!File.Exists(file))
             {
                 MessageBox.Show(this, "settings.json is created the first time a setting is saved, for example when you add an API key. Until then the default lanes are used.", "Lanes", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -785,7 +1452,7 @@ namespace Dshgate
                 var box = new TextBox { Left = 12, Top = 38, Width = 396, UseSystemPasswordChar = true };
                 var ok = new Button { Text = "Save", Left = 236, Top = 84, Width = 80, DialogResult = DialogResult.OK };
                 var cancel = new Button { Text = "Cancel", Left = 328, Top = 84, Width = 80, DialogResult = DialogResult.Cancel };
-                form.Controls.AddRange(new Control[] { label, box, ok, cancel });
+                form.Controls.AddRange(new System.Windows.Forms.Control[] { label, box, ok, cancel });
                 form.AcceptButton = ok;
                 form.CancelButton = cancel;
                 return form.ShowDialog(owner) == DialogResult.OK ? box.Text.Trim() : null;

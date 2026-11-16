@@ -40,6 +40,7 @@ function paths(home = homeDir()) {
     config: path.join(home, "backend-config.yaml"),
     log: path.join(home, "dshgate.log"),
     backendPid: path.join(home, "backend.pid"),
+    controlToken: path.join(home, "control.token"),
     authDir: path.join(home, "auth"),
     binDir: path.join(home, "bin")
   };
