@@ -104,9 +104,30 @@ const API_PROVIDERS = {
       m("qwen3.8-flash", "Qwen3.8 Flash", 1000000, 65536, ["high"])
     ]
   },
-  minimax: {
-    label: "MiniMax",
+  // Google's own API: billed per token with an API key instead of a subscription
+  // sign-in. Its OpenAI-compatible endpoint is what CLIProxyAPI's
+  // `openai-compatibility` group speaks, so a key here needs no extra backend
+  // support. This is the sanctioned route to Gemini models: no IDE sign-in is
+  // reused, so nothing about it can trip the Antigravity terms.
+  gemini: {
+    label: "Google Gemini API",
     regions: {
+      aistudio: {
+        label: "AI Studio key",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+        residency: "Global"
+      }
+    },
+    models: [
+      m("gemini-4-carbon", "Gemini 4 Carbon (API)", 1048576, 65536, ["high"]),
+      m("gemini-4-hydrogen", "Gemini 4 Hydrogen (API)", 1048576, 65536, ["high"]),
+      m("gemini-4-argon", "Gemini 4 Argon (API)", 1048576, 65536, ["high"]),
+      m("gemini-3.8-flash", "Gemini 3.8 Flash (API)", 1048576, 65536, ["minimal", "low", "medium", "high"]),
+      m("gemini-3-flash", "Gemini 3 Flash (API)", 1048576, 65536, ["minimal", "low", "medium", "high"])
+    ]
+  },
+  minimax: {
+    label: "MiniMax",    regions: {
       international: { label: "International", baseUrl: "https://api.minimax.io/v1", residency: "Not confirmed" },
       china: { label: "China", baseUrl: "https://api.minimax.cn/v1", residency: "China" }
     },
