@@ -306,7 +306,7 @@ async function main(argv, out = console.log) {
         return undefined;
       }
       if (action === "verify") {
-        const report = profile.verify({ origin: state.origin, lanes: state.settings.lanes, models: state.models.map((model) => model.id), home: profile.dshHome() });
+        const report = profile.verify({ origin: state.origin, lanes: state.settings.lanes, models: state.models.map((model) => ({ id: model.id, api: model.api })), home: profile.dshHome() });
         for (const item of report.profiles) {
           out(`${item.profile}: ${item.problems.length ? "NOT READY" : "ready"}`);
           for (const problem of item.problems) out(`  - ${problem}`);

@@ -293,9 +293,16 @@ function remove(home = dshHome(), options = {}) {
 // default model, missing image caps, a leftover DroidProxy provider or a missing
 // credential reference. Returns problems per profile; an empty list means the
 // profile is ready.
+// A route or lane is only expected while some offered model can serve it: when a
+// provider is signed out or suspended its models disappear and the route goes
+// with them, which is correct, not a problem.
 function verify({ origin, lanes, models, home = dshHome() }) {
-  const offered = new Set(models || []);
-  const laneIds = Object.keys(lanes || {}).map((name) => laneId(name));
+  const list = (models || []).map((model) => (typeof model === "string" ? { id: model, api: null } : { id: model.id, api: model.api || null }));
+  const offered = new Set(list.map((model) => model.id));
+  const requiredRoutes = Object.keys(ROUTES).filter((key) => list.some((model) => model.api === ROUTES[key].api));
+  const laneIds = Object.keys(lanes || {})
+    .filter((name) => (lanes[name] || []).some((id) => offered.has(id)))
+    .map((name) => laneId(name));
   const result = { ok: true, profiles: [], credential: [] };
 
   const credentials = path.join(home, ".credentials.yaml");
@@ -316,7 +323,7 @@ function verify({ origin, lanes, models, home = dshHome() }) {
       problems.push(error.message);
     }
     if (providersNode && YAML.isMap(providersNode)) {
-      for (const key of Object.keys(ROUTES)) {
+      for (const key of requiredRoutes) {
         const route = providersNode.get(key, true);
         if (!YAML.isMap(route)) {
           problems.push(`route ${key} is missing`);
