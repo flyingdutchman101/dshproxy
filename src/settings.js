@@ -15,7 +15,10 @@ const DEFAULT_LANES = {
   scout: ["claude-haiku-5-5", "gemini-3.8-flash-high", "deepseek/deepseek-flash", "qwen/qwen3.8-flash"],
   builder: ["gpt-6-astra", "claude-sonnet-5-5", "deepseek/deepseek-v4-pro", "gemini-4-argon-high"],
   architect: ["claude-fable-5-2", "gpt-6.1-terra", "deepseek/deepseek-v4-pro", "gemini-4-argon-high"],
-  reviewer: ["gemini-4-carbon-high", "deepseek/deepseek-v4-pro", "claude-opus-5-5"]
+  reviewer: ["gemini-4-carbon-high", "deepseek/deepseek-v4-pro", "claude-opus-5-5"],
+  // A Google-only ladder: one Gemini model being throttled no longer fails the
+  // turn, the gateway cools it and answers from the next one.
+  google: ["gemini-3.8-flash-high", "gemini-4-carbon-high", "gemini-4-hydrogen-xhigh", "gemini-3.8-flash-tiered"]
 };
 
 const DEFAULTS = {

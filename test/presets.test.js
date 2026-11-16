@@ -48,3 +48,11 @@ test("performance puts the strongest models first; cheap prefers quota and cheap
   assert.ok(!cheap.main.some((id) => id.startsWith("gpt-6")), "cheap should not spend on GPT 6");
   assert.ok(cheap.scout.includes("qwen/qwen3.8-flash"));
 });
+
+test("every preset keeps a Google-only ladder", (t) => {
+  for (const name of presets.names()) {
+    const lanes = presets.get(name).lanes;
+    assert.ok(Array.isArray(lanes.google) && lanes.google.length >= 2, `${name}: no google ladder`);
+    for (const id of lanes.google) assert.match(id, /^gemini-/, `${name}: google ladder names ${id}`);
+  }
+});

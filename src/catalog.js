@@ -33,6 +33,11 @@ const SUBSCRIPTION_MODELS = [
   subscription("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)", "antigravity", "compat", { contextWindow: 900000, maxTokens: 65536, efforts: ["high"] }),
   subscription("gemini-4-argon-high", "Gemini 4 Argon (High)", "antigravity", "compat", { contextWindow: 900000, maxTokens: 65536, efforts: ["high"] }),
   subscription("gemini-4-carbon-high", "Gemini 4 Carbon (High)", "antigravity", "compat", { contextWindow: 900000, maxTokens: 65536, efforts: ["high"] }),
+  subscription("gemini-4-hydrogen-xhigh", "Gemini 4 Hydrogen (XHigh)", "antigravity", "compat", { contextWindow: 900000, maxTokens: 65536, efforts: ["high", "xhigh"] }),
+  subscription("gemini-3.8-flash-tiered", "Gemini 3.8 Flash (Tiered)", "antigravity", "compat", { contextWindow: 900000, maxTokens: 65536, efforts: ["low", "medium", "high"] }),
+  subscription("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite", "antigravity", "compat", { contextWindow: 900000, maxTokens: 65535, efforts: ["minimal", "low", "medium", "high"] }),
+  subscription("gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite", "antigravity", "compat", { contextWindow: 900000, maxTokens: 65535, efforts: ["minimal", "low", "medium", "high"] }),
+  subscription("gemini-3-flash", "Gemini 3 Flash", "antigravity", "compat", { contextWindow: 900000, maxTokens: 65536, efforts: ["minimal", "low", "medium", "high"] }),
   // Claude served by a Google AI Pro/Ultra subscription. `upstream` is the ID
   // Antigravity expects; the gateway rewrites the request to it.
   subscription("ag-c55o-high", "Claude Opus 5.5 (High) via Google", "antigravity", "compat", { upstream: "claude-opus-5-5-high", efforts: ["high"] }),

@@ -11,7 +11,8 @@ const PERFORMANCE = {
   scout: ["claude-sonnet-5-5", "gpt-6.1-sol", "gemini-4-argon-high", "deepseek/deepseek-v4-pro"],
   builder: ["gpt-6-astra", "claude-sonnet-5-5", "claude-fable-5-2", "gemini-4-argon-high"],
   architect: ["claude-fable-5-2", "gpt-6.1-terra", "claude-opus-5-5", "gemini-4-carbon-high"],
-  reviewer: ["gemini-4-carbon-high", "claude-opus-5-5", "gpt-6.1-terra"]
+  reviewer: ["gemini-4-carbon-high", "claude-opus-5-5", "gpt-6.1-terra"],
+  google: ["gemini-4-carbon-high", "gemini-4-hydrogen-xhigh", "gemini-3.8-flash-high", "gemini-3.8-flash-tiered"]
 };
 
 // Cheap production: subscription quota first (no per-request bill), then the
@@ -21,7 +22,8 @@ const CHEAP = {
   scout: ["gemini-3.8-flash-high", "claude-haiku-5-5", "deepseek/deepseek-flash", "qwen/qwen3.8-flash"],
   builder: ["claude-haiku-5-5", "gemini-4-argon-high", "deepseek/deepseek-v4-pro", "qwen/qwen3.8-flash"],
   architect: ["claude-sonnet-5-5", "gemini-4-carbon-high", "deepseek/deepseek-v4-pro", "gemini-4-argon-high"],
-  reviewer: ["gemini-3.8-flash-high", "deepseek/deepseek-flash", "claude-haiku-5-5"]
+  reviewer: ["gemini-3.8-flash-high", "deepseek/deepseek-flash", "claude-haiku-5-5"],
+  google: ["gemini-3.8-flash-high", "gemini-3.1-flash-lite", "gemini-3-flash", "gemini-4-hydrogen-xhigh"]
 };
 
 const PRESETS = {
