@@ -919,6 +919,20 @@ namespace DSHProxy
     // Windows would otherwise draw light column lines there.
     internal sealed class DarkList : ListView
     {
+        private const int LVM_SETEXTENDEDLISTVIEWSTYLE = 0x1036;
+        private const int LVS_EX_DOUBLEBUFFER = 0x00010000;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            // Windows' own buffering for the list control. ControlStyles
+            // double buffering is what produced half-painted rows on scroll.
+            SendMessage(Handle, LVM_SETEXTENDEDLISTVIEWSTYLE, (IntPtr)LVS_EX_DOUBLEBUFFER, (IntPtr)LVS_EX_DOUBLEBUFFER);
+        }
+
         protected override void WndProc(ref Message m)
         {
             base.WndProc(ref m);
@@ -1063,7 +1077,9 @@ namespace DSHProxy
         private static void Buffered(Control control)
         {
             if (DoubleBufferedProperty == null || !DoubleBufferedProperty.CanWrite) return;
-            if (control is TextBox || control is ComboBox) return;
+            // A ListView manages its own painting; ControlStyles double buffering
+            // there leaves half-painted rows when it scrolls (see DarkList).
+            if (control is TextBox || control is ComboBox || control is ListView) return;
             DoubleBufferedProperty.SetValue(control, true, null);
         }
 
@@ -1129,7 +1145,10 @@ namespace DSHProxy
             list.OwnerDraw = true;
             list.GridLines = false;
             if (list.SmallImageList == null) list.SmallImageList = new ImageList { ImageSize = new Size(1, 30) };
-            typeof(Control).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(list, true, null);
+            // Not ControlStyles.OptimizedDoubleBuffer: on a ListView that leaves
+            // partial rows behind while scrolling or resizing. Windows' own list
+            // double buffering (set in DarkList.OnHandleCreated) does it properly.
+            typeof(Control).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(list, false, null);
             list.DrawColumnHeader += (s, e) =>
             {
                 Glass.PaintBehind(e.Graphics, list, e.Bounds);
