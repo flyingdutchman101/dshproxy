@@ -1,5 +1,8 @@
 const { carriesImage } = require("./content");
+const fs = require("fs");
 const http = require("http");
+const os = require("os");
+const path = require("path");
 const zlib = require("zlib");
 const { prepareBody } = require("./request");
 const { needsBody } = require("./failover");
@@ -77,13 +80,56 @@ function decodedText(buffer, encoding) {
 // on the rung that served it.
 // `control(req, res)` handles the app's control calls and returns true when it
 // took the request.
+// A compact description of a model request: enough to tell a normal turn from a
+// pathological one (huge images, absurd token budgets, unexpected shape).
+function describeRequest(parsed, raw) {
+  const text = raw.toString("utf8");
+  let images = 0;
+  let imageBytes = 0;
+  for (const match of text.matchAll(/data:[^;,]{1,40};base64,/g)) {
+    images += 1;
+    imageBytes += 1;
+  }
+  const base64 = text.split(";base64,").slice(1);
+  imageBytes = base64.reduce((sum, part) => sum + part.length, 0);
+  const messages = Array.isArray(parsed?.messages) ? parsed.messages.length : 0;
+  const tools = Array.isArray(parsed?.tools) ? parsed.tools.length : 0;
+  const system = typeof parsed?.system === "string" ? parsed.system.length : 0;
+  const maxTokens = parsed?.max_tokens ?? parsed?.max_completion_tokens ?? null;
+  return `bytes=${raw.length} messages=${messages} tools=${tools} images=${images} imageMB=${(imageBytes / 1048576).toFixed(1)} systemChars=${system} maxTokens=${maxTokens} stream=${Boolean(parsed?.stream)}`;
+}
+// The request's structure without its text: which keys the harness sends, the
+// role/type mix of the conversation and the tool names. Enough to spot an
+// unexpected shape without storing the conversation itself.
+function describeShape(parsed) {
+  const shape = {
+    keys: parsed && typeof parsed === "object" ? Object.keys(parsed) : [],
+    roles: {},
+    parts: {},
+    tools: Array.isArray(parsed?.tools) ? parsed.tools.map((tool) => tool?.function?.name || tool?.name || tool?.type || "?").slice(0, 40) : [],
+    toolCalls: 0,
+    toolResults: 0
+  };
+  for (const message of Array.isArray(parsed?.messages) ? parsed.messages : []) {
+    const role = message?.role || "?";
+    shape.roles[role] = (shape.roles[role] || 0) + 1;
+    const content = Array.isArray(message?.content) ? message.content : [];
+    for (const part of content) {
+      const type = part?.type || "text";
+      shape.parts[type] = (shape.parts[type] || 0) + 1;
+    }
+    if (Array.isArray(message?.tool_calls)) shape.toolCalls += message.tool_calls.length;
+    if (role === "tool") shape.toolResults += 1;
+  }
+  return shape;
+}
 // Account-level circuit breaker: several models of one account answering 429 in
 // a row means the account is throttled, not the models.
 const ACCOUNT_STRIKE_WINDOW_MS = 45 * 1000;
 const ACCOUNT_STRIKE_LIMIT = 3;
 const ACCOUNT_COOLDOWN_MS = 60 * 1000;
 
-function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}), control = null, supportsImages = null, accountOf = () => null, maxBodyBytes = MAX_BODY_BYTES }) {
+function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}), control = null, supportsImages = null, accountOf = () => null, retryDelays = [2000, 5000, 12000, 20000], maxBodyBytes = MAX_BODY_BYTES }) {
   const accountStrikes = new Map();
   const accountCoolingUntil = new Map();
 
@@ -180,6 +226,20 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
 
     const route = resolve(parsed.model);
     const label = route.lane ? `lane ${route.lane}` : parsed.model;
+    // One line per model request, so a failing turn can be traced without
+    // guessing: what arrived, how big it was, and what came back.
+    const trace = describeRequest(parsed, raw);
+    const startedAt = Date.now();
+    const retries = [...retryDelays];
+    const report = (code, model) => {
+      log(`${label}: HTTP ${code} in ${Date.now() - startedAt}ms${model ? ` served=${model}` : ""} · ${trace}`);
+    };
+    const dumpFailure = (code, model, text) => {
+      try {
+        const file = path.join(os.tmpdir(), "dshproxy-last-failed.json");
+        fs.writeFileSync(file, JSON.stringify({ at: new Date().toISOString(), url: req.url, lane: route.lane, model: parsed.model, served: model || null, code, trace, shape: describeShape(parsed), error: (text || "").slice(0, 2000) }, null, 2));
+      } catch { /* diagnostics are best effort */ }
+    };
     if (!route.ladder.length) {
       log(`${label}: no rung is available`);
       sendJson(res, 503, { error: { type: "dshproxy_no_rung", message: `No model on lane "${route.lane}" is available. Sign in to an account or add an API key, then check \`dshproxy status\`.` } });
@@ -256,6 +316,33 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
         continue;
       }
 
+      // The last attempt: keep its body so a failure can be reported and logged
+      // with the provider's own words.
+      if (!read && code >= 400) {
+        read = [];
+        try {
+          const whole = await readSmall(upstreamRes, read);
+          if (whole) text = decodedText(whole, upstreamRes.headers["content-encoding"]);
+        } catch (error) {
+          if (!res.destroyed) unreachable(error);
+          return;
+        }
+      }
+      // A forced pick is strict about *which* model runs, not about giving up
+      // after one refusal: providers throttle an account for a minute at a time,
+      // so the same model is retried with growing pauses before failing.
+      if (verdict.failover && !next && forced && retries.length) {
+        const delay = retries.shift();
+        log(`${label}: HTTP ${code}, retrying the same model in ${delay / 1000}s`);
+        if (!read) upstreamRes.resume();
+        await new Promise((done) => setTimeout(done, delay));
+        if (res.destroyed) return;
+        index -= 1;
+        continue;
+      }
+      report(code, model);
+      if (code >= 400) dumpFailure(code, model, text);
+      if (res.destroyed) return;
       if (sessionKey && code < 400) sessions.set(sessionKey, model);
       const extra = { "x-dshproxy-model": model };
       if (route.lane) extra["x-dshproxy-lane"] = route.lane;

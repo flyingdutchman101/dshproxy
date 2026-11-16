@@ -63,7 +63,7 @@ async function startBackend(t, answer) {
 const LANES = { main: ["gpt-6-astra", "claude-fable-5-2", "gemini-4-carbon-high"], empty: [] };
 const EFFORTS = { "gemini-4-carbon-high": ["high"] };
 
-async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages = null, resolve = null, accountOf = null } = {}) {
+async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages = null, resolve = null, accountOf = null, retryDelays = [] } = {}) {
   const logs = [];
   const gateway = createGateway({
     upstream: { host: "127.0.0.1", port: backendPort },
@@ -74,7 +74,8 @@ async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages
     log: (line) => logs.push(line),
     status: () => ({ ok: true }),
     supportsImages: supportsImages || undefined,
-    accountOf: accountOf || (() => null)
+    accountOf: accountOf || (() => null),
+    retryDelays
   });
   const port = await listen(gateway);
   t.after(() => {
@@ -421,4 +422,28 @@ test("a lane still fails over, and skips an account that is rate-limiting", asyn
   // The cooling Google account was not touched again.
   const touched = backend.seen.slice(seenBefore).filter((request) => request.model.startsWith("gemini-"));
   assert.deepEqual(touched, []);
+});
+
+test("a forced model is retried after a throttle instead of failing at once", async (t) => {
+  let calls = 0;
+  const backend = await startBackend(t, () => {
+    calls += 1;
+    return calls === 1
+      ? { status: 429, body: { error: { message: "Resource has been exhausted (e.g. check quota)." } } }
+      : { status: 200, body: { served: "gemini-4-carbon-high" } };
+  });
+  const { url, logs } = await startGateway(t, backend.port, { retryDelays: [20] });
+  const response = await post(url, { model: "gemini-4-carbon-high", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { served: "gemini-4-carbon-high" });
+  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-4-carbon-high", "gemini-4-carbon-high"]);
+  assert.match(logs.join("\n"), /retrying the same model/);
+});
+
+test("a forced model gives up after the retries are spent, with its own error", async (t) => {
+  const backend = await startBackend(t, () => ({ status: 429, body: { error: { message: "Resource has been exhausted (e.g. check quota)." } } }));
+  const { url } = await startGateway(t, backend.port, { retryDelays: [10, 10] });
+  const response = await post(url, { model: "gemini-4-carbon-high", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(response.status, 429);
+  assert.equal(backend.seen.length, 3, "one attempt plus two retries");
 });
