@@ -340,6 +340,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
     describe,
     // Which models can take an image. Read from the offered models (their
     // input lists) and refreshed on the same cache as the accounts.
+    accountOf: (model) => siblingCache.accounts.get(model) || null,
     supportsImages: (id) => {
       const model = imageModels().get(id);
       return model === undefined ? true : model;

@@ -77,7 +77,43 @@ function decodedText(buffer, encoding) {
 // on the rung that served it.
 // `control(req, res)` handles the app's control calls and returns true when it
 // took the request.
-function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}), control = null, supportsImages = null, maxBodyBytes = MAX_BODY_BYTES }) {
+// Account-level circuit breaker: several models of one account answering 429 in
+// a row means the account is throttled, not the models.
+const ACCOUNT_STRIKE_WINDOW_MS = 45 * 1000;
+const ACCOUNT_STRIKE_LIMIT = 3;
+const ACCOUNT_COOLDOWN_MS = 60 * 1000;
+
+function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}), control = null, supportsImages = null, accountOf = () => null, maxBodyBytes = MAX_BODY_BYTES }) {
+  const accountStrikes = new Map();
+  const accountCoolingUntil = new Map();
+
+  const accountCooling = (model) => {
+    const account = accountOf(model);
+    if (!account) return false;
+    const until = accountCoolingUntil.get(account);
+    if (!until) return false;
+    if (until <= Date.now()) { accountCoolingUntil.delete(account); accountStrikes.delete(account); return false; }
+    return true;
+  };
+
+  const accountWaitSeconds = (model) => {
+    const until = accountCoolingUntil.get(accountOf(model));
+    return until ? Math.max(1, Math.ceil((until - Date.now()) / 1000)) : 0;
+  };
+
+  const noteAccountStrike = (model) => {
+    const account = accountOf(model);
+    if (!account || accountCooling(model)) return;
+    const now = Date.now();
+    const stamps = (accountStrikes.get(account) || []).filter((at) => now - at < ACCOUNT_STRIKE_WINDOW_MS);
+    stamps.push(now);
+    accountStrikes.set(account, stamps);
+    if (stamps.length >= ACCOUNT_STRIKE_LIMIT) {
+      accountCoolingUntil.set(account, now + ACCOUNT_COOLDOWN_MS);
+      accountStrikes.delete(account);
+      log(`account ${account} is rate-limiting: ${ACCOUNT_STRIKE_LIMIT} models answered 429, skipping it for ${ACCOUNT_COOLDOWN_MS / 1000}s`);
+    }
+  };
   const forward = (req, headers, body, track) => new Promise((resolvePromise, reject) => {
     const out = http.request({
       host: upstream.host,
@@ -174,8 +210,13 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
     // still serving. A forced model keeps its own provider's siblings behind it
     // as a safety net, so a transient 429 does not fail the request.
     const forced = route.lane ? null : route.ladder[0];
-    const candidates = route.lane ? route.ladder : [...route.ladder, ...(route.fallbacks || [])];
-    let rungs = failover.order(candidates);
+    // A forced pick tries itself plus at most five siblings: enough to ride out a throttle, not enough to hammer the provider.
+    const candidates = route.lane ? route.ladder : [...route.ladder, ...(route.fallbacks || []).slice(0, 5)];
+    // An account that is being rate-limited answers 429 for every one of its
+    // models. Trying them all (and letting the client retry) is what turns a
+    // short throttle into a long one, so the account sits out as a whole.
+    const openRungs = candidates.filter((model) => !accountCooling(model));
+    let rungs = failover.order(openRungs.length ? openRungs : candidates);
     const sessionKey = route.lane && sessions ? sessions.keyFor(route.lane, headers, parsed) : null;
     const pinned = sessionKey ? sessions.get(sessionKey) : null;
     if (pinned && rungs.includes(pinned) && failover.coolingUntil(pinned) === null) rungs = [pinned, ...rungs.filter((model) => model !== pinned)];
@@ -217,6 +258,20 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       }
 
       const verdict = failover.report(model, code, upstreamRes.headers["retry-after"], text);
+      if (verdict.failover) {
+        noteAccountStrike(model);
+        // The whole account is throttled: stop walking it and say so plainly.
+        if (accountCooling(model) && !res.destroyed) {
+          if (read) { /* body already consumed */ } else upstreamRes.resume();
+          sendJson(res, 429, {
+            error: {
+              type: "dshproxy_account_rate_limited",
+              message: `${accountOf(model) || "The provider"} is rate-limiting this account right now. Pick a model from another provider, or retry in about ${accountWaitSeconds(model)} seconds.`
+            }
+          });
+          return;
+        }
+      }
       if (verdict.failover && next && !res.destroyed) {
         if (!read) upstreamRes.resume();
         log(`${label}: ${model} ${verdict.reason}${verdict.until ? `, skipped until about ${verdict.until.toLocaleTimeString()}` : ""}; using ${next}`);
