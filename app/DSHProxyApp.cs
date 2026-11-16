@@ -374,7 +374,7 @@ namespace DSHProxy
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            e.Graphics.Clear(Parent != null ? Parent.BackColor : Theme.Card);
+            Glass.PaintBehind(e.Graphics, this, ClientRectangle);
             var bounds = new RectangleF(0, 0, Width - 1, Height - 1);
             using (var track = new SolidBrush(Theme.Track)) FillRounded(e.Graphics, track, bounds);
             var width = (float)((Width - 1) * left / 100.0);
@@ -403,8 +403,9 @@ namespace DSHProxy
     {
         private readonly GatewayControl control;
         private readonly ArrayList providers;
-        private readonly Panel body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20) };
-        private readonly FlowLayoutPanel buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 48, Padding = new Padding(12, 8, 12, 8) };
+        private readonly Panel body = Glass.Make(new Panel { Dock = DockStyle.Fill, Padding = new Padding(22, 18, 22, 14) }, 24, true);
+        private readonly Panel holder = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 14, 14, 0) };
+        private readonly FlowLayoutPanel buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 62, Padding = new Padding(14, 12, 14, 10) };
         private readonly System.Windows.Forms.Timer poll = new System.Windows.Forms.Timer { Interval = 1500 };
         private string sessionId;
         private string sessionLabel;
@@ -434,13 +435,12 @@ namespace DSHProxy
             MinimizeBox = false;
             MaximizeBox = false;
             ShowInTaskbar = false;
-            ClientSize = new Size(520, 470);
+            ClientSize = new Size(548, 520);
             Font = Theme.Ui(9.5f);
-            Controls.Add(body);
+            holder.Controls.Add(body);
+            Controls.Add(holder);
             Controls.Add(buttons);
             Skin.Apply(this);
-            BackColor = Theme.Card;
-            buttons.BackColor = Theme.Page;
             poll.Tick += (s, e) => Poll();
             FormClosing += (s, e) =>
             {
@@ -469,7 +469,7 @@ namespace DSHProxy
 
         private Button Close2(string text)
         {
-            var button = new Button { Text = text, Width = 96, Height = 32 };
+            var button = new PillButton { Text = text, Width = 96, Height = 32 };
             button.Click += (s, e) => Close();
             return button;
         }
@@ -494,15 +494,15 @@ namespace DSHProxy
                 var label = Json.Str(Json.Get(provider, "label"));
                 string description;
                 Descriptions.TryGetValue(key, out description);
-                var choice = new Button
+                var choice = new PillButton
                 {
                     Text = label + Environment.NewLine + (description ?? ""),
                     TextAlign = ContentAlignment.MiddleLeft,
                     Width = 470,
-                    Height = 58,
+                    Height = 64,
                     Margin = new Padding(0, 0, 0, 8),
                     Padding = new Padding(12, 0, 0, 0),
-                    Image = Logos.Sized(key, 32),
+                    Image = Logos.Sized(key, 30),
                     ImageAlign = ContentAlignment.MiddleLeft,
                     TextImageRelation = TextImageRelation.ImageBeforeText
                 };
@@ -558,11 +558,11 @@ namespace DSHProxy
             var device = Json.Str(Json.Get(started, "flow")) == "device";
             var code = Json.Str(Json.Get(started, "userCode"));
 
-            var cancel = new Button { Text = "Cancel", Width = 96, Height = 32 };
+            var cancel = new PillButton { Text = "Cancel", Width = 96, Height = 32 };
             cancel.Click += (s, e) => { CancelSession(); ShowChoices(); };
-            var reopen = Skin.Primary(new Button { Text = "Open page again", Width = 140, Height = 32 });
+            var reopen = Skin.Primary(new PillButton { Text = "Open page again", Width = 140, Height = 32 });
             reopen.Click += (s, e) => OpenBrowser(url);
-            var copy = new Button { Text = "Copy link", Width = 96, Height = 32 };
+            var copy = new PillButton { Text = "Copy link", Width = 96, Height = 32 };
             copy.Click += (s, e) => Clipboard.SetText(url);
             Reset(cancel, reopen, copy);
 
@@ -576,7 +576,7 @@ namespace DSHProxy
             {
                 var codeRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 56, FlowDirection = FlowDirection.LeftToRight };
                 var codeLabel = new Label { Text = code, AutoSize = true, Font = Theme.Mono(22f, FontStyle.Bold), ForeColor = Theme.Accent, Margin = new Padding(0, 4, 16, 0) };
-                var copyCode = Skin.Outline(new Button { Text = "Copy code", Width = 104, Height = 32, Margin = new Padding(0, 12, 0, 0) });
+                var copyCode = Skin.Outline(new PillButton { Text = "Copy code", Width = 104, Height = 32, Margin = new Padding(0, 12, 0, 0) });
                 copyCode.Click += (s, e) => Clipboard.SetText(code);
                 codeRow.Controls.Add(codeLabel);
                 codeRow.Controls.Add(copyCode);
@@ -653,8 +653,8 @@ namespace DSHProxy
         private void ShowSuccess(string account)
         {
             SignedInAs = account.Length > 0 ? account : sessionLabel;
-            var done = Skin.Primary(new Button { Text = "Done", Width = 96, Height = 32, DialogResult = DialogResult.OK });
-            var another = new Button { Text = "Add another", Width = 116, Height = 32 };
+            var done = Skin.Primary(new PillButton { Text = "Done", Width = 96, Height = 32, DialogResult = DialogResult.OK });
+            var another = new PillButton { Text = "Add another", Width = 116, Height = 32 };
             another.Click += (s, e) => ShowChoices();
             Reset(done, another);
             AcceptButton = done;
@@ -666,12 +666,12 @@ namespace DSHProxy
 
         private void ShowFailure(string message, string key, string label)
         {
-            var back = new Button { Text = "Back", Width = 96, Height = 32 };
+            var back = new PillButton { Text = "Back", Width = 96, Height = 32 };
             back.Click += (s, e) => ShowChoices();
             Reset(Close2("Close"), back);
             if (key != null)
             {
-                var retry = Skin.Primary(new Button { Text = "Try again", Width = 104, Height = 32 });
+                var retry = Skin.Primary(new PillButton { Text = "Try again", Width = 104, Height = 32 });
                 retry.Click += (s, e) => Begin(key, label);
                 buttons.Controls.Add(retry);
             }
@@ -702,12 +702,12 @@ namespace DSHProxy
         private DateTime? limitsAt;
         private readonly HashSet<string> warned = new HashSet<string>();
 
-        private readonly Label stateLabel = new Label { AutoSize = true, Font = Theme.Ui(9f, FontStyle.Bold), Padding = new Padding(10, 3, 10, 3), Margin = new Padding(14, 9, 0, 0) };
+        private readonly Chip stateLabel = new Chip { Font = Theme.Ui(9f, FontStyle.Bold), Margin = new Padding(14, 12, 0, 0) };
         private readonly Label detailLabel = new Label { AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 2, 0, 0) };
         private readonly Label lowestLabel = new Label { AutoSize = true, Margin = new Padding(0, 2, 0, 0) };
-        private readonly Button startButton = Skin.Primary(new Button { Text = "Start", Width = 96, Height = 34 });
-        private readonly Button stopButton = Skin.Danger(new Button { Text = "Stop", Width = 96, Height = 34, Margin = new Padding(8, 3, 0, 3) });
-        private readonly Panel accountsPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.Page, Padding = new Padding(0, 4, 0, 4) };
+        private readonly Button startButton = Skin.Primary(new PillButton { Text = "Start", Width = 104, Height = 40 });
+        private readonly Button stopButton = Skin.Danger(new PillButton { Text = "Stop", Width = 104, Height = 40, Margin = new Padding(8, 3, 0, 3) });
+        private readonly Panel accountsPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(0, 4, 0, 4) };
         private readonly Label limitsNote = new Label { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
         private readonly ListView keysList = new DarkList();
         private readonly ComboBox keyProviderCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
@@ -715,11 +715,11 @@ namespace DSHProxy
         private readonly ListView lanesList = new DarkList();
         private readonly ListView modelsList = new DarkList();
         private readonly Label modelsNote = new Label { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
-        private readonly FlowLayoutPanel suggestionsPanel = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Banner, Padding = new Padding(8, 6, 8, 6), Visible = false };
-        private readonly FlowLayoutPanel updateBar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Theme.Banner, Padding = new Padding(12, 6, 12, 6), Visible = false };
+        private readonly FlowLayoutPanel suggestionsPanel = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(14, 8, 14, 8), Margin = new Padding(0, 0, 0, 8), Visible = false };
+        private readonly FlowLayoutPanel updateBar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(18, 8, 18, 8), Visible = false };
         private readonly Label updateLabel = new Label { AutoSize = true, Margin = new Padding(0, 8, 12, 0) };
-        private readonly Button updateButton = Skin.Primary(new Button { Text = "Update...", AutoSize = true });
-        private readonly Button rollbackButton = new Button { Text = "Roll back...", AutoSize = true };
+        private readonly Button updateButton = Skin.Primary(new PillButton { Text = "Update...", AutoSize = true });
+        private readonly Button rollbackButton = new PillButton { Text = "Roll back...", AutoSize = true };
         private ArrayList modelRows = new ArrayList();
         private bool showHiddenModels;
         private bool fillingModels;
@@ -729,9 +729,9 @@ namespace DSHProxy
         private string previousBackend = "";
         private readonly ListView profilesList = new DarkList();
         private readonly TextBox logBox = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, WordWrap = false, Dock = DockStyle.Fill, Font = Theme.Mono(9f), BackColor = Theme.Input };
-        private readonly CheckBox autostartBox = new CheckBox { Text = "Start with Windows", AutoSize = true };
+        private readonly CheckBox autostartBox = new GlassCheck { Text = "Start with Windows", AutoSize = true };
         private readonly Label footer = new Label { AutoSize = true, ForeColor = Theme.Muted };
-        private readonly TabControl tabs = new FlatTabs { Dock = DockStyle.Fill, Appearance = TabAppearance.FlatButtons, ItemSize = new Size(0, 1), SizeMode = TabSizeMode.Fixed };
+        private readonly PageHost tabs = new PageHost { Dock = DockStyle.Fill };
 
         private readonly string previewLimits;
         public static bool ReadOnly;
@@ -840,15 +840,15 @@ namespace DSHProxy
         private static System.Windows.Forms.Control Framed(System.Windows.Forms.Control body)
         {
             if (!(body is ListView) && !(body is TextBox)) return body;
-            var frame = new Panel { Dock = DockStyle.Fill, Padding = new Padding(1), BackColor = Theme.Border };
+            var frame = Glass.Make(new Panel { Dock = DockStyle.Fill, Padding = new Padding(10, 6, 10, 10) }, 20);
             body.Dock = DockStyle.Fill;
             frame.Controls.Add(body);
             return frame;
         }
 
-        private static TabPage Page(string title, System.Windows.Forms.Control body, System.Windows.Forms.Control top, System.Windows.Forms.Control bottom)
+        private static Panel Page(string title, System.Windows.Forms.Control body, System.Windows.Forms.Control top, System.Windows.Forms.Control bottom)
         {
-            var page = new TabPage(title) { Padding = new Padding(18, 14, 18, 14) };
+            var page = new Panel { Text = title, Padding = new Padding(22, 8, 22, 14) };
             page.Controls.Add(Framed(body));
             if (bottom != null) page.Controls.Add(bottom);
             if (top != null) page.Controls.Add(top);
@@ -858,19 +858,19 @@ namespace DSHProxy
         // The header: app icon and name, a status pill, and what is running.
         private System.Windows.Forms.Control BuildHeader()
         {
-            var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = 92, ColumnCount = 3, Padding = new Padding(18, 14, 18, 10), BackColor = Theme.Page };
+            var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = 104, ColumnCount = 3, Padding = new Padding(22, 18, 22, 8) };
             header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-            var mark = new PictureBox { Size = new Size(52, 52), SizeMode = PictureBoxSizeMode.Zoom, Margin = new Padding(0, 0, 14, 0) };
+            var mark = new AppMark { Size = new Size(60, 60), Margin = new Padding(0, 0, 16, 0) };
             var big = AppIcon.Load(new Size(64, 64));
-            if (big != null) mark.Image = big.ToBitmapExact(52, Theme.Page);
+            if (big != null) mark.Picture = big.ToBitmapExact(64, Color.Black);
             header.Controls.Add(mark, 0, 0);
 
             var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0) };
             var nameRow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
-            nameRow.Controls.Add(new Label { Text = "DeepSeekProxy", AutoSize = true, Font = Theme.Ui(17f, FontStyle.Bold), ForeColor = Theme.Text, Margin = new Padding(0, 0, 0, 0) });
+            nameRow.Controls.Add(new Label { Text = "DeepSeekProxy", AutoSize = true, Font = Theme.Light(22f), ForeColor = Theme.Text, Margin = new Padding(0, 0, 0, 0) });
             nameRow.Controls.Add(stateLabel);
             text.Controls.Add(nameRow);
             text.Controls.Add(detailLabel);
@@ -888,8 +888,7 @@ namespace DSHProxy
         private void ShowState(string text, Color color)
         {
             stateLabel.Text = text;
-            stateLabel.ForeColor = color;
-            stateLabel.BackColor = Color.FromArgb(40, color.R, color.G, color.B).Blend(Theme.Page);
+            stateLabel.Tint = color;
         }
 
         private void BuildLayout()
@@ -904,11 +903,11 @@ namespace DSHProxy
             rollbackButton.Click += (s, e) => Rollback();
 
             // Accounts and limits
-            var addAccount = Skin.Primary(new Button { Text = "+ Add account", AutoSize = true });
+            var addAccount = Skin.Primary(new PillButton { Text = "+ Add account", AutoSize = true });
             addAccount.Click += (s, e) => AddAccount();
-            var refreshLimits = new Button { Text = "Refresh limits", AutoSize = true };
+            var refreshLimits = new PillButton { Text = "Refresh limits", AutoSize = true };
             refreshLimits.Click += (s, e) => LoadLimits(true);
-            var authFolder = new Button { Text = "Open credentials folder", AutoSize = true };
+            var authFolder = new PillButton { Text = "Open credentials folder", AutoSize = true };
             authFolder.Click += (s, e) => OpenFolder("auth");
             tabs.TabPages.Add(Page("Accounts", accountsPanel,
                 Note("Subscription accounts and how much of each limit is left. Bars turn amber below 30% and red below 10%."),
@@ -927,9 +926,9 @@ namespace DSHProxy
                 if (image != null) keyLogos.Images.Add(name, image);
             }
             keysList.SmallImageList = keyLogos;
-            var addKey = Skin.Primary(new Button { Text = "Add or replace key", AutoSize = true });
+            var addKey = Skin.Primary(new PillButton { Text = "Add or replace key", AutoSize = true });
             addKey.Click += (s, e) => AddKey();
-            var removeKey = Skin.Danger(new Button { Text = "Remove selected", AutoSize = true });
+            var removeKey = Skin.Danger(new PillButton { Text = "Remove selected", AutoSize = true });
             removeKey.Click += (s, e) => RemoveKey();
             keyProviderCombo.SelectedIndexChanged += (s, e) => FillRegions();
             tabs.TabPages.Add(Page("API keys", keysList,
@@ -944,7 +943,7 @@ namespace DSHProxy
             lanesList.Dock = DockStyle.Fill;
             lanesList.Font = Theme.Ui(9.5f);
             lanesList.SmallImageList = new ImageList { ImageSize = new Size(1, 34) };
-            var editLanes = new Button { Text = "Edit lanes (settings.json)", AutoSize = true };
+            var editLanes = new PillButton { Text = "Edit lanes (settings.json)", AutoSize = true };
             editLanes.Click += (s, e) => EditSettings();
             tabs.TabPages.Add(Page("Lanes", lanesList,
                 Note("A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key."),
@@ -953,7 +952,7 @@ namespace DSHProxy
             // Models
             modelsList.View = View.Details;
             modelsList.CheckBoxes = true;
-            foreach (var c in new[] { new object[] { "Model", 230 }, new object[] { "Service", 150 }, new object[] { "Context", 90 }, new object[] { "Output", 80 }, new object[] { "Reasoning", 190 }, new object[] { "Status", 170 } }) modelsList.Columns.Add((string)c[0], (int)c[1]);
+            foreach (var c in new[] { new object[] { "Model", 210 }, new object[] { "Service", 140 }, new object[] { "Context", 80 }, new object[] { "Output", 75 }, new object[] { "Reasoning", 165 }, new object[] { "Status", 200 } }) modelsList.Columns.Add((string)c[0], (int)c[1]);
             modelsList.FullRowSelect = true;
             modelsList.Dock = DockStyle.Fill;
             var modelLogos = new ImageList { ImageSize = new Size(18, 18), ColorDepth = ColorDepth.Depth32Bit };
@@ -964,9 +963,9 @@ namespace DSHProxy
             }
             modelsList.SmallImageList = modelLogos;
             modelsList.ItemCheck += (s, e) => OnModelChecked(e);
-            var checkModels = Skin.Primary(new Button { Text = "Check for new models", AutoSize = true });
+            var checkModels = Skin.Primary(new PillButton { Text = "Check for new models", AutoSize = true });
             checkModels.Click += (s, e) => RefreshModels();
-            var showAll = new CheckBox { Text = "Show hidden models", AutoSize = true, Margin = new Padding(12, 7, 0, 0) };
+            var showAll = new GlassCheck { Text = "Show hidden models", AutoSize = true, Margin = new Padding(12, 7, 0, 0) };
             showAll.CheckedChanged += (s, e) => { showHiddenModels = showAll.Checked; FillModels(); };
             var modelsPage = Page("Models", modelsList,
                 Note("Ticked models are offered to DeepSeek Harness. New models are found automatically every 3 hours; when the list changes, the DSHProxy routes in DeepSeek Harness are updated (restart DeepSeek Harness to see them)."),
@@ -981,35 +980,34 @@ namespace DSHProxy
             foreach (var c in new[] { "Profile", "Routes", "Models", "Points at this gateway" }) profilesList.Columns.Add(c, 200);
             profilesList.FullRowSelect = true;
             profilesList.Dock = DockStyle.Fill;
-            var preview = new Button { Text = "Preview changes", AutoSize = true };
+            var preview = new PillButton { Text = "Preview changes", AutoSize = true };
             preview.Click += (s, e) => RunAndShow(new[] { "dsh", "apply", "--dry-run" }, "Preview", false);
-            var apply = Skin.Primary(new Button { Text = "Apply to DeepSeek Harness", AutoSize = true });
+            var apply = Skin.Primary(new PillButton { Text = "Apply to DeepSeek Harness", AutoSize = true });
             apply.Click += (s, e) => ApplyToHarness();
-            var remove = Skin.Danger(new Button { Text = "Remove from DeepSeek Harness", AutoSize = true });
+            var remove = Skin.Danger(new PillButton { Text = "Remove from DeepSeek Harness", AutoSize = true });
             remove.Click += (s, e) => RemoveFromHarness();
             tabs.TabPages.Add(Page("DeepSeek Harness", profilesList,
                 Note("Apply writes the DSHProxy routes into every DeepSeek Harness profile and keeps everything else. Restart DeepSeek Harness afterwards."),
                 Row(preview, apply, remove)));
 
             // Log
-            var logPage = new TabPage("Log") { Padding = new Padding(18, 14, 18, 14) };
+            var logPage = new Panel { Text = "Log", Padding = new Padding(22, 8, 22, 14) };
             logPage.Controls.Add(Framed(logBox));
             logBox.BorderStyle = BorderStyle.None;
-            var openLogFolder = new Button { Text = "Open data folder", AutoSize = true };
+            var openLogFolder = new PillButton { Text = "Open data folder", AutoSize = true };
             openLogFolder.Click += (s, e) => OpenFolder("");
             logPage.Controls.Add(Row(openLogFolder));
             tabs.TabPages.Add(logPage);
 
             tabs.SelectedIndexChanged += (s, e) => { if (tabs.SelectedIndex == 0) LoadLimits(false); };
 
-            var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 38, ColumnCount = 2, Padding = new Padding(18, 6, 18, 6), BackColor = Theme.Page };
+            var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 42, ColumnCount = 2, Padding = new Padding(22, 8, 22, 8) };
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             footer.Margin = new Padding(0, 5, 0, 0);
             bottom.Controls.Add(footer, 0, 0);
             bottom.Controls.Add(autostartBox, 1, 0);
-            bottom.Paint += (s, e) => { using (var line = new Pen(Theme.Border)) e.Graphics.DrawLine(line, 0, 0, bottom.Width, 0); };
-
+            
             var nav = new NavStrip(tabs);
             Controls.Add(tabs);
             Controls.Add(nav);
@@ -1346,7 +1344,7 @@ namespace DSHProxy
             for (var index = accounts.Count - 1; index >= 0; index -= 1)
             {
                 var account = Json.Obj(accounts[index]);
-                accountsPanel.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 12, BackColor = Theme.Page });
+                accountsPanel.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 14 });
                 accountsPanel.Controls.Add(BuildCard(account));
                 foreach (var item in Json.Arr(Json.Get(account, "windows")))
                 {
@@ -1393,8 +1391,7 @@ namespace DSHProxy
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 ColumnCount = 3,
-                BackColor = Theme.Card,
-                Padding = new Padding(18, 14, 18, 14)
+                Padding = new Padding(20, 16, 20, 16)
             };
             Skin.Border(card);
             card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
@@ -1409,15 +1406,15 @@ namespace DSHProxy
             // Plan names such as "self_serve_business_prolite" are made readable and kept short.
             var planText = plan.Replace("_", " ");
             if (planText.Length > 22) planText = planText.Substring(0, 21) + "\u2026";
-            if (plan.Length > 0) title.Controls.Add(new Label { Text = planText, AutoSize = true, BackColor = Theme.AccentDim, ForeColor = Theme.Accent, Padding = new Padding(6, 2, 6, 2), Margin = new Padding(0, 4, 8, 0) });
+            if (plan.Length > 0) title.Controls.Add(new Chip { Text = planText, Tint = Theme.Teal, Margin = new Padding(0, 3, 8, 0) });
             title.Controls.Add(new Label { Text = disabled ? "\u25CF Paused" : "\u25CF Active", AutoSize = true, ForeColor = disabled ? Theme.Muted : Theme.Ok, Margin = new Padding(0, 5, 0, 0) });
             card.Controls.Add(title, 0, 0);
             card.SetColumnSpan(title, 2);
 
             var actions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Anchor = AnchorStyles.Top | AnchorStyles.Right, Margin = new Padding(0) };
-            var signOut = Skin.Danger(new Button { Text = "Sign out...", AutoSize = true, Margin = new Padding(6, 0, 0, 0) });
+            var signOut = Skin.Danger(new PillButton { Text = "Sign out...", AutoSize = true, Margin = new Padding(6, 0, 0, 0) });
             signOut.Click += (s, e) => SignOut(file, label, email);
-            var pause = new Button { Text = disabled ? "Resume" : "Pause", AutoSize = true, Margin = new Padding(6, 0, 0, 0) };
+            var pause = new PillButton { Text = disabled ? "Resume" : "Pause", AutoSize = true, Margin = new Padding(6, 0, 0, 0) };
             pause.Click += (s, e) => SetPaused(file, label, email, !disabled);
             actions.Controls.Add(signOut);
             actions.Controls.Add(pause);
@@ -1425,7 +1422,7 @@ namespace DSHProxy
             var resetCount = (int)Json.Num(resets, "available", 0);
             if (resetCount > 0 && !disabled)
             {
-                var useReset = Skin.Outline(new Button { Text = string.Format("Use a reset ({0})", resetCount), AutoSize = true, Margin = new Padding(6, 0, 0, 0) });
+                var useReset = Skin.Outline(new PillButton { Text = string.Format("Use a reset ({0})", resetCount), AutoSize = true, Margin = new Padding(6, 0, 0, 0) });
                 useReset.Click += (s, e) => UseReset(file, label, email, windows);
                 actions.Controls.Add(useReset);
             }
@@ -1747,7 +1744,7 @@ namespace DSHProxy
                 foreach (var l in Json.Arr(Json.Get(s, "lanes"))) lanes.Add(Json.Str(l));
                 var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 2, 0, 2) };
                 row.Controls.Add(new Label { Text = string.Format("Newer model: {0} could replace {1} on lane {2}.", to, from, string.Join(", ", lanes.ToArray())), AutoSize = true, Margin = new Padding(0, 7, 10, 0) });
-                var use = new Button { Text = "Use " + to, AutoSize = true };
+                var use = new PillButton { Text = "Use " + to, AutoSize = true };
                 var lanesCopy = lanes.ToArray();
                 use.Click += (s2, e2) => ReplaceOnLanes(from, to, lanesCopy);
                 row.Controls.Add(use);
@@ -1971,9 +1968,11 @@ namespace DSHProxy
                 form.ShowInTaskbar = false;
                 form.ClientSize = new Size(480, 360);
                 form.Font = Theme.Ui(9.5f);
-                form.BackColor = Theme.Card;
+                form.ClientSize = new Size(500, 390);
 
-                var body = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = false, Padding = new Padding(18, 14, 18, 8) };
+                var body = Glass.Make(new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = false, Padding = new Padding(20, 16, 20, 8), Margin = new Padding(0) }, 22, true);
+                var holder = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 14, 14, 0) };
+                holder.Controls.Add(body);
                 body.Controls.Add(new Label { Text = label + " \u00B7 " + email, AutoSize = true, Font = Theme.Ui(12f, FontStyle.Bold), Margin = new Padding(0, 0, 0, 6) });
                 body.Controls.Add(new Label { Text = "A reset makes your used-up limits full again straight away.", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 10) });
                 foreach (var item in windows)
@@ -1992,25 +1991,23 @@ namespace DSHProxy
                     var expires = Format.ParseTime(Json.Str(Json.Get(credit, "expiresAt")));
                     var detail = Json.Str(Json.Get(credit, "description"));
                     if (expires.HasValue) detail = (detail.Length > 0 ? detail + " \u00B7 " : "") + "expires " + expires.Value.ToString("d MMM yyyy", CultureInfo.CurrentCulture);
-                    var choice = new RadioButton { Text = Json.Str(Json.Get(credit, "title")), AutoSize = true, Tag = credit, Margin = new Padding(0, 2, 0, 0), Font = Theme.Ui(9.5f, FontStyle.Bold) };
+                    var choice = new GlassRadio { Text = Json.Str(Json.Get(credit, "title")), AutoSize = true, Tag = credit, Margin = new Padding(0, 2, 0, 0), Font = Theme.Ui(9.5f, FontStyle.Bold) };
                     choice.CheckedChanged += (s, e) => { if (choice.Checked) picked = (Dictionary<string, object>)choice.Tag; };
                     body.Controls.Add(choice);
                     if (detail.Length > 0) body.Controls.Add(new Label { Text = detail, AutoSize = true, MaximumSize = new Size(420, 0), ForeColor = Theme.Muted, Margin = new Padding(18, 0, 0, 6) });
                     if (picked == null) choice.Checked = true;
                 }
 
-                var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 48, Padding = new Padding(12, 8, 12, 8) };
-                var cancel = new Button { Text = "Cancel", Width = 96, Height = 32, DialogResult = DialogResult.Cancel };
-                var next = Skin.Primary(new Button { Text = "Continue...", Width = 116, Height = 32, DialogResult = DialogResult.OK });
+                var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 60, Padding = new Padding(14, 10, 14, 10) };
+                var cancel = new PillButton { Text = "Cancel", Width = 104, Height = 38, DialogResult = DialogResult.Cancel };
+                var next = Skin.Primary(new PillButton { Text = "Continue...", Width = 124, Height = 38, DialogResult = DialogResult.OK });
                 buttons.Controls.Add(cancel);
                 buttons.Controls.Add(next);
-                form.Controls.Add(body);
+                form.Controls.Add(holder);
                 form.Controls.Add(buttons);
                 form.AcceptButton = next;
                 form.CancelButton = cancel;
                 Skin.Apply(form);
-                form.BackColor = Theme.Card;
-                buttons.BackColor = Theme.Page;
                 return form.ShowDialog(owner) == DialogResult.OK ? picked : null;
             }
         }
@@ -2028,17 +2025,16 @@ namespace DSHProxy
                 form.StartPosition = FormStartPosition.CenterParent;
                 form.MinimizeBox = false;
                 form.MaximizeBox = false;
-                form.ClientSize = new Size(420, 130);
+                form.ClientSize = new Size(440, 150);
                 form.Font = Theme.Ui(9f);
-                var label = new Label { Text = "API key for " + provider + ":", Left = 12, Top = 14, AutoSize = true };
-                var box = new TextBox { Left = 12, Top = 38, Width = 396, UseSystemPasswordChar = true };
-                var ok = Skin.Primary(new Button { Text = "Save", Left = 236, Top = 84, Width = 80, Height = 32, DialogResult = DialogResult.OK });
-                var cancel = new Button { Text = "Cancel", Left = 328, Top = 84, Width = 80, Height = 32, DialogResult = DialogResult.Cancel };
+                var label = new Label { Text = "API key for " + provider + ":", Left = 20, Top = 18, AutoSize = true };
+                var box = new TextBox { Left = 20, Top = 44, Width = 400, UseSystemPasswordChar = true };
+                var ok = Skin.Primary(new PillButton { Text = "Save", Left = 228, Top = 96, Width = 92, Height = 38, DialogResult = DialogResult.OK });
+                var cancel = new PillButton { Text = "Cancel", Left = 328, Top = 96, Width = 92, Height = 38, DialogResult = DialogResult.Cancel };
                 form.Controls.AddRange(new System.Windows.Forms.Control[] { label, box, ok, cancel });
                 form.AcceptButton = ok;
                 form.CancelButton = cancel;
                 Skin.Apply(form);
-                form.BackColor = Theme.Card;
                 return form.ShowDialog(owner) == DialogResult.OK ? box.Text.Trim() : null;
             }
         }
