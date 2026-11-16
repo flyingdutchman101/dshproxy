@@ -91,8 +91,8 @@ test("a lane request is served by the first rung", async (t) => {
   const response = await post(url, { model: "lane-main", max_tokens: 5 });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { served: "gpt-6-astra" });
-  assert.equal(response.headers.get("x-dshgate-model"), "gpt-6-astra");
-  assert.equal(response.headers.get("x-dshgate-lane"), "main");
+  assert.equal(response.headers.get("x-dshproxy-model"), "gpt-6-astra");
+  assert.equal(response.headers.get("x-dshproxy-lane"), "main");
 });
 
 test("a rung that is out of quota is skipped and the next rung serves the same request", async (t) => {
@@ -255,7 +255,7 @@ test("a request over the size limit is refused before it reaches the backend", a
   });
   const response = await post(`http://127.0.0.1:${port}`, { model: "claude-opus-5-5", padding: "x".repeat(4096) });
   assert.equal(response.status, 413);
-  assert.equal((await response.json()).error.type, "dshgate_request_too_large");
+  assert.equal((await response.json()).error.type, "dshproxy_request_too_large");
   assert.equal(backend.seen.length, 0);
 });
 
@@ -287,7 +287,7 @@ test("a lane with no available model answers 503 and names the lane", async (t) 
   assert.equal(response.headers.get("content-type"), "application/json");
   assert.equal(response.status, 503);
   const payload = await response.json();
-  assert.equal(payload.error.type, "dshgate_no_rung");
+  assert.equal(payload.error.type, "dshproxy_no_rung");
   assert.match(payload.error.message, /"empty"/);
   assert.equal(backend.seen.length, 0);
 });
@@ -348,12 +348,12 @@ test("a backend that is down answers 502 instead of hanging", async (t) => {
   const { url } = await startGateway(t, port);
   const response = await post(url, { model: "claude-opus-5-5" });
   assert.equal(response.status, 502);
-  assert.equal((await response.json()).error.type, "dshgate_backend_unreachable");
+  assert.equal((await response.json()).error.type, "dshproxy_backend_unreachable");
 });
 
 test("the status page is answered by the gateway itself", async (t) => {
   const backend = await startBackend(t, () => ({ status: 200 }));
   const { url } = await startGateway(t, backend.port);
-  assert.deepEqual(await (await fetch(`${url}/dshgate/status`)).json(), { ok: true });
+  assert.deepEqual(await (await fetch(`${url}/dshproxy/status`)).json(), { ok: true });
   assert.equal(backend.seen.length, 0);
 });

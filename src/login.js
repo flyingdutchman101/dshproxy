@@ -1,7 +1,7 @@
 // Browser sign-in for subscription accounts.
 //
 // The backend creates the sign-in link and exchanges the code for tokens. The
-// provider sends the browser back to a fixed localhost address; dshgate
+// provider sends the browser back to a fixed localhost address; DSHProxy
 // listens there on loopback only, hands the address to the backend, and shows
 // the user a confirmation page. Kimi uses a device code instead: the user
 // enters a short code on Kimi's page and no address is needed.
@@ -141,21 +141,21 @@ function createLogins({ management, log = () => {}, now = Date.now, listen = lis
       res.end(page(title, message, ok));
     };
     if (address.pathname !== provider.callback.path || address.searchParams.get("state") !== session.state) {
-      send(404, "Not found", "This address only finishes a dshgate sign-in.", false);
+      send(404, "Not found", "This address only finishes a DSHProxy sign-in.", false);
       return;
     }
     const denied = address.searchParams.get("error");
     try {
       await management.submitCallback(provider.backendName, address.href);
     } catch (error) {
-      send(400, "Sign-in failed", `dshgate could not finish the sign-in: ${error.message}`, false);
+      send(400, "Sign-in failed", `DSHProxy could not finish the sign-in: ${error.message}`, false);
       return;
     }
     if (denied) {
       send(200, "Sign-in cancelled", `${provider.label} reported: ${address.searchParams.get("error_description") || denied}. You can close this tab.`, false);
       return;
     }
-    send(200, `Signed in to ${provider.label}`, "You can close this tab and go back to dshgate.", true);
+    send(200, `Signed in to ${provider.label}`, "You can close this tab and go back to DSHProxy.", true);
   }
 
   async function status(id) {

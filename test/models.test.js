@@ -150,7 +150,7 @@ test("the full list marks what is offered, hidden by default, or switched off", 
   assert.equal(byId["ag-c55s-high"].account, "antigravity");
 });
 
-test("Claude served through Google keeps its short dshgate name", () => {
+test("Claude served through Google keeps its short DSHProxy name", () => {
   const models = buildModels({ catalog: parseCatalog(CATALOG), served: SERVED, accounts: new Set(["antigravity"]), extra: [] });
   const viaGoogle = models.find((model) => model.upstream === "claude-sonnet-5-5-high");
   assert.equal(viaGoogle.id, "ag-c55s-high");

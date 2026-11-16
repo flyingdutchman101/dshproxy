@@ -60,7 +60,7 @@ function lockFromRelease(release, sums) {
 // Asks GitHub for the latest release. Returns { available, current, latest,
 // lock?, publishedAt? }.
 async function checkForUpdate(current, { fetchImpl = fetch, timeoutMs = 20000 } = {}) {
-  const response = await fetchImpl(LATEST_URL, { headers: { accept: "application/vnd.github+json", "user-agent": "dshgate" }, signal: AbortSignal.timeout(timeoutMs) });
+  const response = await fetchImpl(LATEST_URL, { headers: { accept: "application/vnd.github+json", "user-agent": "DSHProxy" }, signal: AbortSignal.timeout(timeoutMs) });
   if (!response.ok) throw new Error(`GitHub answered HTTP ${response.status}.`);
   const release = await response.json();
   const latest = String(release.tag_name || "").replace(/^v/, "");
@@ -96,7 +96,7 @@ function createUpdater({ lockFile, binDir, install, trial, restart, current: cur
 
   async function apply(next) {
     if (running) throw new Error("An update is already running.");
-    if (typeof restart !== "function") return { ok: false, message: "This gateway cannot restart itself, so it cannot switch versions. Start it from the dshgate app.", checks: [] };
+    if (typeof restart !== "function") return { ok: false, message: "This gateway cannot restart itself, so it cannot switch versions. Start it from the DSHProxy app.", checks: [] };
     running = true;
     try {
       const current = currentLock();
@@ -110,7 +110,7 @@ function createUpdater({ lockFile, binDir, install, trial, restart, current: cur
       const result = await trial(installed.path, next);
       if (!result.ok) {
         log(`CLIProxyAPI ${next.version} did not pass its trial; staying on ${current.version}`);
-        return { ok: false, message: `CLIProxyAPI ${next.version} did not pass its trial, so dshgate stays on ${current.version}.`, checks: result.checks || [] };
+        return { ok: false, message: `CLIProxyAPI ${next.version} did not pass its trial, so DSHProxy stays on ${current.version}.`, checks: result.checks || [] };
       }
       const { previous, ...currentWithoutPrevious } = current;
       writeLock(lockFile, { ...next, previous: currentWithoutPrevious });
@@ -128,7 +128,7 @@ function createUpdater({ lockFile, binDir, install, trial, restart, current: cur
     try {
       const current = readLock(lockFile);
       if (!current.previous) throw new Error("There is no previous version to go back to.");
-      if (floor && compareVersions(current.previous.version, floor) < 0) throw new Error(`CLIProxyAPI ${current.previous.version} is older than the version this dshgate ships with (${floor}).`);
+      if (floor && compareVersions(current.previous.version, floor) < 0) throw new Error(`CLIProxyAPI ${current.previous.version} is older than the version this DSHProxy ships with (${floor}).`);
       writeLock(lockFile, current.previous);
       log(`rolled back from CLIProxyAPI ${current.version} to ${current.previous.version}`);
       await restart();

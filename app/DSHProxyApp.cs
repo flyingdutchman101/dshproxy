@@ -1,7 +1,7 @@
-// dshgate for Windows: a window and tray icon that run and control the gateway.
+// DeepSeekProxy (DSHProxy) for Windows: a window and tray icon that run and control the gateway.
 //
-// The app owns no gateway logic. It starts `node bin/dshgate.js start` as a
-// hidden child process, reads `dshgate status --json`, and talks to the
+// The app owns no gateway logic. It starts `node bin/dshproxy.js start` as a
+// hidden child process, reads `dshproxy status --json`, and talks to the
 // running gateway's local control API for sign-in, accounts and limits. Built
 // with the C# compiler that ships with Windows (see app/build.ps1), so the
 // code stays within C# 5.
@@ -20,7 +20,7 @@ using System.Threading;
 using System.Windows.Forms;
 using System.Web.Script.Serialization;
 
-namespace Dshgate
+namespace DSHProxy
 {
     internal static class Program
     {
@@ -29,11 +29,11 @@ namespace Dshgate
         {
             bool created;
             var previewing = Array.IndexOf(args, "--preview-limits") >= 0;
-            using (var mutex = new Mutex(true, previewing ? "dshgate-windows-app-preview" : "dshgate-windows-app", out created))
+            using (var mutex = new Mutex(true, previewing ? "dshproxy-windows-app-preview" : "dshproxy-windows-app", out created))
             {
                 if (!created)
                 {
-                    MessageBox.Show("dshgate is already running. Open it from the tray icon.", "dshgate", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("DeepSeekProxy is already running. Open it from the tray icon.", "DeepSeekProxy", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
                 Application.EnableVisualStyles();
@@ -70,7 +70,7 @@ namespace Dshgate
         }
     }
 
-    // The app icon embedded in the program (app/icon/dshgate.ico). Loading it
+    // The app icon embedded in the program (app/icon/DSHProxy.ico). Loading it
     // at the size wanted picks the matching frame, so the tray and title bar
     // icons are sharp instead of a scaled 32 px frame.
     internal static class AppIcon
@@ -204,7 +204,7 @@ namespace Dshgate
         }
     }
 
-    // Runs the dshgate command line.
+    // Runs the DSHProxy command line.
     internal sealed class Cli
     {
         public readonly string Root;
@@ -221,7 +221,7 @@ namespace Dshgate
             var dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
             while (dir != null)
             {
-                if (File.Exists(Path.Combine(dir.FullName, "bin", "dshgate.js"))) return dir.FullName;
+                if (File.Exists(Path.Combine(dir.FullName, "bin", "dshproxy.js"))) return dir.FullName;
                 dir = dir.Parent;
             }
             return null;
@@ -251,7 +251,7 @@ namespace Dshgate
 
         private ProcessStartInfo Info(string[] args)
         {
-            var parts = new List<string> { Quote(Path.Combine(Root, "bin", "dshgate.js")) };
+            var parts = new List<string> { Quote(Path.Combine(Root, "bin", "dshproxy.js")) };
             foreach (var arg in args) parts.Add(Quote(arg));
             return new ProcessStartInfo(Node, string.Join(" ", parts.ToArray()))
             {
@@ -320,8 +320,8 @@ namespace Dshgate
 
         public static string Home()
         {
-            var home = Environment.GetEnvironmentVariable("DSHGATE_HOME");
-            return string.IsNullOrEmpty(home) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dshgate") : home;
+            var home = Environment.GetEnvironmentVariable("DSHPROXY_HOME");
+            return string.IsNullOrEmpty(home) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dshproxy") : home;
         }
 
         private static string Token()
@@ -333,11 +333,11 @@ namespace Dshgate
 
         public Dictionary<string, object> Call(string method, string path, object body, int timeoutMs)
         {
-            var request = (HttpWebRequest)WebRequest.Create(origin() + "/dshgate/control/" + path);
+            var request = (HttpWebRequest)WebRequest.Create(origin() + "/dshproxy/control/" + path);
             request.Method = method;
             request.Timeout = timeoutMs;
             request.ReadWriteTimeout = timeoutMs;
-            request.Headers["x-dshgate-token"] = Token();
+            request.Headers["x-dshproxy-token"] = Token();
             request.Accept = "application/json";
             if (body != null)
             {
@@ -525,7 +525,7 @@ namespace Dshgate
                 list.Controls.Add(choice);
             }
             body.Controls.Add(list);
-            body.Controls.Add(Text2("Pick the subscription to sign in to. Your browser opens to the provider's own sign-in page; dshgate never sees your password.", Theme.Muted));
+            body.Controls.Add(Text2("Pick the subscription to sign in to. Your browser opens to the provider's own sign-in page; DSHProxy never sees your password.", Theme.Muted));
             body.Controls.Add(Heading("Add an account"));
         }
 
@@ -673,7 +673,7 @@ namespace Dshgate
             another.Click += (s, e) => ShowChoices();
             Reset(done, another);
             AcceptButton = done;
-            body.Controls.Add(Text2("dshgate can now use this subscription. Its limits appear on the Accounts tab within a minute.", Theme.Muted));
+            body.Controls.Add(Text2("DSHProxy can now use this subscription. Its limits appear on the Accounts tab within a minute.", Theme.Muted));
             body.Controls.Add(new Label { Text = account.Length > 0 ? account : "", Dock = DockStyle.Top, Height = 28, Font = new Font("Segoe UI", 11f) });
             body.Controls.Add(new Label { Text = "\u2713  Signed in to " + sessionLabel, Dock = DockStyle.Top, Height = 40, Font = new Font("Segoe UI", 14f, FontStyle.Bold), ForeColor = Theme.Ok });
             body.Controls.Add(LogoBox(sessionKey));
@@ -758,13 +758,13 @@ namespace Dshgate
             var node = Cli.FindNode();
             if (root == null || node == null)
             {
-                MessageBox.Show(root == null ? "dshgate.exe must stay in the dshgate folder (next to bin\\dshgate.js)." : "Node.js was not found. Install Node.js 22 or later.", "dshgate", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(root == null ? "DSHProxy.exe must stay in the DSHProxy folder (next to bin\\dshproxy.js)." : "Node.js was not found. Install Node.js 22 or later.", "DSHProxy", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Environment.Exit(1);
             }
             cli = new Cli(root, node);
             control = new GatewayControl(() => lastOrigin);
 
-            Text = "dshgate";
+            Text = "DeepSeekProxy";
             Width = 1000;
             Height = 760;
             MinimumSize = new Size(860, 600);
@@ -807,7 +807,7 @@ namespace Dshgate
             shownOnce = true;
             if (previewLimits != null)
             {
-                Text = "dshgate (preview)";
+                Text = "DeepSeekProxy (preview)";
                 tray.Visible = false;
                 stateLabel.Text = "Preview";
                 stateLabel.ForeColor = Theme.Accent;
@@ -934,7 +934,7 @@ namespace Dshgate
             var showAll = new CheckBox { Text = "Show hidden models", AutoSize = true, Margin = new Padding(12, 7, 0, 0) };
             showAll.CheckedChanged += (s, e) => { showHiddenModels = showAll.Checked; FillModels(); };
             var modelsPage = Page("Models", modelsList,
-                Note("Ticked models are offered to DeepSeek Harness. New models are found automatically every 3 hours; when the list changes, the dshgate routes in DeepSeek Harness are updated (restart DeepSeek Harness to see them)."),
+                Note("Ticked models are offered to DeepSeek Harness. New models are found automatically every 3 hours; when the list changes, the DSHProxy routes in DeepSeek Harness are updated (restart DeepSeek Harness to see them)."),
                 Row(checkModels, showAll, modelsNote));
             modelsPage.Controls.Add(suggestionsPanel);
             suggestionsPanel.BringToFront();
@@ -953,7 +953,7 @@ namespace Dshgate
             var remove = new Button { Text = "Remove from DeepSeek Harness", AutoSize = true };
             remove.Click += (s, e) => RemoveFromHarness();
             tabs.TabPages.Add(Page("DeepSeek Harness", profilesList,
-                Note("Apply writes the dshgate routes into every DeepSeek Harness profile and keeps everything else. Restart DeepSeek Harness afterwards."),
+                Note("Apply writes the DSHProxy routes into every DeepSeek Harness profile and keeps everything else. Restart DeepSeek Harness afterwards."),
                 Row(preview, apply, remove)));
 
             // Log
@@ -982,10 +982,10 @@ namespace Dshgate
         private void BuildTray()
         {
             tray.Icon = AppIcon.Load(SystemInformation.SmallIconSize) ?? SystemIcons.Application;
-            tray.Text = "dshgate";
+            tray.Text = "DeepSeekProxy";
             tray.Visible = true;
             var menu = new ContextMenuStrip();
-            menu.Items.Add("Open dshgate", null, (s, e) => ShowWindow());
+            menu.Items.Add("Open DeepSeekProxy", null, (s, e) => ShowWindow());
             menu.Items.Add("Add account...", null, (s, e) => { ShowWindow(); AddAccount(); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Start gateway", null, (s, e) => StartGateway());
@@ -1013,7 +1013,7 @@ namespace Dshgate
             if (!balloonShown)
             {
                 balloonShown = true;
-                tray.ShowBalloonTip(4000, "dshgate is still running", "The gateway keeps serving DeepSeek Harness. Right-click the tray icon to quit.", ToolTipIcon.Info);
+                tray.ShowBalloonTip(4000, "DeepSeekProxy is still running", "The gateway keeps serving DeepSeek Harness. Right-click the tray icon to quit.", ToolTipIcon.Info);
             }
         }
 
@@ -1045,7 +1045,7 @@ namespace Dshgate
         {
             try
             {
-                var request = (HttpWebRequest)WebRequest.Create(lastOrigin + "/dshgate/status");
+                var request = (HttpWebRequest)WebRequest.Create(lastOrigin + "/dshproxy/status");
                 request.Timeout = 1500;
                 using (var response = (HttpWebResponse)request.GetResponse()) return (int)response.StatusCode == 200;
             }
@@ -1141,7 +1141,7 @@ namespace Dshgate
                 : "The gateway is not running. Press Start.";
             startButton.Enabled = !running;
             stopButton.Enabled = running;
-            tray.Text = running ? "dshgate: running" : "dshgate: stopped";
+            tray.Text = running ? "DSHProxy: running" : "DSHProxy: stopped";
             footer.Text = "Data: " + Json.Str(Json.Get(status, "home")) + "    Program: " + cli.Root;
             loginProviders = Json.Arr(Json.Get(status, "loginProviders"));
 
@@ -1406,7 +1406,7 @@ namespace Dshgate
                 row += 1;
             }
             string note = null;
-            if (disabled) note = "Paused: dshgate does not use this account until you resume it.";
+            if (disabled) note = "Paused: DSHProxy does not use this account until you resume it.";
             else if (!supported) note = label + " does not report its limits.";
             else if (error.Length > 0) note = error;
             if (note != null)
@@ -1424,7 +1424,7 @@ namespace Dshgate
             var key = Json.Str(Json.Get(account, "file")) + "|" + Json.Str(Json.Get(window, "title")) + "|" + Json.Str(Json.Get(window, "resetsAt"));
             if (!warned.Add(key)) return;
             tray.ShowBalloonTip(6000, string.Format("{0}: {1:0}% left", Json.Str(Json.Get(account, "label")), left),
-                string.Format("{0} limit for {1}, {2}. dshgate moves to the next model when it runs out.", Json.Str(Json.Get(window, "title")), Json.Str(Json.Get(account, "account")), Format.Reset(Json.Str(Json.Get(window, "resetsAt")))),
+                string.Format("{0} limit for {1}, {2}. DSHProxy moves to the next model when it runs out.", Json.Str(Json.Get(window, "title")), Json.Str(Json.Get(account, "account")), Format.Reset(Json.Str(Json.Get(window, "resetsAt")))),
                 ToolTipIcon.Warning);
         }
 
@@ -1529,7 +1529,7 @@ namespace Dshgate
         private void SignOut(string file, string label, string email)
         {
             var answer = MessageBox.Show(this,
-                string.Format("Sign out of {0} ({1})?\n\ndshgate stops using this account and deletes its saved sign-in. Lanes move to their other models. You can sign in again at any time.", label, email),
+                string.Format("Sign out of {0} ({1})?\n\nDSHProxy stops using this account and deletes its saved sign-in. Lanes move to their other models. You can sign in again at any time.", label, email),
                 "Sign out", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
             if (answer != DialogResult.Yes) return;
             AccountCall("accounts/remove", new Dictionary<string, object> { { "file", file } }, "Signed out of " + label + " (" + email + ").");
@@ -1751,7 +1751,7 @@ namespace Dshgate
             if (lastUpdate == null || !Json.Bool(lastUpdate, "available")) return;
             var latest = Json.Str(Json.Get(lastUpdate, "latest"));
             var answer = MessageBox.Show(this,
-                string.Format("Update the backend to CLIProxyAPI {0}?\n\n1. Download it and check it against the release's published checksum.\n2. Start it on a spare port and send one short request through each signed-in account (uses a tiny bit of quota).\n3. Only if that passes: restart dshgate on {0}, about 5 seconds offline.\n\nIf anything fails, dshgate stays on the version you have.", latest),
+                string.Format("Update the backend to CLIProxyAPI {0}?\n\n1. Download it and check it against the release's published checksum.\n2. Start it on a spare port and send one short request through each signed-in account (uses a tiny bit of quota).\n3. Only if that passes: restart DSHProxy on {0}, about 5 seconds offline.\n\nIf anything fails, DSHProxy stays on the version you have.", latest),
                 "Update CLIProxyAPI", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
             if (answer != DialogResult.Yes) return;
             updateButton.Enabled = false;
@@ -1763,7 +1763,7 @@ namespace Dshgate
                 foreach (var c in Json.Arr(Json.Get(result, "checks"))) checks.Add("\u2022 " + Json.Str(c));
                 var ok = Json.Bool(result, "ok");
                 AppendLog(Json.Str(Json.Get(result, "message")));
-                MessageBox.Show(this, Json.Str(Json.Get(result, "message")) + (checks.Count > 0 ? "\n\nTrial run:\n" + string.Join("\n", checks.ToArray()) : "") + (ok ? "\n\ndshgate is restarting on the new version." : ""),
+                MessageBox.Show(this, Json.Str(Json.Get(result, "message")) + (checks.Count > 0 ? "\n\nTrial run:\n" + string.Join("\n", checks.ToArray()) : "") + (ok ? "\n\nDSHProxy is restarting on the new version." : ""),
                     "Update CLIProxyAPI", MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
             }, 300000, () => updateButton.Enabled = true);
         }
@@ -1771,7 +1771,7 @@ namespace Dshgate
         private void Rollback()
         {
             if (previousBackend.Length == 0) return;
-            var answer = MessageBox.Show(this, string.Format("Go back to CLIProxyAPI {0}?\n\ndshgate restarts, about 5 seconds offline.", previousBackend), "Roll back", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            var answer = MessageBox.Show(this, string.Format("Go back to CLIProxyAPI {0}?\n\nDSHProxy restarts, about 5 seconds offline.", previousBackend), "Roll back", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
             if (answer != DialogResult.Yes) return;
             ControlInBackground("update/rollback", new Dictionary<string, object>(), result => AppendLog(Json.Str(Json.Get(result, "message"))));
         }
@@ -1794,7 +1794,7 @@ namespace Dshgate
                     {
                         if (failed != null) failed();
                         modelsKey = "";
-                        MessageBox.Show(this, failure, "dshgate", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        MessageBox.Show(this, failure, "DSHProxy", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         RefreshStatus();
                         return;
                     }
@@ -1827,13 +1827,13 @@ namespace Dshgate
 
         private void ApplyToHarness()
         {
-            if (MessageBox.Show(this, "Write the dshgate routes into every DeepSeek Harness profile?\n\nEach profile is backed up first, and nothing else in it is changed. Restart DeepSeek Harness afterwards.", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (MessageBox.Show(this, "Write the DSHProxy routes into every DeepSeek Harness profile?\n\nEach profile is backed up first, and nothing else in it is changed. Restart DeepSeek Harness afterwards.", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             RunAndShow(new[] { "dsh", "apply" }, "DeepSeek Harness", false);
         }
 
         private void RemoveFromHarness()
         {
-            if (MessageBox.Show(this, "Remove the dshgate routes from every DeepSeek Harness profile?", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            if (MessageBox.Show(this, "Remove the DSHProxy routes from every DeepSeek Harness profile?", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
             RunAndShow(new[] { "dsh", "remove" }, "DeepSeek Harness", false);
         }
 
@@ -1997,7 +1997,7 @@ namespace Dshgate
     internal static class Autostart
     {
         private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-        private const string Name = "dshgate";
+        private const string Name = "DSHProxy";
 
         public static bool IsOn()
         {

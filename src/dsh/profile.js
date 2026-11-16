@@ -1,7 +1,7 @@
 // Writes the gateway's models into DeepSeek Harness as provider routes of the
 // pi-ai plugin (~/.dsh/profiles/<profile>/cordis.patch.yml).
 //
-// Only the four `dshgate-*` routes are written or removed. Every other patch
+// Only the four `dshproxy-*` routes are written or removed. Every other patch
 // entry, route (including VeryCuteDroidProxy's `droidproxy-*`) and comment in
 // the file is left as it is.
 
@@ -12,19 +12,22 @@ const YAML = require("yaml");
 
 const PLUGIN_NAME = "@deepseek-ai/dsh-llm-pi-ai";
 const ENTRY_ID = "llm-pi-ai";
-const KEY_REF = "DSHGATE_API_KEY";
+const KEY_REF = "DSHPROXY_API_KEY";
 // The gateway ignores the key, but DeepSeek Harness refuses a route whose
 // credential reference resolves to nothing.
-const KEY_PLACEHOLDER = "dshgate-local";
-const ADDED_MARK = " added by dshgate";
+const KEY_PLACEHOLDER = "dshproxy-local";
+const ADDED_MARK = " added by dshproxy";
+// The app was called dshgate before; its routes and marks are migrated.
+const LEGACY_ADDED_MARK = " added by dshgate";
+const legacyKey = (key) => key.replace(/^dshproxy-/, "dshgate-");
 
 // Each model family is declared with its native protocol. Lanes use Anthropic
 // Messages; CLIProxyAPI translates for whichever model serves the request.
 const ROUTES = {
-  "dshgate-lanes": { api: "lanes", protocol: "anthropic-messages", suffix: "", label: "dshgate · Lanes (automatic failover)" },
-  "dshgate-claude": { api: "claude", protocol: "anthropic-messages", suffix: "", label: "dshgate · Claude" },
-  "dshgate-openai": { api: "openai", protocol: "openai-responses", suffix: "/v1", label: "dshgate · GPT" },
-  "dshgate-compat": { api: "compat", protocol: "openai-completions", suffix: "/v1", label: "dshgate · Gemini, Kimi and API keys" }
+  "dshproxy-lanes": { api: "lanes", protocol: "anthropic-messages", suffix: "", label: "DSHProxy · Lanes (automatic failover)" },
+  "dshproxy-claude": { api: "claude", protocol: "anthropic-messages", suffix: "", label: "DSHProxy · Claude" },
+  "dshproxy-openai": { api: "openai", protocol: "openai-responses", suffix: "/v1", label: "DSHProxy · GPT" },
+  "dshproxy-compat": { api: "compat", protocol: "openai-completions", suffix: "/v1", label: "DSHProxy · Gemini, Kimi and API keys" }
 };
 
 // DeepSeek Harness refuses an attachment unless the model declares it; `text`
@@ -108,15 +111,15 @@ function findEntry(doc) {
 // still get separate files.
 function backupPath(file) {
   const stamp = new Date().toISOString().replace(/[-:.]/g, "").replace(/Z$/, "");
-  let candidate = `${file}.dshgate-${stamp}.bak`;
-  for (let count = 2; fs.existsSync(candidate); count += 1) candidate = `${file}.dshgate-${stamp}-${count}.bak`;
+  let candidate = `${file}.dshproxy-${stamp}.bak`;
+  for (let count = 2; fs.existsSync(candidate); count += 1) candidate = `${file}.dshproxy-${stamp}-${count}.bak`;
   return candidate;
 }
 
 // Written to a temporary file first, so an interrupted write cannot leave a
 // half-written file.
 function writeWhole(file, text) {
-  const temporary = `${file}.dshgate-${process.pid}.tmp`;
+  const temporary = `${file}.dshproxy-${process.pid}.tmp`;
   fs.writeFileSync(temporary, text);
   fs.renameSync(temporary, file);
 }
@@ -143,11 +146,11 @@ function ensureCredentialRef(home = dshHome(), dryRun = false) {
     const doc = existing.trim() ? YAML.parseDocument(existing) : new YAML.Document(null);
     if (doc.errors.length) return { created: false, reason: `the credentials file has YAML errors (${doc.errors[0].message})` };
     const empty = doc.contents === null || (YAML.isScalar(doc.contents) && doc.contents.value == null);
-    if (!empty && !YAML.isMap(doc.contents)) return { created: false, reason: "the credentials file is not in the expected form; add the DSHGATE_API_KEY reference by hand" };
+    if (!empty && !YAML.isMap(doc.contents)) return { created: false, reason: "the credentials file is not in the expected form; add the DSHPROXY_API_KEY reference by hand" };
     if (empty) doc.contents = doc.createNode({ version: 1, records: {}, refs: {} });
     const refs = doc.get("refs", true);
     if (refs === undefined || (YAML.isScalar(refs) && refs.value == null)) doc.set("refs", doc.createNode({}));
-    else if (!YAML.isMap(refs)) return { created: false, reason: "the credentials file is not in the expected form; add the DSHGATE_API_KEY reference by hand" };
+    else if (!YAML.isMap(refs)) return { created: false, reason: "the credentials file is not in the expected form; add the DSHPROXY_API_KEY reference by hand" };
     if (doc.getIn(["refs", KEY_REF]) !== undefined) return { created: false, reason: "already present" };
     doc.setIn(["refs", KEY_REF], KEY_PLACEHOLDER);
     if (!dryRun) writeWhole(file, doc.toString({ lineWidth: 0 }));
@@ -163,7 +166,7 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
   let entry = findEntry(doc);
   if (!entry) {
     entry = doc.createNode({ id: ENTRY_ID, name: PLUGIN_NAME, config: { providers: {} } });
-    // Marks the entry as dshgate's own, so `remove` can take it out again.
+    // Marks the entry as DSHProxy's own, so `remove` can take it out again.
     entry.get("id", true).comment = ADDED_MARK;
     doc.contents.add(entry);
   }
@@ -174,10 +177,14 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
   }
   // An empty `{}` would otherwise have the routes written inside the braces.
   if (!providersNode.items.length) providersNode.flow = false;
+  // Routes written before the rename (dshgate-*) are carried over and removed,
+  // so the user's per-model settings survive and no duplicate routes remain.
   const previous = {};
   for (const key of Object.keys(ROUTES)) {
     const list = providersNode.getIn([key, "models"], true);
-    previous[key] = YAML.isSeq(list) ? list.toJSON() : [];
+    const legacy = providersNode.getIn([legacyKey(key), "models"], true);
+    previous[key] = YAML.isSeq(list) ? list.toJSON() : YAML.isSeq(legacy) ? legacy.toJSON() : [];
+    providersNode.delete(legacyKey(key));
   }
   const routes = buildRoutes(models, origin, previous, options.keepModelPrefixes || []);
   for (const key of Object.keys(ROUTES)) {
@@ -207,11 +214,11 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
 }
 
 // Options: `only` limits the profiles written; `onlyApplied` writes only the
-// profiles that already hold a dshgate route (used by automatic syncs, which
-// must never add dshgate to a profile the user did not apply it to).
+// profiles that already hold a DSHProxy route (used by automatic syncs, which
+// must never add DSHProxy to a profile the user did not apply it to).
 function hasRoutes(profile, home) {
   const providersNode = findEntry(readPatch(profile, home).doc)?.getIn(["config", "providers"], true);
-  return YAML.isMap(providersNode) && Object.keys(ROUTES).some((key) => providersNode.has(key));
+  return YAML.isMap(providersNode) && Object.keys(ROUTES).some((key) => providersNode.has(key) || providersNode.has(legacyKey(key)));
 }
 
 function apply(models, origin, home = dshHome(), options = {}) {
@@ -221,7 +228,7 @@ function apply(models, origin, home = dshHome(), options = {}) {
   if (options.only) names = names.filter((name) => options.only.includes(name));
   if (options.onlyApplied) {
     names = names.filter((name) => hasRoutes(name, home));
-    if (!names.length) return { profiles: [], credential: { created: false, reason: "no profile has dshgate routes" } };
+    if (!names.length) return { profiles: [], credential: { created: false, reason: "no profile has DSHProxy routes" } };
   }
   // Every profile is checked before any is written, so one unreadable profile
   // does not leave the others half-applied.
@@ -240,8 +247,11 @@ function remove(home = dshHome(), options = {}) {
     const providersNode = entry?.getIn(["config", "providers"], true);
     const removed = [];
     if (YAML.isMap(providersNode)) {
-      for (const key of Object.keys(ROUTES)) if (providersNode.delete(key)) removed.push(key);
-      const ownEntry = entry.get("id", true)?.comment === ADDED_MARK;
+      for (const key of Object.keys(ROUTES)) {
+        if (providersNode.delete(key)) removed.push(key);
+        if (providersNode.delete(legacyKey(key))) removed.push(legacyKey(key));
+      }
+      const ownEntry = [ADDED_MARK, LEGACY_ADDED_MARK].includes(entry.get("id", true)?.comment);
       if (ownEntry && !providersNode.items.length) patch.doc.contents.items.splice(patch.doc.contents.items.indexOf(entry), 1);
     }
     return { profile, file: patch.file, removed, changed: writePatch(patch, options.dryRun).changed };

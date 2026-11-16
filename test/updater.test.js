@@ -7,7 +7,7 @@ const path = require("path");
 const { compareVersions, parseChecksums, lockFromRelease, checkForUpdate, createUpdater } = require("../src/backend/updater");
 
 function tempDir(t) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dshgate-updater-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dshproxy-updater-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -194,7 +194,7 @@ test("a rollback below the shipped version is refused", async (t) => {
   fs.writeFileSync(lockFile, JSON.stringify({ ...NEXT, previous: CURRENT }));
   const events = [];
   const updater = createUpdater({ lockFile, binDir: dir, install: async () => ({}), trial: async () => ({ ok: true }), restart: async () => events.push("restart"), floor: "8.0.75" });
-  await assert.rejects(updater.rollback(), /older than the version this dshgate ships with/);
+  await assert.rejects(updater.rollback(), /older than the version this DSHProxy ships with/);
   assert.equal(JSON.parse(fs.readFileSync(lockFile, "utf8")).version, "8.0.75");
   assert.deepEqual(events, []);
 });

@@ -15,12 +15,12 @@ const secrets = require("../src/secrets");
 const accounts = require("../src/accounts");
 
 function tempDir(t) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dshgate-backend-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dshproxy-backend-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
 
-const BASE = { host: "127.0.0.1", port: 8418, authDir: "C:\\Users\\someone\\.dshgate\\auth", requestRetry: 3 };
+const BASE = { host: "127.0.0.1", port: 8418, authDir: "C:\\Users\\someone\\.dshproxy\\auth", requestRetry: 3 };
 
 test("the backend listens on this machine only, with management switched off", () => {
   const config = YAML.parse(render(BASE));

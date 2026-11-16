@@ -37,7 +37,7 @@ function decryptWithKey(key, encoded) {
 
 const PROTECT_SCRIPT = [
   "Add-Type -AssemblyName System.Security",
-  "$key = [Convert]::FromBase64String($env:DSHGATE_DPAPI_KEY)",
+  "$key = [Convert]::FromBase64String($env:DSHPROXY_DPAPI_KEY)",
   "[Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Protect($key, $null, 'CurrentUser'))"
 ].join("; ");
 
@@ -45,8 +45,8 @@ const PROTECT_SCRIPT = [
 // so a machine that records PowerShell output never records the key itself.
 const UNPROTECT_SCRIPT = [
   "Add-Type -AssemblyName System.Security",
-  "$key = [Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($env:DSHGATE_DPAPI_BLOB), $null, 'CurrentUser')",
-  "$mask = [Convert]::FromBase64String($env:DSHGATE_DPAPI_MASK)",
+  "$key = [Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($env:DSHPROXY_DPAPI_BLOB), $null, 'CurrentUser')",
+  "$mask = [Convert]::FromBase64String($env:DSHPROXY_DPAPI_MASK)",
   "if ($key.Length -ne $mask.Length) { exit 3 }",
   "for ($i = 0; $i -lt $key.Length; $i++) { $key[$i] = $key[$i] -bxor $mask[$i] }",
   "[Convert]::ToBase64String($key)"
@@ -63,7 +63,7 @@ function powershell(script, env) {
 
 async function unwrap(blob) {
   const mask = crypto.randomBytes(KEY_BYTES);
-  const output = await powershell(UNPROTECT_SCRIPT, { DSHGATE_DPAPI_BLOB: blob, DSHGATE_DPAPI_MASK: mask.toString("base64") });
+  const output = await powershell(UNPROTECT_SCRIPT, { DSHPROXY_DPAPI_BLOB: blob, DSHPROXY_DPAPI_MASK: mask.toString("base64") });
   const masked = Buffer.from(output || "", "base64");
   if (masked.length !== KEY_BYTES) return null;
   return Buffer.from(masked.map((byte, index) => byte ^ mask[index]));
@@ -81,7 +81,7 @@ async function loadMasterKey(file, { create = false } = {}) {
   }
   if (!create) return null;
   const key = crypto.randomBytes(KEY_BYTES);
-  const blob = await powershell(PROTECT_SCRIPT, { DSHGATE_DPAPI_KEY: key.toString("base64") });
+  const blob = await powershell(PROTECT_SCRIPT, { DSHPROXY_DPAPI_KEY: key.toString("base64") });
   if (!blob) throw new Error("Windows could not protect a new key, so nothing was saved.");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${blob}\n`);

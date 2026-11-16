@@ -143,7 +143,7 @@ test("Gemini's long window names are shortened", () => {
   ]);
 });
 
-test("Gemini per-model quota is used for the models dshgate offers", () => {
+test("Gemini per-model quota is used for the models DSHProxy offers", () => {
   const reply = { models: { "gemini-4-carbon-high": { displayName: "Gemini 4 Carbon", quotaInfo: { remainingFraction: 0.5, resetTime: "2026-11-16T06:00:00Z" } }, "some-other-model": { quotaInfo: { remainingFraction: 0.1 } } } };
   assert.deepEqual(parseAntigravityModels(reply, new Set(["gemini-4-carbon-high"]), NOW).map((item) => [item.title, item.leftPercent]), [["Gemini 4 Carbon", 50]]);
 });

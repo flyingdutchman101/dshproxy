@@ -6,7 +6,7 @@
 //   and figures for models the catalog does not describe).
 //
 // A model the backend serves and the catalog describes is offered without a
-// dshgate update. Image models and older generations are offered only when
+// DSHProxy update. Image models and older generations are offered only when
 // the user picks them.
 
 const { SUBSCRIPTION_MODELS } = require("./catalog");

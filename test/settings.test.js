@@ -7,7 +7,7 @@ const path = require("path");
 const settings = require("../src/settings");
 
 function tempHome(t) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dshgate-settings-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dshproxy-settings-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   return home;
 }
@@ -39,4 +39,34 @@ test("saved settings are read back, and saving leaves no other file behind", (t)
   assert.deepEqual(loaded.lanes, { main: ["gpt-6-astra"] });
   assert.deepEqual(loaded.providers, { deepseek: { region: "international", keyEnc: "ZW5j" } });
   assert.deepEqual(fs.readdirSync(home), ["settings.json"]);
+});
+
+// The data folder was ~/.dshgate before the rename.
+function oldHome(t) {
+  const parent = tempHome(t);
+  const old = path.join(parent, ".dshgate");
+  fs.mkdirSync(path.join(old, "auth"), { recursive: true });
+  fs.writeFileSync(path.join(old, "settings.json"), '{"port": 9100}');
+  fs.writeFileSync(path.join(old, "auth", "claude-a.json"), "{}");
+  fs.writeFileSync(path.join(old, "dshgate.log"), "old log\n");
+  return { parent, old, home: path.join(parent, ".dshproxy") };
+}
+
+test("the old data folder is moved to the new name once, with sign-ins and settings", (t) => {
+  const { old, home } = oldHome(t);
+  assert.deepEqual(settings.migrateHome(home, old), { moved: true, from: old });
+  assert.equal(fs.existsSync(old), false);
+  assert.equal(settings.load(home).port, 9100);
+  assert.ok(fs.existsSync(path.join(home, "auth", "claude-a.json")));
+  assert.equal(fs.readFileSync(path.join(home, "dshproxy.log"), "utf8"), "old log\n");
+  assert.deepEqual(settings.migrateHome(home, old), { moved: false });
+});
+
+test("an existing new data folder is never replaced by the old one", (t) => {
+  const { old, home } = oldHome(t);
+  fs.mkdirSync(home);
+  fs.writeFileSync(path.join(home, "settings.json"), '{"port": 9200}');
+  assert.deepEqual(settings.migrateHome(home, old), { moved: false });
+  assert.equal(settings.load(home).port, 9200);
+  assert.ok(fs.existsSync(path.join(old, "settings.json")));
 });

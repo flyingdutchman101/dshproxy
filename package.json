@@ -1,5 +1,5 @@
 {
-  "name": "dshgate",
+  "name": "dshproxy",
   "version": "0.1.0",
   "private": true,
   "description": "Local model gateway for DeepSeek Harness: supervises a pinned CLIProxyAPI and adds lane failover.",
@@ -11,7 +11,7 @@
     "node": ">=22"
   },
   "bin": {
-    "dshgate": "bin/dshgate.js"
+    "dshproxy": "bin/dshproxy.js"
   },
   "scripts": {
     "test": "node --test",

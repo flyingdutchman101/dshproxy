@@ -13,7 +13,7 @@ const { parseCatalog, buildModels, listModels, suggestions } = require("./models
 const { version } = require("../package.json");
 const { compareVersions } = require("./backend/updater");
 
-// The backend version shipped with dshgate, and the one an update installed.
+// The backend version shipped with DSHProxy, and the one an update installed.
 const SHIPPED_LOCK = path.join(__dirname, "..", "backend.lock.json");
 
 function lockFile(home = settingsFile.homeDir()) {
@@ -125,7 +125,7 @@ function saveDiscovery(home, value) {
 
 // The models that can serve right now, with the lanes that have at least one
 // such model on their ladder. Subscription models come from what the backend
-// serves and the model catalog, so new models need no dshgate update.
+// serves and the model catalog, so new models need no DSHProxy update.
 function offeredModels(settings, activeAccounts, readable, discovery = { catalog: null, served: [] }) {
   const options = {
     catalog: parseCatalog(discovery.catalog),

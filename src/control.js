@@ -1,7 +1,7 @@
 // The local control API the Windows app uses while the gateway runs: sign-in,
 // account removal and subscription limits.
 //
-// Every call needs the token written to ~/.dshgate/control.token when the
+// Every call needs the token written to ~/.dshproxy/control.token when the
 // gateway starts. A web page in the browser cannot read that file, and a
 // request that carries an Origin header (which browsers always send) is
 // refused, so a website cannot drive sign-in through the gateway.
@@ -9,7 +9,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 
-const PREFIX = "/dshgate/control/";
+const PREFIX = "/dshproxy/control/";
 const MAX_BODY = 64 * 1024;
 
 function newToken() {
@@ -68,7 +68,7 @@ function createControl({ token, routes }) {
       send(res, 403, { error: "Requests from web pages are not accepted." });
       return true;
     }
-    if (!sameToken(req.headers["x-dshgate-token"], token)) {
+    if (!sameToken(req.headers["x-dshproxy-token"], token)) {
       send(res, 401, { error: "Missing or wrong control token." });
       return true;
     }

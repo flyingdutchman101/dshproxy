@@ -44,7 +44,7 @@ Backend
 
 DeepSeek Harness profile
 
-14. `dsh apply` writes only the `dshgate-*` routes. Every other entry, route and comment is unchanged.
+14. `dsh apply` writes only the `dshproxy-*` routes. Every other entry, route and comment is unchanged.
 15. The profile is backed up before a change; an identical second sync writes nothing.
 16. Fields the user added to a model entry survive a sync.
 17. Models of a provider whose saved key cannot be read are kept.

@@ -8,7 +8,7 @@ const { needsBody } = require("./failover");
 // of the lane's ladder until one serves it.
 
 const HOP_BY_HOP = ["connection", "keep-alive", "transfer-encoding", "upgrade", "proxy-connection", "te", "trailer"];
-const STATUS_PATH = "/dshgate/status";
+const STATUS_PATH = "/dshproxy/status";
 // Error replies are small. Anything larger is passed on without being judged.
 const MAX_JUDGED_BYTES = 64 * 1024;
 const MAX_JUDGED_TEXT = 1024 * 1024;
@@ -124,7 +124,7 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
     };
     const unreachable = (error) => {
       log(`backend did not answer: ${error.message}`);
-      sendJson(res, 502, { error: { type: "dshgate_backend_unreachable", message: `dshgate could not reach its backend: ${error.message}` } });
+      sendJson(res, 502, { error: { type: "dshproxy_backend_unreachable", message: `DSHProxy could not reach its backend: ${error.message}` } });
     };
 
     let parsed = null;
@@ -150,7 +150,7 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
     const label = route.lane ? `lane ${route.lane}` : parsed.model;
     if (!route.ladder.length) {
       log(`${label}: no rung is available`);
-      sendJson(res, 503, { error: { type: "dshgate_no_rung", message: `No model on lane "${route.lane}" is available. Sign in to an account or add an API key, then check \`dshgate status\`.` } });
+      sendJson(res, 503, { error: { type: "dshproxy_no_rung", message: `No model on lane "${route.lane}" is available. Sign in to an account or add an API key, then check \`dshproxy status\`.` } });
       return;
     }
 
@@ -205,8 +205,8 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       }
 
       if (sessionKey && code < 400) sessions.set(sessionKey, model);
-      const extra = { "x-dshgate-model": model };
-      if (route.lane) extra["x-dshgate-lane"] = route.lane;
+      const extra = { "x-dshproxy-model": model };
+      if (route.lane) extra["x-dshproxy-lane"] = route.lane;
       relay(upstreamRes, extra, read);
       return;
     }
@@ -219,7 +219,7 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       sendJson(res, 200, status());
       return;
     }
-    if (control && req.url.startsWith("/dshgate/control/")) {
+    if (control && req.url.startsWith("/dshproxy/control/")) {
       control(req, res).catch((error) => sendJson(res, 500, { error: error.message }));
       return;
     }
@@ -232,7 +232,7 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       if (size > maxBodyBytes) {
         tooLarge = true;
         chunks.length = 0;
-        sendJson(res, 413, { error: { type: "dshgate_request_too_large", message: `The request is larger than ${maxBodyBytes} bytes.` } });
+        sendJson(res, 413, { error: { type: "dshproxy_request_too_large", message: `The request is larger than ${maxBodyBytes} bytes.` } });
         return;
       }
       chunks.push(chunk);
@@ -242,7 +242,7 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       if (tooLarge) return;
       handle(req, res, Buffer.concat(chunks)).catch((error) => {
         log(`request failed: ${error.message}`);
-        sendJson(res, 500, { error: { type: "dshgate_internal", message: error.message } });
+        sendJson(res, 500, { error: { type: "dshproxy_internal", message: error.message } });
       });
     });
   });

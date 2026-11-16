@@ -50,7 +50,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
   // backend stores a hash of it.
   const managementKey = crypto.randomBytes(32).toString("hex");
   fs.writeFileSync(paths.config, render({ host: settings.host, port: settings.backendPort, authDir: state.authDir, requestRetry: settings.requestRetry, providers: state.readable, managementKey }));
-  if (state.unreadable.length) log(`Saved API key cannot be read for: ${state.unreadable.join(", ")}. Enter it again with \`dshgate key set\`.`);
+  if (state.unreadable.length) log(`Saved API key cannot be read for: ${state.unreadable.join(", ")}. Enter it again with \`dshproxy key set\`.`);
 
   const supervisor = createSupervisor({ binary: backend.path, configPath: paths.config, host: settings.host, port: settings.backendPort, pidFile: paths.backendPid, log });
   await supervisor.start();
@@ -102,7 +102,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
   }
 
   // Re-applies the DeepSeek Harness routes when the offered models change, if
-  // dshgate's routes are already there. Each profile is backed up first.
+  // DSHProxy's routes are already there. Each profile is backed up first.
   // Discovery and syncs run one at a time, so an older snapshot can never be
   // written after a newer one.
   let queue = Promise.resolve();
@@ -121,7 +121,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
     if (print2 === lastFingerprint) return { changed: false };
     const first = lastFingerprint === null;
     try {
-      // Only profiles that already have dshgate routes are written.
+      // Only profiles that already have DSHProxy routes are written.
       const result = profile.apply(state.models, state.origin, profile.dshHome(), { keepModelPrefixes: state.unreadable, onlyApplied: true });
       lastFingerprint = print2;
       const changed = result.profiles.filter((item) => item.changed).map((item) => item.profile);
@@ -300,7 +300,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
     await supervisor.stop();
     throw error;
   }
-  log(`dshgate ${app.version} listening on ${state.origin} (backend ${lock.name} ${lock.version} on port ${settings.backendPort})`);
+  log(`DSHProxy ${app.version} listening on ${state.origin} (backend ${lock.name} ${lock.version} on port ${settings.backendPort})`);
 
   // Model discovery shortly after start, then every few hours; the backend
   // update check after that and then every few hours.

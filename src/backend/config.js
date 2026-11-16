@@ -46,7 +46,7 @@ function render({ host, port, authDir, requestRetry = 3, providers = {}, managem
     }));
   if (groups.length) config["api-keys"] = { "openai-compatibility": groups };
 
-  return `# Written by dshgate on every start. Edit ~/.dshgate/settings.json instead.\n${YAML.stringify(config, { lineWidth: 0 })}`;
+  return `# Written by DSHProxy on every start. Edit ~/.dshproxy/settings.json instead.\n${YAML.stringify(config, { lineWidth: 0 })}`;
 }
 
 module.exports = { render };

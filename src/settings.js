@@ -30,7 +30,18 @@ const DEFAULTS = {
 };
 
 function homeDir() {
-  return process.env.DSHGATE_HOME || path.join(os.homedir(), ".dshgate");
+  return process.env.DSHPROXY_HOME || path.join(os.homedir(), ".dshproxy");
+}
+
+// The data folder was ~/.dshgate before the app was renamed. If only the old
+// one exists, it is renamed in place (same drive, so sign-ins, keys and the
+// downloaded backend move at once). An existing new folder is never touched.
+function migrateHome(home = homeDir(), old = path.join(path.dirname(home), ".dshgate")) {
+  if (fs.existsSync(home) || !fs.existsSync(old)) return { moved: false };
+  fs.renameSync(old, home);
+  const oldLog = path.join(home, "dshgate.log");
+  if (fs.existsSync(oldLog)) fs.renameSync(oldLog, path.join(home, "dshproxy.log"));
+  return { moved: true, from: old };
 }
 
 function paths(home = homeDir()) {
@@ -38,7 +49,7 @@ function paths(home = homeDir()) {
     home,
     settings: path.join(home, "settings.json"),
     config: path.join(home, "backend-config.yaml"),
-    log: path.join(home, "dshgate.log"),
+    log: path.join(home, "dshproxy.log"),
     backendPid: path.join(home, "backend.pid"),
     controlToken: path.join(home, "control.token"),
     authDir: path.join(home, "auth"),
@@ -140,4 +151,4 @@ function origin(settings) {
   return `http://${host}:${settings.port}`;
 }
 
-module.exports = { DEFAULT_LANES, DEFAULTS, homeDir, paths, sanitize, load, save, authDirFor, origin };
+module.exports = { DEFAULT_LANES, DEFAULTS, homeDir, migrateHome, paths, sanitize, load, save, authDirFor, origin };

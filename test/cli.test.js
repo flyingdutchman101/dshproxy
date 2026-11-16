@@ -5,10 +5,10 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
-const CLI = path.join(__dirname, "..", "bin", "dshgate.js");
+const CLI = path.join(__dirname, "..", "bin", "dshproxy.js");
 
 function tempHome(t) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dshgate-cli-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dshproxy-cli-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   return home;
 }
@@ -18,7 +18,7 @@ function run(home, args, input = "") {
   return spawnSync(process.execPath, [CLI, ...args], {
     input,
     encoding: "utf8",
-    env: { ...process.env, DSHGATE_HOME: home, DSH_HOME: path.join(home, "no-deepseek-harness") }
+    env: { ...process.env, DSHPROXY_HOME: home, DSH_HOME: path.join(home, "no-deepseek-harness") }
   });
 }
 

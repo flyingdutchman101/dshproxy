@@ -1,6 +1,6 @@
 // Subscription limits: how much of each window (5-hour, weekly, monthly) is
 // left and when it resets. Each provider's usage endpoint is called by the
-// backend with the account's own token, so dshgate never handles tokens.
+// backend with the account's own token, so DSHProxy never handles tokens.
 
 const WINDOW_KIND = { short: "short", daily: "daily", weekly: "weekly", monthly: "monthly", other: "other" };
 const KIND_ORDER = ["short", "daily", "weekly", "monthly", "other"];

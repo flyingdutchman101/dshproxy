@@ -66,6 +66,14 @@ Signed in through the app: ChatGPT (weekly limit at 0%), Claude (weekly 22%), Ge
 - Review: first reviewer (Gemini 4 Carbon) died without output; second (Gemini 4 Argon) found no blockers and 8 should-fix items. Fixed with red-first tests: syncs run one at a time and record success only after writing; automatic syncs write only profiles that already have dshgate routes (and add no credential reference otherwise); update and rollback share one lock; rollback below the shipped version refused; updates start from the running version; no download without a restart path; release versions must be plain numbers and the checksum URL official; dated IDs not taken as newer; more old generations hidden; catalog context capped at 2M. Also: stop waits for the backend to exit, restart retries and falls back to the previous version, `dshgate backend rollback` works offline, the trial falls back to another model of the service when its probe model is not listed. Kept: the trial shares the real auth folder (a copy would rotate refresh tokens away from the running backend); the risk is documented in trial.js.
 - Not done: a test that drives `runTrial` itself (it needs a real backend binary); checks are live-only.
 
+## Rename to DeepSeekProxy / DSHProxy (2026-11-16)
+
+Full name DeepSeekProxy (window title, tray menu, README heading, help text); short name DSHProxy (exe, tray tooltip, dialogs); `dshproxy` for the command, files and identifiers. Entries above this one use the old name dshgate.
+
+- Renamed: `bin/dshproxy.js`, `app/DSHProxyApp.cs`, `app/icon/DSHProxy.ico`, `DSHProxy.exe`; data folder `~/.dshproxy` (env `DSHPROXY_HOME`), log `dshproxy.log`; headers `x-dshproxy-*`; paths `/dshproxy/status`, `/dshproxy/control/*`; DeepSeek Harness routes `dshproxy-lanes|claude|openai|compat` with `DSHPROXY_API_KEY`; error types `dshproxy_*`; single-instance mutex.
+- Migration, red-first tests: the CLI renames `~/.dshgate` to `~/.dshproxy` on first run when only the old one exists (an existing new folder is never replaced); `dsh apply` and automatic syncs carry the old `dshgate-*` routes' per-model fields over and remove them; `dsh remove` removes both names.
+- Live: data folder moved (3 sign-ins, settings, backend 8.0.75 with 8.0.72 kept); both profiles now have the 4 `dshproxy-*` routes, 0 `dshgate-*`, and the 3 `droidproxy-*` routes untouched; the unused `DSHGATE_API_KEY` placeholder (value `dshgate-local`) was removed from the credentials file; lane-scout and gemini-3.8-flash-high answered through the renamed gateway.
+
 ## Not checked
 
 - Any request served by a real model through the gateway. Failover was tested against a stand-in backend only.

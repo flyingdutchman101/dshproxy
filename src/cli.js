@@ -10,22 +10,22 @@ const { STATUS_PATH } = require("./gateway/server");
 const fs = require("fs");
 const { readLock, compareVersions } = require("./backend/updater");
 
-const HELP = `dshgate ${app.version} - local model gateway for DeepSeek Harness
+const HELP = `DeepSeekProxy (dshproxy) ${app.version} - local model gateway for DeepSeek Harness
 
 Usage:
-  dshgate start                       Run the gateway (keep this window open)
-  dshgate status                      Show accounts, API keys, lanes and the DeepSeek Harness state
-  dshgate login <provider>            Sign in: ${Object.keys(accounts.PROVIDERS).join(", ")}
-  dshgate accounts                    List signed-in accounts
-  dshgate key set <provider> [region] Save an API key (read from standard input, never from the command line)
-  dshgate key remove <provider>       Remove a saved API key
-  dshgate key list                    List API-key providers and their regions
-  dshgate models                      List the models that can be offered right now
-  dshgate dsh apply [--dry-run]       Write the models into every DeepSeek Harness profile
-  dshgate dsh status                  Show what DeepSeek Harness currently has
-  dshgate dsh remove [--dry-run]      Remove dshgate's routes from DeepSeek Harness
-  dshgate backend version             Show the CLIProxyAPI version in use
-  dshgate backend rollback            Go back to the previous CLIProxyAPI version
+  dshproxy start                       Run the gateway (keep this window open)
+  dshproxy status                      Show accounts, API keys, lanes and the DeepSeek Harness state
+  dshproxy login <provider>            Sign in: ${Object.keys(accounts.PROVIDERS).join(", ")}
+  dshproxy accounts                    List signed-in accounts
+  dshproxy key set <provider> [region] Save an API key (read from standard input, never from the command line)
+  dshproxy key remove <provider>       Remove a saved API key
+  dshproxy key list                    List API-key providers and their regions
+  dshproxy models                      List the models that can be offered right now
+  dshproxy dsh apply [--dry-run]       Write the models into every DeepSeek Harness profile
+  dshproxy dsh status                  Show what DeepSeek Harness currently has
+  dshproxy dsh remove [--dry-run]      Remove DSHProxy's routes from DeepSeek Harness
+  dshproxy backend version             Show the CLIProxyAPI version in use
+  dshproxy backend rollback            Go back to the previous CLIProxyAPI version
 
 Settings and data: ${settingsFile.homeDir()}`;
 
@@ -84,7 +84,7 @@ async function runningStatus(origin) {
 
 function printAccounts(state, out) {
   if (!state.accounts.length) {
-    out("Accounts: none. Sign in with `dshgate login <provider>`.");
+    out("Accounts: none. Sign in with `dshproxy login <provider>`.");
     return;
   }
   out("Accounts:");
@@ -94,11 +94,11 @@ function printAccounts(state, out) {
 async function status(out) {
   const state = await app.snapshot();
   const live = await runningStatus(state.origin);
-  out(live ? `Gateway: running on ${state.origin} since ${live.startedAt} (backend ${live.backend.name} ${live.backend.version}, PID ${live.backend.pid})` : `Gateway: not running. Start it with \`dshgate start\`. It will listen on ${state.origin}.`);
+  out(live ? `Gateway: running on ${state.origin} since ${live.startedAt} (backend ${live.backend.name} ${live.backend.version}, PID ${live.backend.pid})` : `Gateway: not running. Start it with \`dshproxy start\`. It will listen on ${state.origin}.`);
   printAccounts(state, out);
   const keys = Object.keys(state.readable);
   out(`API keys: ${keys.length ? keys.map((key) => `${key} (${state.readable[key].region})`).join(", ") : "none"}`);
-  if (state.unreadable.length) out(`API keys that cannot be read (enter again with \`dshgate key set\`): ${state.unreadable.join(", ")}`);
+  if (state.unreadable.length) out(`API keys that cannot be read (enter again with \`dshproxy key set\`): ${state.unreadable.join(", ")}`);
   out("Lanes:");
   const cooling = new Map((live?.lanes || []).flatMap((lane) => lane.ladder).filter((rung) => rung.coolingUntil).map((rung) => [rung.model, rung.coolingUntil]));
   for (const [name, ladder] of Object.entries(state.settings.lanes)) {
@@ -112,8 +112,8 @@ async function status(out) {
   if (!dsh.profiles.length) out("DeepSeek Harness: no profiles found.");
   for (const item of dsh.profiles) {
     if (item.error) out(`DeepSeek Harness profile ${item.profile}: ${item.error}`);
-    else if (!item.routes.length) out(`DeepSeek Harness profile ${item.profile}: not applied. Run \`dshgate dsh apply\`.`);
-    else out(`DeepSeek Harness profile ${item.profile}: ${item.routes.reduce((sum, route) => sum + route.models, 0)} models${item.current ? "" : " (they point at another address; run `dshgate dsh apply`)"}`);
+    else if (!item.routes.length) out(`DeepSeek Harness profile ${item.profile}: not applied. Run \`dshproxy dsh apply\`.`);
+    else out(`DeepSeek Harness profile ${item.profile}: ${item.routes.reduce((sum, route) => sum + route.models, 0)} models${item.current ? "" : " (they point at another address; run `dshproxy dsh apply`)"}`);
   }
 }
 
@@ -162,7 +162,7 @@ function reportApply(result, dryRun, out) {
     out(`${item.profile}: ${verb} (${counts || "no routes"})`);
     if (item.kept.length) out(`  kept while their API key cannot be read: ${item.kept.join(", ")}`);
   }
-  if (result.credential.created) out(dryRun ? "Would add the DSHGATE_API_KEY credential reference." : "Added the DSHGATE_API_KEY credential reference.");
+  if (result.credential.created) out(dryRun ? "Would add the DSHPROXY_API_KEY credential reference." : "Added the DSHPROXY_API_KEY credential reference.");
   else if (result.credential.reason !== "already present") out(`Credential reference not added: ${result.credential.reason}`);
   if (!dryRun && result.profiles.some((item) => item.changed)) out("Restart DeepSeek Harness to load the new routes.");
 }
@@ -183,6 +183,12 @@ function rollbackLock(out) {
 }
 
 async function main(argv, out = console.log) {
+  // Only the default data folder is migrated; a DSHPROXY_HOME the user set is
+  // used as given.
+  if (!process.env.DSHPROXY_HOME) {
+    const moved = settingsFile.migrateHome();
+    if (moved.moved) out(`Moved the data folder from ${moved.from} to ${settingsFile.homeDir()}.`);
+  }
   const [command, ...rest] = argv;
   const flags = new Set(rest.filter((item) => item.startsWith("--")));
   const args = rest.filter((item) => !item.startsWith("--"));
@@ -252,7 +258,7 @@ async function main(argv, out = console.log) {
       fs.writeFileSync(state.paths.config, render({ host: state.settings.host, port: state.settings.backendPort, authDir: state.authDir, requestRetry: state.settings.requestRetry, providers: state.readable }));
       const code = await accounts.login(args[0], { binary: backend.path, configPath: state.paths.config });
       if (code !== 0) throw new Error(`Sign-in ended with exit code ${code}.`);
-      out("Signed in. Run `dshgate dsh apply` to offer the new models to DeepSeek Harness.");
+      out("Signed in. Run `dshproxy dsh apply` to offer the new models to DeepSeek Harness.");
       return undefined;
     }
     case "key": {
@@ -266,20 +272,20 @@ async function main(argv, out = console.log) {
         return undefined;
       }
       if (action === "set") {
-        if (!provider) throw new Error("Usage: dshgate key set <provider> [region]");
+        if (!provider) throw new Error("Usage: dshproxy key set <provider> [region]");
         const chosen = await app.saveProviderKey(provider, await readSecret(`API key for ${provider}: `), region, settingsFile.homeDir());
-        out(`Saved the ${provider} key (region ${chosen}). Restart the gateway, then run \`dshgate dsh apply\`.`);
+        out(`Saved the ${provider} key (region ${chosen}). Restart the gateway, then run \`dshproxy dsh apply\`.`);
         return undefined;
       }
       if (action === "remove") {
-        out(app.removeProviderKey(provider, settingsFile.homeDir()) ? `Removed the ${provider} key. Restart the gateway, then run \`dshgate dsh apply\`.` : `No ${provider} key was saved.`);
+        out(app.removeProviderKey(provider, settingsFile.homeDir()) ? `Removed the ${provider} key. Restart the gateway, then run \`dshproxy dsh apply\`.` : `No ${provider} key was saved.`);
         return undefined;
       }
-      throw new Error("Usage: dshgate key set|remove|list");
+      throw new Error("Usage: dshproxy key set|remove|list");
     }
     case "models": {
       const state = await app.snapshot();
-      if (!state.models.length) out("No models yet. Sign in with `dshgate login <provider>` or add a key with `dshgate key set <provider>`.");
+      if (!state.models.length) out("No models yet. Sign in with `dshproxy login <provider>` or add a key with `dshproxy key set <provider>`.");
       for (const model of state.models) out(`${model.id}  ${model.name}`);
       return undefined;
     }
@@ -295,14 +301,14 @@ async function main(argv, out = console.log) {
         for (const item of profile.state(state.origin).profiles) out(`${item.profile}: ${item.error || (item.routes.length ? item.routes.map((route) => `${route.key} ${route.models} models at ${route.baseURL}`).join("; ") : "not applied")}`);
         return undefined;
       }
-      throw new Error("Usage: dshgate dsh apply|status|remove [--dry-run]");
+      throw new Error("Usage: dshproxy dsh apply|status|remove [--dry-run]");
     }
     case "backend": {
       // Works without a running gateway, so a version that will not start
       // can still be undone.
       if (args[0] === "rollback") {
         if (!rollbackLock(out)) process.exitCode = 1;
-        else out("Start dshgate again to use it.");
+        else out("Start DSHProxy again to use it.");
         return undefined;
       }
       if (args[0] === "version") {
@@ -310,7 +316,7 @@ async function main(argv, out = console.log) {
         out(`CLIProxyAPI ${lock.version}${lock.previous ? ` (previous ${lock.previous.version} kept)` : ""}`);
         return undefined;
       }
-      throw new Error("Usage: dshgate backend version|rollback");
+      throw new Error("Usage: dshproxy backend version|rollback");
     }
     case undefined:
     case "help":
@@ -319,7 +325,7 @@ async function main(argv, out = console.log) {
       out(HELP);
       return undefined;
     default:
-      throw new Error(`Unknown command "${command}". Run \`dshgate help\`.`);
+      throw new Error(`Unknown command "${command}". Run \`dshproxy help\`.`);
   }
 }
 

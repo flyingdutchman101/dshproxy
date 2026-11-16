@@ -20,7 +20,7 @@ const MODELS = [
 const API_KEY = [model("deepseek/deepseek-v4-pro", "compat"), model("qwen/qwen3.8-max", "compat")];
 
 function tempHome(t, names = ["desktop"]) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dshgate-profile-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dshproxy-profile-"));
   for (const name of names) fs.mkdirSync(path.join(home, "profiles", name), { recursive: true });
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   return home;
@@ -64,24 +64,24 @@ test("each model lands on the route for its protocol", (t) => {
   const home = tempHome(t);
   profile.apply(MODELS, ORIGIN, home);
   const routes = providers(home);
-  assert.deepEqual(ids(routes["dshgate-lanes"]), ["lane-main"]);
-  assert.deepEqual(ids(routes["dshgate-claude"]), ["claude-fable-5-2"]);
-  assert.deepEqual(ids(routes["dshgate-openai"]), ["gpt-6-astra"]);
-  assert.deepEqual(ids(routes["dshgate-compat"]), ["gemini-4-carbon-high", "mistral/codestral-2508"]);
-  assert.equal(routes["dshgate-lanes"].api, "anthropic-messages");
-  assert.equal(routes["dshgate-lanes"].baseURL, "http://127.0.0.1:8417");
-  assert.equal(routes["dshgate-claude"].baseURL, "http://127.0.0.1:8417");
-  assert.equal(routes["dshgate-openai"].api, "openai-responses");
-  assert.equal(routes["dshgate-openai"].baseURL, "http://127.0.0.1:8417/v1");
-  assert.equal(routes["dshgate-compat"].api, "openai-completions");
-  assert.equal(routes["dshgate-compat"].baseURL, "http://127.0.0.1:8417/v1");
+  assert.deepEqual(ids(routes["dshproxy-lanes"]), ["lane-main"]);
+  assert.deepEqual(ids(routes["dshproxy-claude"]), ["claude-fable-5-2"]);
+  assert.deepEqual(ids(routes["dshproxy-openai"]), ["gpt-6-astra"]);
+  assert.deepEqual(ids(routes["dshproxy-compat"]), ["gemini-4-carbon-high", "mistral/codestral-2508"]);
+  assert.equal(routes["dshproxy-lanes"].api, "anthropic-messages");
+  assert.equal(routes["dshproxy-lanes"].baseURL, "http://127.0.0.1:8417");
+  assert.equal(routes["dshproxy-claude"].baseURL, "http://127.0.0.1:8417");
+  assert.equal(routes["dshproxy-openai"].api, "openai-responses");
+  assert.equal(routes["dshproxy-openai"].baseURL, "http://127.0.0.1:8417/v1");
+  assert.equal(routes["dshproxy-compat"].api, "openai-completions");
+  assert.equal(routes["dshproxy-compat"].baseURL, "http://127.0.0.1:8417/v1");
 });
 
 test("a model entry declares its sizes, inputs and reasoning levels", (t) => {
   const home = tempHome(t);
   profile.apply(MODELS, ORIGIN, home);
   const routes = providers(home);
-  assert.deepEqual(routes["dshgate-compat"].models[0], {
+  assert.deepEqual(routes["dshproxy-compat"].models[0], {
     id: "gemini-4-carbon-high",
     name: "gemini-4-carbon-high",
     input: ["text", "image"],
@@ -90,14 +90,14 @@ test("a model entry declares its sizes, inputs and reasoning levels", (t) => {
     reasoningEfforts: { high: "high" }
   });
   // A model without reasoning levels is declared as non-reasoning.
-  assert.equal(routes["dshgate-compat"].models[1].reasoningEfforts, false);
+  assert.equal(routes["dshproxy-compat"].models[1].reasoningEfforts, false);
 });
 
 test("the routes refer to a credential that exists", (t) => {
   const home = tempHome(t);
   const result = profile.apply(MODELS, ORIGIN, home);
   assert.equal(result.credential.created, true);
-  const ref = providers(home)["dshgate-claude"].apiKeyEnv;
+  const ref = providers(home)["dshproxy-claude"].apiKeyEnv;
   const credentials = YAML.parse(fs.readFileSync(path.join(home, ".credentials.yaml"), "utf8"));
   assert.equal(typeof credentials.refs[ref], "string");
   assert.ok(credentials.refs[ref].length > 0);
@@ -106,13 +106,13 @@ test("the routes refer to a credential that exists", (t) => {
 test("credentials that are already saved are kept", (t) => {
   const home = tempHome(t);
   const file = path.join(home, ".credentials.yaml");
-  fs.writeFileSync(file, "version: 1\nrecords:\n  some/record:\n    kind: api-key\nrefs:\n  DEEPSEEK_API_KEY: existing-value\n  DSHGATE_API_KEY: chosen-by-user\n");
+  fs.writeFileSync(file, "version: 1\nrecords:\n  some/record:\n    kind: api-key\nrefs:\n  DEEPSEEK_API_KEY: existing-value\n  DSHPROXY_API_KEY: chosen-by-user\n");
   const result = profile.apply(MODELS, ORIGIN, home);
   assert.equal(result.credential.created, false);
   assert.deepEqual(YAML.parse(fs.readFileSync(file, "utf8")), {
     version: 1,
     records: { "some/record": { kind: "api-key" } },
-    refs: { DEEPSEEK_API_KEY: "existing-value", DSHGATE_API_KEY: "chosen-by-user" }
+    refs: { DEEPSEEK_API_KEY: "existing-value", DSHPROXY_API_KEY: "chosen-by-user" }
   });
 });
 
@@ -129,7 +129,7 @@ test("VeryCuteDroidProxy's routes, other routes, other entries and comments are 
   assert.deepEqual(doc[1].config.providers["my-gateway"], before[1].config.providers["my-gateway"]);
   assert.ok(text.includes("# Your patch layer for this dsh profile."));
   assert.ok(text.includes("# VeryCuteDroidProxy: written by the app."));
-  assert.deepEqual(ids(doc[1].config.providers["dshgate-lanes"]), ["lane-main"]);
+  assert.deepEqual(ids(doc[1].config.providers["dshproxy-lanes"]), ["lane-main"]);
 });
 
 test("the profile is backed up before it is changed", (t) => {
@@ -153,14 +153,14 @@ test("a sync keeps fields the user added to a model", (t) => {
   const home = tempHome(t);
   profile.apply(MODELS, ORIGIN, home);
   const doc = YAML.parse(fs.readFileSync(patchPath(home), "utf8"));
-  const gemini = doc.find((item) => item.id === "llm-pi-ai").config.providers["dshgate-compat"].models[0];
+  const gemini = doc.find((item) => item.id === "llm-pi-ai").config.providers["dshproxy-compat"].models[0];
   gemini.input = ["text"];
   gemini.compat = { supportsDeveloperRole: false };
   fs.writeFileSync(patchPath(home), YAML.stringify(doc));
 
   profile.apply(MODELS, ORIGIN, home);
 
-  const after = providers(home)["dshgate-compat"].models[0];
+  const after = providers(home)["dshproxy-compat"].models[0];
   assert.deepEqual(after.input, ["text"]);
   assert.deepEqual(after.compat, { supportsDeveloperRole: false });
 });
@@ -169,7 +169,7 @@ test("a model that is no longer offered is removed", (t) => {
   const home = tempHome(t);
   profile.apply([...MODELS, ...API_KEY], ORIGIN, home);
   profile.apply(MODELS, ORIGIN, home);
-  assert.deepEqual(ids(providers(home)["dshgate-compat"]), ["gemini-4-carbon-high", "mistral/codestral-2508"]);
+  assert.deepEqual(ids(providers(home)["dshproxy-compat"]), ["gemini-4-carbon-high", "mistral/codestral-2508"]);
 });
 
 test("models of a provider whose saved key cannot be read are kept", (t) => {
@@ -177,7 +177,7 @@ test("models of a provider whose saved key cannot be read are kept", (t) => {
   profile.apply([...MODELS, ...API_KEY], ORIGIN, home);
   // Qwen was removed by the user; DeepSeek's key is unreadable right now.
   const result = profile.apply(MODELS, ORIGIN, home, { keepModelPrefixes: ["deepseek"] });
-  assert.deepEqual(ids(providers(home)["dshgate-compat"]), ["gemini-4-carbon-high", "mistral/codestral-2508", "deepseek/deepseek-v4-pro"]);
+  assert.deepEqual(ids(providers(home)["dshproxy-compat"]), ["gemini-4-carbon-high", "mistral/codestral-2508", "deepseek/deepseek-v4-pro"]);
   assert.deepEqual(result.profiles[0].kept, ["deepseek/deepseek-v4-pro"]);
 });
 
@@ -185,7 +185,7 @@ test("a route with no models left is removed", (t) => {
   const home = tempHome(t);
   profile.apply(MODELS, ORIGIN, home);
   profile.apply(MODELS.filter((item) => item.api !== "openai"), ORIGIN, home);
-  assert.equal(providers(home)["dshgate-openai"], undefined);
+  assert.equal(providers(home)["dshproxy-openai"], undefined);
 });
 
 test("a dry run reports the change and writes nothing", (t) => {
@@ -193,7 +193,7 @@ test("a dry run reports the change and writes nothing", (t) => {
   fs.writeFileSync(patchPath(home), EXISTING);
   const result = profile.apply(MODELS, ORIGIN, home, { dryRun: true });
   assert.equal(result.profiles[0].changed, true);
-  assert.deepEqual(result.profiles[0].routes, { "dshgate-lanes": 1, "dshgate-claude": 1, "dshgate-openai": 1, "dshgate-compat": 2 });
+  assert.deepEqual(result.profiles[0].routes, { "dshproxy-lanes": 1, "dshproxy-claude": 1, "dshproxy-openai": 1, "dshproxy-compat": 2 });
   assert.equal(fs.readFileSync(patchPath(home), "utf8"), EXISTING);
   assert.equal(backups(home).length, 0);
   assert.equal(fs.existsSync(path.join(home, ".credentials.yaml")), false);
@@ -212,11 +212,11 @@ test("every profile is synced", (t) => {
   const home = tempHome(t, ["desktop", "web"]);
   const result = profile.apply(MODELS, ORIGIN, home);
   assert.deepEqual(result.profiles.map((item) => item.profile).sort(), ["desktop", "web"]);
-  assert.deepEqual(ids(providers(home, "web")["dshgate-lanes"]), ["lane-main"]);
+  assert.deepEqual(ids(providers(home, "web")["dshproxy-lanes"]), ["lane-main"]);
 });
 
 test("a machine without DeepSeek Harness profiles is reported, not written to", (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dshgate-profile-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dshproxy-profile-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   assert.throws(() => profile.apply(MODELS, ORIGIN, home), /profiles were not found/);
   assert.deepEqual(fs.readdirSync(home), []);
@@ -227,7 +227,7 @@ test("removing takes out only the gateway's routes and leaves the file as it was
   fs.writeFileSync(patchPath(home), EXISTING);
   profile.apply(MODELS, ORIGIN, home);
   const results = profile.remove(home);
-  assert.deepEqual(results[0].removed.sort(), ["dshgate-claude", "dshgate-compat", "dshgate-lanes", "dshgate-openai"]);
+  assert.deepEqual(results[0].removed.sort(), ["dshproxy-claude", "dshproxy-compat", "dshproxy-lanes", "dshproxy-openai"]);
   assert.equal(fs.readFileSync(patchPath(home), "utf8"), EXISTING);
 });
 
@@ -315,14 +315,14 @@ test("the state reports whether the routes point at this gateway", (t) => {
   assert.equal(profile.state("http://127.0.0.1:9000", home).applied, false);
 });
 
-test("a sync touches only the profiles that already have dshgate routes", (t) => {
+test("a sync touches only the profiles that already have DSHProxy routes", (t) => {
   const home = tempHome(t, ["desktop", "web"]);
   fs.writeFileSync(patchPath(home, "web"), EXISTING);
   profile.apply(MODELS, ORIGIN, home, { only: ["desktop"] });
   const before = fs.readFileSync(patchPath(home, "web"), "utf8");
   const result = profile.apply([...MODELS, model("claude-opus-5", "claude")], ORIGIN, home, { onlyApplied: true });
   assert.deepEqual(result.profiles.map((item) => item.profile), ["desktop"]);
-  assert.ok(ids(providers(home)["dshgate-claude"]).includes("claude-opus-5"));
+  assert.ok(ids(providers(home)["dshproxy-claude"]).includes("claude-opus-5"));
   assert.equal(fs.readFileSync(patchPath(home, "web"), "utf8"), before);
   assert.equal(backups(home, "web").length, 0);
 });
@@ -334,4 +334,37 @@ test("a sync with no applied profile writes nothing, not even the credential ref
   assert.deepEqual(result.profiles, []);
   assert.equal(result.credential.created, false);
   assert.equal(fs.readFileSync(patchPath(home), "utf8"), EXISTING);
+});
+
+// Profiles written before the rename carry the old route names.
+function oldRouteProfile(home, name = "desktop") {
+  profile.apply(MODELS, ORIGIN, home, { only: [name] });
+  const file = patchPath(home, name);
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/dshproxy-/g, "dshgate-").replace(/DSHPROXY_API_KEY/g, "DSHGATE_API_KEY").replace(/added by dshproxy/g, "added by dshgate"));
+}
+
+test("routes from before the rename are replaced, not left beside the new ones", (t) => {
+  const home = tempHome(t);
+  oldRouteProfile(home);
+  profile.apply(MODELS, ORIGIN, home);
+  const keys = Object.keys(providers(home));
+  assert.deepEqual(keys.filter((key) => key.startsWith("dshgate-")), []);
+  assert.ok(keys.includes("dshproxy-lanes"));
+  assert.equal(providers(home)["dshproxy-lanes"].apiKeyEnv, "DSHPROXY_API_KEY");
+});
+
+test("an automatic sync counts a profile with old route names as applied", (t) => {
+  const home = tempHome(t, ["desktop", "web"]);
+  oldRouteProfile(home, "desktop");
+  const result = profile.apply(MODELS, ORIGIN, home, { onlyApplied: true });
+  assert.deepEqual(result.profiles.map((item) => item.profile), ["desktop"]);
+  assert.ok(providers(home)["dshproxy-claude"]);
+});
+
+test("removing also takes out routes from before the rename", (t) => {
+  const home = tempHome(t);
+  oldRouteProfile(home);
+  profile.remove(home);
+  const text = fs.readFileSync(patchPath(home), "utf8");
+  assert.doesNotMatch(text, /dshgate-|dshproxy-/);
 });

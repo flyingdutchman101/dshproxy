@@ -114,7 +114,7 @@ function createSupervisor({ binary, configPath, host, port, pidFile = null, log 
     const now = Date.now();
     while (restarts.length && now - restarts[0] > RESTART_WINDOW_MS) restarts.shift();
     if (restarts.length >= MAX_RESTARTS) {
-      log("backend keeps exiting; not restarting again. Fix the cause, then restart dshgate.");
+      log("backend keeps exiting; not restarting again. Fix the cause, then restart DSHProxy.");
       return;
     }
     restarts.push(now);
@@ -124,10 +124,10 @@ function createSupervisor({ binary, configPath, host, port, pidFile = null, log 
   }
 
   // Never stops another program to free the port: VeryCuteDroidProxy or a
-  // second dshgate may own it.
+  // second DSHProxy may own it.
   async function start({ timeoutMs = 30000 } = {}) {
     if (pidFile && await reclaimOrphan({ pidFile, binary })) {
-      log("stopped a backend left running by an earlier dshgate");
+      log("stopped a backend left running by an earlier DSHProxy");
       for (let attempt = 0; attempt < 20 && await portInUse(host, port); attempt += 1) await sleep(250);
     }
     if (await portInUse(host, port)) throw new Error(`Port ${port} is already in use. Stop the program using it or change "backendPort" in settings.json.`);
