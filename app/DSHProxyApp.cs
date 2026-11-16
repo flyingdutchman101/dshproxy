@@ -1219,7 +1219,7 @@ namespace DSHProxy
             startButton.Enabled = !running;
             stopButton.Enabled = running;
             tray.Text = running ? "DSHProxy: running" : "DSHProxy: stopped";
-            footer.Text = "Data: " + Json.Str(Json.Get(status, "home")) + "    Program: " + cli.Root;
+            footer.Text = "Data: " + Json.Str(Json.Get(status, "home")) + "    Program: " + cli.Root + "    Build: " + BuildInfo.Stamp;
             loginProviders = Json.Arr(Json.Get(status, "loginProviders"));
 
             if (running && !wasRunning) LoadLimits(false);

@@ -19,11 +19,26 @@ foreach ($logo in Get-ChildItem (Join-Path $app 'logos') -Filter '*.png') {
     $resources += "/resource:$($logo.FullName),logo.$($logo.Name)"
 }
 
+# A build stamp, so a window left open from an earlier build is easy to spot
+# in the footer. Generated on every build and not tracked in git.
+$stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm')
+$commit = 'unknown'
+try { $commit = (git -C $root rev-parse --short HEAD 2>$null).Trim() } catch { }
+Set-Content (Join-Path $app 'BuildInfo.cs') -Encoding UTF8 -Value @"
+namespace DSHProxy
+{
+    internal static class BuildInfo
+    {
+        public const string Stamp = "$stamp $commit";
+    }
+}
+"@
+
 $out = Join-Path $root 'DSHProxy.exe'
 & $csc /nologo /target:winexe /optimize+ /platform:anycpu `
     "/out:$out" "/win32icon:$icon" `
     /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll /reference:System.Net.dll `
     @resources "/resource:$icon,app.ico" `
-    (Join-Path $app 'DSHProxyApp.cs') (Join-Path $app 'Skin.cs')
+    (Join-Path $app 'DSHProxyApp.cs') (Join-Path $app 'Skin.cs') (Join-Path $app 'BuildInfo.cs')
 if ($LASTEXITCODE -ne 0) { throw "Build failed." }
 Write-Host "Built $out"
