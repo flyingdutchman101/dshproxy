@@ -20,28 +20,38 @@ function availability({ accounts, providers }) {
 // of the same provider instead of failing the request.
 //
 // `siblings(id)` optionally returns other models served by the same account,
-// which covers models that are not part of any lane.
-function createResolver({ lanes, isAvailable, siblings = () => [] }) {
+// which covers models that are not part of any lane. `accountOf(id)` lets the
+// ordering prefer the picked model's own provider: a Claude pick should be
+// answered by another Claude model before a Gemini one.
+function createResolver({ lanes, isAvailable, siblings = () => [], accountOf = () => null }) {
   return (id) => {
     const name = laneName(id);
     const ladder = name ? lanes()[name] : null;
     if (ladder) return { lane: name, ladder: ladder.filter((model) => isAvailable(model)) };
-    const seen = new Set([id]);
-    const fallbacks = [];
+    const available = (models) => models.filter((model) => model !== id && isAvailable(model));
+    const laneFallbacks = [];
     for (const candidate of Object.values(lanes())) {
       if (!Array.isArray(candidate) || !candidate.includes(id)) continue;
-      for (const model of candidate) {
-        if (seen.has(model) || !isAvailable(model)) continue;
-        seen.add(model);
-        fallbacks.push(model);
-      }
+      laneFallbacks.push(...available(candidate));
       break;
     }
-    for (const model of siblings(id)) {
-      if (seen.has(model) || !isAvailable(model)) continue;
+    const accountFallbacks = available(siblings(id));
+    // Prefer the picked model's own family (`ag-*` before `gemini-*`, `claude-*`
+    // before anything else on the same account) so a Claude-via-Google pick is
+    // answered by Claude-via-Google when possible.
+    const family = (model) => String(model).split("-")[0];
+    const sameFamily = accountFallbacks.filter((model) => family(model) === family(id));
+    const otherFamily = accountFallbacks.filter((model) => family(model) !== family(id));
+    const orderedAccount = [...sameFamily, ...otherFamily];
+    const account = accountOf(id);
+    const sameProvider = account != null && laneFallbacks.length > 0 && laneFallbacks.every((model) => accountOf(model) === account);
+    const ordered = sameProvider ? [...laneFallbacks, ...orderedAccount] : [...orderedAccount, ...laneFallbacks];
+    const seen = new Set([id]);
+    const fallbacks = ordered.filter((model) => {
+      if (seen.has(model)) return false;
       seen.add(model);
-      fallbacks.push(model);
-    }
+      return true;
+    });
     return fallbacks.length ? { lane: null, ladder: [id], fallbacks } : { lane: null, ladder: [id] };
   };
 }

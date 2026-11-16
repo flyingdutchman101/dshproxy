@@ -103,3 +103,36 @@ test("a forced model's fallbacks skip models with no account", () => {
   const resolve = createResolver({ lanes: () => lanes, isAvailable: (id) => id !== "gemini-4-hydrogen-xhigh" });
   assert.deepEqual(resolve("gemini-3.8-flash-high").fallbacks, ["gemini-4-carbon-high"]);
 });
+
+test("a Claude pick is answered by Claude before a Gemini lane sibling", () => {
+  const lanes = { main: ["gpt-6-astra", "claude-fable-5-2", "gemini-4-carbon-high"] };
+  const account = (id) => (id.startsWith("claude-") ? "claude" : id.startsWith("gemini-") ? "antigravity" : "codex");
+  const resolve = createResolver({
+    lanes: () => lanes,
+    isAvailable: () => true,
+    siblings: (id) => (id === "claude-fable-5-2" ? ["claude-fable-5-2", "claude-opus-5-5", "claude-sonnet-5-5"] : []),
+    accountOf: account
+  });
+  assert.deepEqual(resolve("claude-fable-5-2").fallbacks, ["claude-opus-5-5", "claude-sonnet-5-5", "gpt-6-astra", "gemini-4-carbon-high"]);
+});
+
+test("a Gemini pick keeps its Google lane order first", () => {
+  const lanes = { google: ["gemini-3.8-flash-high", "gemini-4-carbon-high", "gemini-4-hydrogen-xhigh"] };
+  const resolve = createResolver({
+    lanes: () => lanes,
+    isAvailable: () => true,
+    siblings: (id) => (id === "gemini-3.8-flash-high" ? ["gemini-3.8-flash-high", "gemini-4-carbon-high", "gemini-4-hydrogen-xhigh", "ag-c55o-high"] : []),
+    accountOf: () => "antigravity"
+  });
+  assert.deepEqual(resolve("gemini-3.8-flash-high").fallbacks, ["gemini-4-carbon-high", "gemini-4-hydrogen-xhigh", "ag-c55o-high"]);
+});
+
+test("a Claude-via-Google pick prefers its own family on that account", () => {
+  const resolve = createResolver({
+    lanes: () => ({}),
+    isAvailable: () => true,
+    siblings: (id) => (id === "ag-c55o-high" ? ["ag-c55o-high", "gemini-4-carbon-high", "ag-c55s-high"] : []),
+    accountOf: () => "antigravity"
+  });
+  assert.deepEqual(resolve("ag-c55o-high").fallbacks, ["ag-c55s-high", "gemini-4-carbon-high"]);
+});

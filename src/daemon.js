@@ -88,7 +88,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
 
   // The other models a subscription account serves, so a forced pick that is out
   // of quota can be answered by a sibling from the same provider.
-  let siblingCache = { at: 0, lists: [] };
+  let siblingCache = { at: 0, lists: [], accounts: new Map() };
   const siblings = (id) => {
     if (Date.now() - siblingCache.at > ACCOUNT_CACHE_MS) {
       try {
@@ -99,9 +99,9 @@ async function start({ home, print = console.log, restart = null } = {}) {
           if (!byAccount.has(model.account)) byAccount.set(model.account, []);
           byAccount.get(model.account).push(model.id);
         }
-        siblingCache = { at: Date.now(), lists: [...byAccount.values()] };
+        siblingCache = { at: Date.now(), lists: [...byAccount.values()], accounts: new Map(list.filter((model) => model.account).map((model) => [model.id, model.account])) };
       } catch {
-        siblingCache = { at: Date.now(), lists: [] };
+        siblingCache = { at: Date.now(), lists: [], accounts: new Map() };
       }
     }
     return siblingCache.lists.find((ids) => ids.includes(id)) || [];
@@ -330,7 +330,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
 
   const gateway = createGateway({
     upstream: { host: settings.host, port: settings.backendPort },
-    resolve: createResolver({ lanes: () => settings.lanes, isAvailable, siblings }),
+    resolve: createResolver({ lanes: () => settings.lanes, isAvailable, siblings, accountOf: (model) => siblingCache.accounts.get(model) || null }),
     describe,
     // Which models can take an image. Read from the offered models (their
     // input lists) and refreshed on the same cache as the accounts.
