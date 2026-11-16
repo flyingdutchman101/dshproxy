@@ -459,12 +459,12 @@ namespace DSHProxy
 
         private static Label Heading(string text)
         {
-            return new Label { Text = text, Dock = DockStyle.Top, Height = 38, Font = Theme.Ui(15f, FontStyle.Bold), ForeColor = Theme.Text };
+            return new GlassLabel { Text = text, Dock = DockStyle.Top, Height = 38, Font = Theme.Ui(15f, FontStyle.Bold), ForeColor = Theme.Text };
         }
 
         private static Label Text2(string text, Color color)
         {
-            return new Label { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 44, ForeColor = color };
+            return new GlassLabel { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 44, ForeColor = color };
         }
 
         private Button Close2(string text)
@@ -521,7 +521,7 @@ namespace DSHProxy
         {
             var image = Logos.Sized(key, 44);
             var row = new Panel { Dock = DockStyle.Top, Height = image == null ? 0 : 52 };
-            if (image != null) row.Controls.Add(new PictureBox { Image = image, Size = new Size(44, 44), Location = new Point(0, 0) });
+            if (image != null) row.Controls.Add(new GlassPicture { Image = image, Size = new Size(44, 44), Location = new Point(0, 0) });
             return row;
         }
 
@@ -575,7 +575,7 @@ namespace DSHProxy
             if (device && code.Length > 0)
             {
                 var codeRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 56, FlowDirection = FlowDirection.LeftToRight };
-                var codeLabel = new Label { Text = code, AutoSize = true, Font = Theme.Mono(22f, FontStyle.Bold), ForeColor = Theme.Accent, Margin = new Padding(0, 4, 16, 0) };
+                var codeLabel = new GlassLabel { Text = code, AutoSize = true, Font = Theme.Mono(22f, FontStyle.Bold), ForeColor = Theme.Accent, Margin = new Padding(0, 4, 16, 0) };
                 var copyCode = Skin.Outline(new PillButton { Text = "Copy code", Width = 104, Height = 32, Margin = new Padding(0, 12, 0, 0) });
                 copyCode.Click += (s, e) => Clipboard.SetText(code);
                 codeRow.Controls.Add(codeLabel);
@@ -659,8 +659,8 @@ namespace DSHProxy
             Reset(done, another);
             AcceptButton = done;
             body.Controls.Add(Text2("DSHProxy can now use this subscription. Its limits appear on the Accounts tab within a minute.", Theme.Muted));
-            body.Controls.Add(new Label { Text = account.Length > 0 ? account : "", Dock = DockStyle.Top, Height = 28, Font = Theme.Ui(11f) });
-            body.Controls.Add(new Label { Text = "\u2713  Signed in to " + sessionLabel, Dock = DockStyle.Top, Height = 40, Font = Theme.Ui(14f, FontStyle.Bold), ForeColor = Theme.Ok });
+            body.Controls.Add(new GlassLabel { Text = account.Length > 0 ? account : "", Dock = DockStyle.Top, Height = 28, Font = Theme.Ui(11f) });
+            body.Controls.Add(new GlassLabel { Text = "\u2713  Signed in to " + sessionLabel, Dock = DockStyle.Top, Height = 40, Font = Theme.Ui(14f, FontStyle.Bold), ForeColor = Theme.Ok });
             body.Controls.Add(LogoBox(sessionKey));
         }
 
@@ -676,7 +676,7 @@ namespace DSHProxy
                 buttons.Controls.Add(retry);
             }
             body.Controls.Add(Text2(message, Theme.Text));
-            body.Controls.Add(new Label { Text = "Sign-in to " + label + " did not finish", Dock = DockStyle.Top, Height = 40, Font = Theme.Ui(13f, FontStyle.Bold), ForeColor = Theme.Bad });
+            body.Controls.Add(new GlassLabel { Text = "Sign-in to " + label + " did not finish", Dock = DockStyle.Top, Height = 40, Font = Theme.Ui(13f, FontStyle.Bold), ForeColor = Theme.Bad });
             body.Controls.Add(LogoBox(key ?? sessionKey));
         }
     }
@@ -703,21 +703,21 @@ namespace DSHProxy
         private readonly HashSet<string> warned = new HashSet<string>();
 
         private readonly Chip stateLabel = new Chip { Font = Theme.Ui(9f, FontStyle.Bold), Margin = new Padding(14, 12, 0, 0) };
-        private readonly Label detailLabel = new Label { AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 2, 0, 0) };
-        private readonly Label lowestLabel = new Label { AutoSize = true, Margin = new Padding(0, 2, 0, 0) };
+        private readonly Label detailLabel = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 2, 0, 0) };
+        private readonly Label lowestLabel = new GlassLabel { AutoSize = true, Margin = new Padding(0, 2, 0, 0) };
         private readonly Button startButton = Skin.Primary(new PillButton { Text = "Start", Width = 104, Height = 40 });
         private readonly Button stopButton = Skin.Danger(new PillButton { Text = "Stop", Width = 104, Height = 40, Margin = new Padding(8, 3, 0, 3) });
         private readonly Panel accountsPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(0, 4, 0, 4) };
-        private readonly Label limitsNote = new Label { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
+        private readonly Label limitsNote = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
         private readonly ListView keysList = new DarkList();
         private readonly ComboBox keyProviderCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
         private readonly ComboBox keyRegionCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
         private readonly ListView lanesList = new DarkList();
         private readonly ListView modelsList = new DarkList();
-        private readonly Label modelsNote = new Label { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
+        private readonly Label modelsNote = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
         private readonly FlowLayoutPanel suggestionsPanel = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(14, 8, 14, 8), Margin = new Padding(0, 0, 0, 8), Visible = false };
         private readonly FlowLayoutPanel updateBar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(18, 8, 18, 8), Visible = false };
-        private readonly Label updateLabel = new Label { AutoSize = true, Margin = new Padding(0, 8, 12, 0) };
+        private readonly Label updateLabel = new GlassLabel { AutoSize = true, Margin = new Padding(0, 8, 12, 0) };
         private readonly Button updateButton = Skin.Primary(new PillButton { Text = "Update...", AutoSize = true });
         private readonly Button rollbackButton = new PillButton { Text = "Roll back...", AutoSize = true };
         private ArrayList modelRows = new ArrayList();
@@ -730,7 +730,7 @@ namespace DSHProxy
         private readonly ListView profilesList = new DarkList();
         private readonly TextBox logBox = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, WordWrap = false, Dock = DockStyle.Fill, Font = Theme.Mono(9f), BackColor = Theme.Input };
         private readonly CheckBox autostartBox = new GlassCheck { Text = "Start with Windows", AutoSize = true };
-        private readonly Label footer = new Label { AutoSize = true, ForeColor = Theme.Muted };
+        private readonly Label footer = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted };
         private readonly PageHost tabs = new PageHost { Dock = DockStyle.Fill };
 
         private readonly string previewLimits;
@@ -833,7 +833,7 @@ namespace DSHProxy
 
         private static Label Note(string text)
         {
-            return new Label { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 40, ForeColor = Theme.Muted, Padding = new Padding(0, 2, 0, 0) };
+            return new GlassLabel { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 40, ForeColor = Theme.Muted, Padding = new Padding(0, 2, 0, 0) };
         }
 
         // Lists sit in a bordered panel so they read as one surface.
@@ -870,7 +870,7 @@ namespace DSHProxy
 
             var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0) };
             var nameRow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
-            nameRow.Controls.Add(new Label { Text = "DeepSeekProxy", AutoSize = true, Font = Theme.Light(22f), ForeColor = Theme.Text, Margin = new Padding(0, 0, 0, 0) });
+            nameRow.Controls.Add(new GlassLabel { Text = "DeepSeekProxy", AutoSize = true, Font = Theme.Light(22f), ForeColor = Theme.Text, Margin = new Padding(0, 0, 0, 0) });
             nameRow.Controls.Add(stateLabel);
             text.Controls.Add(nameRow);
             text.Controls.Add(detailLabel);
@@ -946,7 +946,7 @@ namespace DSHProxy
             var editLanes = new PillButton { Text = "Edit lanes (settings.json)", AutoSize = true };
             editLanes.Click += (s, e) => EditSettings();
             var presetRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, Dock = DockStyle.Top, Margin = new Padding(0), Padding = new Padding(0, 2, 0, 2) };
-            presetRow.Controls.Add(new Label { Text = "Routing:", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 11, 10, 0) });
+            presetRow.Controls.Add(new GlassLabel { Text = "Routing:", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 11, 10, 0) });
             presetTips = new ToolTip { AutoPopDelay = 12000, InitialDelay = 400 };
             foreach (var preset in new[] { new[] { "performance", "Max performance" }, new[] { "balanced", "Balanced" }, new[] { "cheap", "Cheap production" } })
             {
@@ -1308,7 +1308,7 @@ namespace DSHProxy
         private void ShowAccountsMessage(string text, Color color)
         {
             accountsPanel.Controls.Clear();
-            accountsPanel.Controls.Add(new Label { Text = text, Dock = DockStyle.Top, Height = 60, ForeColor = color, TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Ui(10f) });
+            accountsPanel.Controls.Add(new GlassLabel { Text = text, Dock = DockStyle.Top, Height = 60, ForeColor = color, TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Ui(10f) });
         }
 
         private void LoadLimits(bool force)
@@ -1380,14 +1380,18 @@ namespace DSHProxy
             FitCards();
         }
 
+        // Cards keep a readable width on a wide monitor instead of stretching
+        // the meters across the whole screen.
+        private const int MaxCardWidth = 1600;
+
         private void FitCards()
         {
-            var width = accountsPanel.ClientSize.Width - accountsPanel.Padding.Horizontal;
-            foreach (System.Windows.Forms.Control item in accountsPanel.Controls)
-            {
-                var card = item as TableLayoutPanel;
-                if (card != null) card.Width = Math.Max(400, width);
-            }
+            // The cards are docked, so their width comes from this padding. They
+            // line up with the page text and stop growing on a wide monitor.
+            var available = accountsPanel.ClientSize.Width;
+            var left = accountsPanel.Padding.Left;
+            var right = Math.Max(left, available - left - MaxCardWidth);
+            if (accountsPanel.Padding.Right != right) accountsPanel.Padding = new Padding(left, 4, right, 4);
         }
 
         private TableLayoutPanel BuildCard(Dictionary<string, object> account)
@@ -1416,14 +1420,14 @@ namespace DSHProxy
 
             var title = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
             var logo = Logos.Sized(Json.Str(Json.Get(account, "provider")), 24);
-            if (logo != null) title.Controls.Add(new PictureBox { Image = logo, Size = new Size(24, 24), Margin = new Padding(0, 1, 8, 0) });
-            title.Controls.Add(new Label { Text = label, AutoSize = true, Font = Theme.Ui(11f, FontStyle.Bold), Margin = new Padding(0, 2, 8, 0) });
-            title.Controls.Add(new Label { Text = email, AutoSize = true, Font = Theme.Ui(10f), ForeColor = Theme.Muted, Margin = new Padding(0, 4, 10, 0) });
+            if (logo != null) title.Controls.Add(new GlassPicture { Image = logo, Size = new Size(24, 24), Margin = new Padding(0, 1, 8, 0) });
+            title.Controls.Add(new GlassLabel { Text = label, AutoSize = true, Font = Theme.Ui(11f, FontStyle.Bold), Margin = new Padding(0, 2, 8, 0) });
+            title.Controls.Add(new GlassLabel { Text = email, AutoSize = true, Font = Theme.Ui(10f), ForeColor = Theme.Muted, Margin = new Padding(0, 4, 10, 0) });
             // Plan names such as "self_serve_business_prolite" are made readable and kept short.
             var planText = plan.Replace("_", " ");
             if (planText.Length > 22) planText = planText.Substring(0, 21) + "\u2026";
             if (plan.Length > 0) title.Controls.Add(new Chip { Text = planText, Tint = Theme.Teal, Margin = new Padding(0, 3, 8, 0) });
-            title.Controls.Add(new Label { Text = disabled ? "\u25CF Paused" : "\u25CF Active", AutoSize = true, ForeColor = disabled ? Theme.Muted : Theme.Ok, Margin = new Padding(0, 5, 0, 0) });
+            title.Controls.Add(new GlassLabel { Text = disabled ? "\u25CF Paused" : "\u25CF Active", AutoSize = true, ForeColor = disabled ? Theme.Muted : Theme.Ok, Margin = new Padding(0, 5, 0, 0) });
             card.Controls.Add(title, 0, 0);
             card.SetColumnSpan(title, 2);
 
@@ -1450,15 +1454,15 @@ namespace DSHProxy
                 var w = Json.Obj(item);
                 var reported = !(Json.Get(w, "reported") is bool) || Json.Bool(w, "reported");
                 var left = Json.Num(w, "leftPercent", 0);
-                card.Controls.Add(new Label { Text = Json.Str(Json.Get(w, "title")), AutoSize = true, Margin = new Padding(0, 4, 0, 4), Font = Theme.Ui(9.5f), ForeColor = reported ? Theme.Text : Theme.Muted }, 0, row);
+                card.Controls.Add(new GlassLabel { Text = Json.Str(Json.Get(w, "title")), AutoSize = true, Margin = new Padding(0, 4, 0, 4), Font = Theme.Ui(9.5f), ForeColor = reported ? Theme.Text : Theme.Muted }, 0, row);
                 if (reported)
                 {
                     card.Controls.Add(new Meter { LeftPercent = left, Dock = DockStyle.Fill }, 1, row);
-                    card.Controls.Add(new Label { Text = string.Format("{0:0}% left \u00B7 {1}", left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, MinimumSize = new Size(330, 0), ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 4, 0, 4) }, 2, row);
+                    card.Controls.Add(new GlassLabel { Text = string.Format("{0:0}% left \u00B7 {1}", left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, MinimumSize = new Size(330, 0), ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 4, 0, 4) }, 2, row);
                 }
                 else
                 {
-                    var none = new Label { Text = "Not reported for this plan", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 4, 0, 4) };
+                    var none = new GlassLabel { Text = "Not reported for this plan", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 4, 0, 4) };
                     card.Controls.Add(none, 1, row);
                     card.SetColumnSpan(none, 2);
                 }
@@ -1470,7 +1474,7 @@ namespace DSHProxy
             else if (error.Length > 0) note = error;
             if (note != null)
             {
-                var noteLabel = new Label { Text = note, AutoSize = true, ForeColor = error.Length > 0 && !disabled && supported ? Theme.Bad : Theme.Muted, Margin = new Padding(0, 4, 0, 0) };
+                var noteLabel = new GlassLabel { Text = note, AutoSize = true, ForeColor = error.Length > 0 && !disabled && supported ? Theme.Bad : Theme.Muted, Margin = new Padding(0, 4, 0, 0) };
                 card.Controls.Add(noteLabel, 0, row);
                 card.SetColumnSpan(noteLabel, 3);
             }
@@ -1624,7 +1628,7 @@ namespace DSHProxy
         }
 
         private readonly Dictionary<string, Button> presetButtons = new Dictionary<string, Button>();
-        private readonly Label presetNote = new Label { AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 6, 0, 2) };
+        private readonly Label presetNote = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 6, 0, 2) };
         private ToolTip presetTips;
         private string activePreset = "";
         private ArrayList routingPresets = new ArrayList();
@@ -1807,7 +1811,7 @@ namespace DSHProxy
                 var lanes = new List<string>();
                 foreach (var l in Json.Arr(Json.Get(s, "lanes"))) lanes.Add(Json.Str(l));
                 var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 2, 0, 2) };
-                row.Controls.Add(new Label { Text = string.Format("Newer model: {0} could replace {1} on lane {2}.", to, from, string.Join(", ", lanes.ToArray())), AutoSize = true, Margin = new Padding(0, 7, 10, 0) });
+                row.Controls.Add(new GlassLabel { Text = string.Format("Newer model: {0} could replace {1} on lane {2}.", to, from, string.Join(", ", lanes.ToArray())), AutoSize = true, Margin = new Padding(0, 7, 10, 0) });
                 var use = new PillButton { Text = "Use " + to, AutoSize = true };
                 var lanesCopy = lanes.ToArray();
                 use.Click += (s2, e2) => ReplaceOnLanes(from, to, lanesCopy);
@@ -2037,16 +2041,16 @@ namespace DSHProxy
                 var body = Glass.Make(new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = false, Padding = new Padding(20, 16, 20, 8), Margin = new Padding(0) }, 22, true);
                 var holder = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 14, 14, 0) };
                 holder.Controls.Add(body);
-                body.Controls.Add(new Label { Text = label + " \u00B7 " + email, AutoSize = true, Font = Theme.Ui(12f, FontStyle.Bold), Margin = new Padding(0, 0, 0, 6) });
-                body.Controls.Add(new Label { Text = "A reset makes your used-up limits full again straight away.", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 10) });
+                body.Controls.Add(new GlassLabel { Text = label + " \u00B7 " + email, AutoSize = true, Font = Theme.Ui(12f, FontStyle.Bold), Margin = new Padding(0, 0, 0, 6) });
+                body.Controls.Add(new GlassLabel { Text = "A reset makes your used-up limits full again straight away.", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 10) });
                 foreach (var item in windows)
                 {
                     var w = Json.Obj(item);
                     if (Json.Get(w, "reported") is bool && !Json.Bool(w, "reported")) continue;
                     var left = Json.Num(w, "leftPercent", 0);
-                    body.Controls.Add(new Label { Text = string.Format("Now: {0} {1:0}% left \u00B7 {2}", Json.Str(Json.Get(w, "title")), left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 0, 0, 2) });
+                    body.Controls.Add(new GlassLabel { Text = string.Format("Now: {0} {1:0}% left \u00B7 {2}", Json.Str(Json.Get(w, "title")), left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 0, 0, 2) });
                 }
-                body.Controls.Add(new Label { Text = "Resets you have:", AutoSize = true, Font = Theme.Ui(9.5f, FontStyle.Bold), Margin = new Padding(0, 12, 0, 4) });
+                body.Controls.Add(new GlassLabel { Text = "Resets you have:", AutoSize = true, Font = Theme.Ui(9.5f, FontStyle.Bold), Margin = new Padding(0, 12, 0, 4) });
 
                 Dictionary<string, object> picked = null;
                 foreach (var item in credits)
@@ -2058,7 +2062,7 @@ namespace DSHProxy
                     var choice = new GlassRadio { Text = Json.Str(Json.Get(credit, "title")), AutoSize = true, Tag = credit, Margin = new Padding(0, 2, 0, 0), Font = Theme.Ui(9.5f, FontStyle.Bold) };
                     choice.CheckedChanged += (s, e) => { if (choice.Checked) picked = (Dictionary<string, object>)choice.Tag; };
                     body.Controls.Add(choice);
-                    if (detail.Length > 0) body.Controls.Add(new Label { Text = detail, AutoSize = true, MaximumSize = new Size(420, 0), ForeColor = Theme.Muted, Margin = new Padding(18, 0, 0, 6) });
+                    if (detail.Length > 0) body.Controls.Add(new GlassLabel { Text = detail, AutoSize = true, MaximumSize = new Size(420, 0), ForeColor = Theme.Muted, Margin = new Padding(18, 0, 0, 6) });
                     if (picked == null) choice.Checked = true;
                 }
 
@@ -2091,7 +2095,7 @@ namespace DSHProxy
                 form.MaximizeBox = false;
                 form.ClientSize = new Size(440, 150);
                 form.Font = Theme.Ui(9f);
-                var label = new Label { Text = "API key for " + provider + ":", Left = 20, Top = 18, AutoSize = true };
+                var label = new GlassLabel { Text = "API key for " + provider + ":", Left = 20, Top = 18, AutoSize = true };
                 var box = new TextBox { Left = 20, Top = 44, Width = 400, UseSystemPasswordChar = true };
                 var ok = Skin.Primary(new PillButton { Text = "Save", Left = 228, Top = 96, Width = 92, Height = 38, DialogResult = DialogResult.OK });
                 var cancel = new PillButton { Text = "Cancel", Left = 328, Top = 96, Width = 92, Height = 38, DialogResult = DialogResult.Cancel };

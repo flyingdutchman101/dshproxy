@@ -188,36 +188,25 @@ namespace DSHProxy
                     // Stars are drawn crisp on the finished image, not blurred with
                     // the rest of the scene (see below).
                     // The moon, low in the east, with its halo.
-                    Blob(g, w * 0.86f, h * 0.13f, w * 0.26f, h * 0.20f, Color.FromArgb(90, 0xBF, 0xE9, 0xE4));
+                    Blob(g, w * 0.86f, h * 0.13f, w * 0.20f, h * 0.15f, Color.FromArgb(70, 0xBF, 0xE9, 0xE4));
                     using (var moon = new SolidBrush(Color.FromArgb(235, 0xE9, 0xF7, 0xF4))) g.FillEllipse(moon, w * 0.86f - w * 0.030f, h * 0.13f - w * 0.030f, w * 0.06f, w * 0.06f);
                     // The sea.
                     using (var sea = new LinearGradientBrush(new RectangleF(0, horizon, w, h - horizon), ColorTranslator.FromHtml("#0A3746"), ColorTranslator.FromHtml("#020C16"), LinearGradientMode.Vertical)) g.FillRectangle(sea, 0, horizon, w, h - horizon);
-                    // The moonpath: broken bars of light running towards us.
-                    using (var path = new SolidBrush(Color.FromArgb(95, 0xC8, 0xEE, 0xE8)))
-                    {
-                        for (var i = 0; i < 10; i++)
-                        {
-                            var left = w * (0.735f + 0.012f * (i % 3));
-                            var top = horizon + (h - horizon) * (0.04f + i * 0.095f);
-                            g.FillRectangle(path, left, top, w * Math.Max(0.03f, 0.10f - 0.008f * i), Math.Max(1f, h * 0.006f));
-                        }
-                    }
                     // Long swell lines, closer together towards the horizon.
-                    for (var i = 0; i < 9; i++)
+                    for (var i = 0; i < 6; i++)
                     {
-                        var t = i / 9f;
-                        var y0 = horizon + (h - horizon) * (0.08f + t * 0.92f);
-                        var amp = 1.2f + 4f * t;
+                        var t = i / 6f;
+                        var y0 = horizon + (h - horizon) * (0.10f + t * 0.90f);
+                        var amp = 2f + 7f * t;
                         using (var wave = new GraphicsPath())
                         {
                             wave.AddBezier(-w * 0.05f, y0, w * 0.30f, y0 - amp, w * 0.62f, y0 + amp, w * 1.05f, y0 - amp * 0.4f);
                             wave.AddLine(w * 1.05f, h, -w * 0.05f, h);
                             wave.CloseFigure();
-                            using (var brush = new SolidBrush(Color.FromArgb(24 + i * 3, 0x3F, 0xC8, 0xBE))) g.FillPath(brush, wave);
+                            using (var brush = new SolidBrush(Color.FromArgb(14 + i * 3, 0x3F, 0xC8, 0xBE))) g.FillPath(brush, wave);
                         }
                     }
                     // Foam at the horizon; a faint compass rose off the port quarter.
-                    using (var foam = new Pen(Color.FromArgb(50, 0xDD, 0xF1, 0xEE), 1f)) g.DrawLine(foam, 0, horizon, w, horizon);
                     using (var rose = new Pen(Color.FromArgb(28, 0xBF, 0xE9, 0xE4), 1f))
                     {
                         var cx = w * 0.09f;
@@ -228,8 +217,8 @@ namespace DSHProxy
                         g.DrawLine(rose, cx, cy - r, cx, cy + r);
                         g.DrawLine(rose, cx - r, cy, cx + r, cy);
                     }
-                    // Darker edges keep text readable at the sides.
-                    using (var edge = new LinearGradientBrush(new Rectangle(0, 0, w, h), Color.FromArgb(80, 0, 0, 0), Color.FromArgb(0, 0, 0, 0), 0f)) g.FillRectangle(edge, 0, 0, w / 3, h);
+                    // No extra edge darkening: it left a thin seam where the
+                    // gradient ended, and the scene is dark enough already.
                 }
                 var full = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppPArgb);
                 using (var g = Graphics.FromImage(full))
@@ -610,6 +599,38 @@ namespace DSHProxy
                 using (var pen = new Pen(Color.FromArgb(110, tint))) g.DrawPath(pen, path);
             }
             TextRenderer.DrawText(g, Text, Font, r, tint, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+    }
+
+    // A label that paints the backdrop and glass behind it instead of relying
+    // on WinForms transparency. Transparency ghosts text at some sizes; this
+    // never does.
+    internal sealed class GlassLabel : Label
+    {
+        public GlassLabel()
+        {
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
+            BackColor = Theme.Page;
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            Glass.PaintBehind(e.Graphics, this, ClientRectangle);
+        }
+    }
+
+    // A picture that paints the backdrop and glass behind it, for the same reason.
+    internal sealed class GlassPicture : PictureBox
+    {
+        public GlassPicture()
+        {
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
+            BackColor = Theme.Page;
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            Glass.PaintBehind(e.Graphics, this, ClientRectangle);
         }
     }
 
@@ -1284,7 +1305,7 @@ namespace DSHProxy
                     default: glyphColor = Theme.Accent; glyph = "i"; break;
                 }
                 layout.Controls.Add(new Glyph(glyph, glyphColor) { Margin = new Padding(0, 2, 16, 0) }, 0, 0);
-                layout.Controls.Add(new Label { Text = text, AutoSize = true, MaximumSize = new Size(420, 0), ForeColor = Theme.Text, Margin = new Padding(0, 6, 0, 18), UseMnemonic = false }, 1, 0);
+                layout.Controls.Add(new GlassLabel { Text = text, AutoSize = true, MaximumSize = new Size(420, 0), ForeColor = Theme.Text, Margin = new Padding(0, 6, 0, 18), UseMnemonic = false }, 1, 0);
 
                 var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, Margin = new Padding(0), WrapContents = false };
                 Button accept;
