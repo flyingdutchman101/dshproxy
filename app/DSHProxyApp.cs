@@ -1563,7 +1563,6 @@ namespace DSHProxy
                         lowest = left;
                         lowestText = string.Format("Lowest limit: {0} {1}, {2:0}% left", Json.Str(Json.Get(account, "label")), Json.Str(Json.Get(w, "title")), left);
                     }
-                    WarnIfLow(account, w, left);
                 }
             }
             lowestLabel.Text = lowestText ?? "";
@@ -1681,15 +1680,8 @@ namespace DSHProxy
             return card;
         }
 
-        private void WarnIfLow(Dictionary<string, object> account, Dictionary<string, object> window, double left)
-        {
-            if (left > 10) return;
-            var key = Json.Str(Json.Get(account, "file")) + "|" + Json.Str(Json.Get(window, "title")) + "|" + Json.Str(Json.Get(window, "resetsAt"));
-            if (!warned.Add(key)) return;
-            tray.ShowBalloonTip(6000, string.Format("{0}: {1:0}% left", Json.Str(Json.Get(account, "label")), left),
-                string.Format("{0} limit for {1}, {2}. DSHProxy moves to the next model when it runs out.", Json.Str(Json.Get(window, "title")), Json.Str(Json.Get(account, "account")), Format.Reset(Json.Str(Json.Get(window, "resetsAt")))),
-                ToolTipIcon.Warning);
-        }
+        // Low limits are shown in the window (amber and red bars); a tray balloon
+        // for them only interrupted whatever you were doing, so there is none.
 
         private void AddAccount()
         {
@@ -1982,7 +1974,8 @@ namespace DSHProxy
                 var changed = Json.Bool(result, "harnessChanged");
                 AppendLog("Checked for new models" + (error.Length > 0 ? " (catalog not reachable: " + error + ")" : "") + (changed ? "; DeepSeek Harness routes updated." : "."));
                 RefreshStatus();
-                if (changed) tray.ShowBalloonTip(5000, "DeepSeek Harness routes updated", "New models are offered. Restart DeepSeek Harness to see them.", ToolTipIcon.Info);
+                // No balloon here: the log line above and the update bar already
+                // say it, and popping up while you work is just noise.
             });
         }
 
