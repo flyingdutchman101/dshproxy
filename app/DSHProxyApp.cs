@@ -28,12 +28,16 @@ namespace DSHProxy
         private static void Main(string[] args)
         {
             bool created;
-            var previewing = Array.IndexOf(args, "--preview-limits") >= 0;
-            using (var mutex = new Mutex(true, previewing ? "dshproxy-windows-app-preview" : "dshproxy-windows-app", out created))
+            // --preview: a second window that only reads the status of the
+            // running gateway; it starts, stops and changes nothing, and has
+            // no tray icon. Used to check the layout.
+            var previewing = Array.IndexOf(args, "--preview-limits") >= 0 || Array.IndexOf(args, "--preview") >= 0;
+            MainForm.ReadOnly = Array.IndexOf(args, "--preview") >= 0;
+            using (var mutex = new Mutex(true, previewing ? "dshproxy-windows-app-preview-" + Guid.NewGuid().ToString("N") : "dshproxy-windows-app", out created))
             {
                 if (!created)
                 {
-                    MessageBox.Show("DeepSeekProxy is already running. Open it from the tray icon.", "DeepSeekProxy", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    Msg.Show("DeepSeekProxy is already running. Open it from the tray icon.", "DeepSeekProxy", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
                 Application.EnableVisualStyles();
@@ -48,25 +52,6 @@ namespace DSHProxy
                 }
                 Application.Run(new MainForm(Array.IndexOf(args, "--hidden") >= 0, null));
             }
-        }
-    }
-
-    internal static class Theme
-    {
-        public static readonly Color Ok = Color.FromArgb(22, 128, 61);
-        public static readonly Color Warn = Color.FromArgb(180, 110, 0);
-        public static readonly Color Bad = Color.FromArgb(185, 28, 28);
-        public static readonly Color Muted = Color.FromArgb(100, 100, 100);
-        public static readonly Color Accent = Color.FromArgb(37, 99, 235);
-        public static readonly Color Card = Color.White;
-        public static readonly Color Page = Color.FromArgb(244, 245, 247);
-        public static readonly Color Track = Color.FromArgb(229, 231, 235);
-
-        public static Color ForLeft(double left)
-        {
-            if (left <= 10) return Bad;
-            if (left <= 30) return Warn;
-            return Ok;
         }
     }
 
@@ -376,8 +361,8 @@ namespace DSHProxy
         public Meter()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-            Height = 12;
-            Margin = new Padding(8, 7, 8, 7);
+            Height = 8;
+            Margin = new Padding(8, 9, 16, 9);
         }
 
         public double LeftPercent
@@ -395,7 +380,8 @@ namespace DSHProxy
             var width = (float)((Width - 1) * left / 100.0);
             if (width >= 2)
             {
-                using (var fill = new SolidBrush(Theme.ForLeft(left))) FillRounded(e.Graphics, fill, new RectangleF(0, 0, width, Height - 1));
+                var color = Theme.ForLeft(left);
+                using (var fill = new LinearGradientBrush(new RectangleF(0, 0, Math.Max(width, 2), Height), ControlPaint.Dark(color, 0.25f), color, LinearGradientMode.Horizontal)) FillRounded(e.Graphics, fill, new RectangleF(0, 0, width, Height - 1));
             }
         }
 
@@ -449,10 +435,12 @@ namespace DSHProxy
             MaximizeBox = false;
             ShowInTaskbar = false;
             ClientSize = new Size(520, 470);
-            Font = new Font("Segoe UI", 9.5f);
-            BackColor = Theme.Card;
+            Font = Theme.Ui(9.5f);
             Controls.Add(body);
             Controls.Add(buttons);
+            Skin.Apply(this);
+            BackColor = Theme.Card;
+            buttons.BackColor = Theme.Page;
             poll.Tick += (s, e) => Poll();
             FormClosing += (s, e) =>
             {
@@ -471,7 +459,7 @@ namespace DSHProxy
 
         private static Label Heading(string text)
         {
-            return new Label { Text = text, Dock = DockStyle.Top, Height = 34, Font = new Font("Segoe UI", 13f, FontStyle.Bold) };
+            return new Label { Text = text, Dock = DockStyle.Top, Height = 38, Font = Theme.Ui(15f, FontStyle.Bold), ForeColor = Theme.Text };
         }
 
         private static Label Text2(string text, Color color)
@@ -481,7 +469,7 @@ namespace DSHProxy
 
         private Button Close2(string text)
         {
-            var button = new Button { Text = text, Width = 96, Height = 30 };
+            var button = new Button { Text = text, Width = 96, Height = 32 };
             button.Click += (s, e) => Close();
             return button;
         }
@@ -513,14 +501,11 @@ namespace DSHProxy
                     Width = 470,
                     Height = 58,
                     Margin = new Padding(0, 0, 0, 8),
-                    FlatStyle = FlatStyle.Flat,
-                    BackColor = Theme.Page,
-                    Padding = new Padding(10, 0, 0, 0),
+                    Padding = new Padding(12, 0, 0, 0),
                     Image = Logos.Sized(key, 32),
                     ImageAlign = ContentAlignment.MiddleLeft,
                     TextImageRelation = TextImageRelation.ImageBeforeText
                 };
-                choice.FlatAppearance.BorderColor = Theme.Track;
                 choice.Click += (s, e) => Begin(key, label);
                 list.Controls.Add(choice);
             }
@@ -573,15 +558,15 @@ namespace DSHProxy
             var device = Json.Str(Json.Get(started, "flow")) == "device";
             var code = Json.Str(Json.Get(started, "userCode"));
 
-            var cancel = new Button { Text = "Cancel", Width = 96, Height = 30 };
+            var cancel = new Button { Text = "Cancel", Width = 96, Height = 32 };
             cancel.Click += (s, e) => { CancelSession(); ShowChoices(); };
-            var reopen = new Button { Text = "Open page again", Width = 130, Height = 30 };
+            var reopen = Skin.Primary(new Button { Text = "Open page again", Width = 140, Height = 32 });
             reopen.Click += (s, e) => OpenBrowser(url);
-            var copy = new Button { Text = "Copy link", Width = 96, Height = 30 };
+            var copy = new Button { Text = "Copy link", Width = 96, Height = 32 };
             copy.Click += (s, e) => Clipboard.SetText(url);
             Reset(cancel, reopen, copy);
 
-            var progress = new ProgressBar { Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 30, Dock = DockStyle.Top, Height = 8 };
+            var progress = new Marquee { Dock = DockStyle.Top };
             var waiting = Text2("Waiting for you to finish in your browser. This window updates by itself; the sign-in expires after 5 minutes.", Theme.Muted);
             body.Controls.Add(waiting);
             body.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 14 });
@@ -590,17 +575,17 @@ namespace DSHProxy
             if (device && code.Length > 0)
             {
                 var codeRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 56, FlowDirection = FlowDirection.LeftToRight };
-                var codeLabel = new Label { Text = code, AutoSize = true, Font = new Font("Consolas", 22f, FontStyle.Bold), ForeColor = Theme.Accent, Margin = new Padding(0, 4, 16, 0) };
-                var copyCode = new Button { Text = "Copy code", Width = 96, Height = 30, Margin = new Padding(0, 12, 0, 0) };
+                var codeLabel = new Label { Text = code, AutoSize = true, Font = Theme.Mono(22f, FontStyle.Bold), ForeColor = Theme.Accent, Margin = new Padding(0, 4, 16, 0) };
+                var copyCode = Skin.Outline(new Button { Text = "Copy code", Width = 104, Height = 32, Margin = new Padding(0, 12, 0, 0) });
                 copyCode.Click += (s, e) => Clipboard.SetText(code);
                 codeRow.Controls.Add(codeLabel);
                 codeRow.Controls.Add(copyCode);
                 body.Controls.Add(codeRow);
-                body.Controls.Add(Text2("Enter this code on the " + label + " page that opened:", Color.Black));
+                body.Controls.Add(Text2("Enter this code on the " + label + " page that opened:", Theme.Text));
             }
             else
             {
-                body.Controls.Add(Text2("Sign in on the " + label + " page that opened and approve access. When it says you are signed in, come back here.", Color.Black));
+                body.Controls.Add(Text2("Sign in on the " + label + " page that opened and approve access. When it says you are signed in, come back here.", Theme.Text));
             }
             body.Controls.Add(Heading("Signing in to " + label));
             body.Controls.Add(LogoBox(key));
@@ -668,30 +653,30 @@ namespace DSHProxy
         private void ShowSuccess(string account)
         {
             SignedInAs = account.Length > 0 ? account : sessionLabel;
-            var done = new Button { Text = "Done", Width = 96, Height = 30, DialogResult = DialogResult.OK };
-            var another = new Button { Text = "Add another", Width = 110, Height = 30 };
+            var done = Skin.Primary(new Button { Text = "Done", Width = 96, Height = 32, DialogResult = DialogResult.OK });
+            var another = new Button { Text = "Add another", Width = 116, Height = 32 };
             another.Click += (s, e) => ShowChoices();
             Reset(done, another);
             AcceptButton = done;
             body.Controls.Add(Text2("DSHProxy can now use this subscription. Its limits appear on the Accounts tab within a minute.", Theme.Muted));
-            body.Controls.Add(new Label { Text = account.Length > 0 ? account : "", Dock = DockStyle.Top, Height = 28, Font = new Font("Segoe UI", 11f) });
-            body.Controls.Add(new Label { Text = "\u2713  Signed in to " + sessionLabel, Dock = DockStyle.Top, Height = 40, Font = new Font("Segoe UI", 14f, FontStyle.Bold), ForeColor = Theme.Ok });
+            body.Controls.Add(new Label { Text = account.Length > 0 ? account : "", Dock = DockStyle.Top, Height = 28, Font = Theme.Ui(11f) });
+            body.Controls.Add(new Label { Text = "\u2713  Signed in to " + sessionLabel, Dock = DockStyle.Top, Height = 40, Font = Theme.Ui(14f, FontStyle.Bold), ForeColor = Theme.Ok });
             body.Controls.Add(LogoBox(sessionKey));
         }
 
         private void ShowFailure(string message, string key, string label)
         {
-            var back = new Button { Text = "Back", Width = 96, Height = 30 };
+            var back = new Button { Text = "Back", Width = 96, Height = 32 };
             back.Click += (s, e) => ShowChoices();
             Reset(Close2("Close"), back);
             if (key != null)
             {
-                var retry = new Button { Text = "Try again", Width = 96, Height = 30 };
+                var retry = Skin.Primary(new Button { Text = "Try again", Width = 104, Height = 32 });
                 retry.Click += (s, e) => Begin(key, label);
                 buttons.Controls.Add(retry);
             }
-            body.Controls.Add(Text2(message, Color.Black));
-            body.Controls.Add(new Label { Text = "Sign-in to " + label + " did not finish", Dock = DockStyle.Top, Height = 40, Font = new Font("Segoe UI", 13f, FontStyle.Bold), ForeColor = Theme.Bad });
+            body.Controls.Add(Text2(message, Theme.Text));
+            body.Controls.Add(new Label { Text = "Sign-in to " + label + " did not finish", Dock = DockStyle.Top, Height = 40, Font = Theme.Ui(13f, FontStyle.Bold), ForeColor = Theme.Bad });
             body.Controls.Add(LogoBox(key ?? sessionKey));
         }
     }
@@ -717,23 +702,23 @@ namespace DSHProxy
         private DateTime? limitsAt;
         private readonly HashSet<string> warned = new HashSet<string>();
 
-        private readonly Label stateLabel = new Label { AutoSize = true, Font = new Font("Segoe UI", 12f, FontStyle.Bold) };
-        private readonly Label detailLabel = new Label { AutoSize = true, ForeColor = Theme.Muted };
-        private readonly Label lowestLabel = new Label { AutoSize = true };
-        private readonly Button startButton = new Button { Text = "Start", Width = 90 };
-        private readonly Button stopButton = new Button { Text = "Stop", Width = 90 };
-        private readonly Panel accountsPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.Page, Padding = new Padding(4) };
+        private readonly Label stateLabel = new Label { AutoSize = true, Font = Theme.Ui(9f, FontStyle.Bold), Padding = new Padding(10, 3, 10, 3), Margin = new Padding(14, 9, 0, 0) };
+        private readonly Label detailLabel = new Label { AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 2, 0, 0) };
+        private readonly Label lowestLabel = new Label { AutoSize = true, Margin = new Padding(0, 2, 0, 0) };
+        private readonly Button startButton = Skin.Primary(new Button { Text = "Start", Width = 96, Height = 34 });
+        private readonly Button stopButton = Skin.Danger(new Button { Text = "Stop", Width = 96, Height = 34, Margin = new Padding(8, 3, 0, 3) });
+        private readonly Panel accountsPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.Page, Padding = new Padding(0, 4, 0, 4) };
         private readonly Label limitsNote = new Label { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
-        private readonly ListView keysList = new ListView();
+        private readonly ListView keysList = new DarkList();
         private readonly ComboBox keyProviderCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
         private readonly ComboBox keyRegionCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
-        private readonly ListView lanesList = new ListView();
-        private readonly ListView modelsList = new ListView();
+        private readonly ListView lanesList = new DarkList();
+        private readonly ListView modelsList = new DarkList();
         private readonly Label modelsNote = new Label { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
-        private readonly FlowLayoutPanel suggestionsPanel = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.FromArgb(239, 246, 255), Padding = new Padding(8, 6, 8, 6), Visible = false };
-        private readonly FlowLayoutPanel updateBar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Color.FromArgb(239, 246, 255), Padding = new Padding(12, 6, 12, 6), Visible = false };
-        private readonly Label updateLabel = new Label { AutoSize = true, Margin = new Padding(0, 7, 12, 0) };
-        private readonly Button updateButton = new Button { Text = "Update...", AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold), ForeColor = Theme.Accent };
+        private readonly FlowLayoutPanel suggestionsPanel = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Banner, Padding = new Padding(8, 6, 8, 6), Visible = false };
+        private readonly FlowLayoutPanel updateBar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Theme.Banner, Padding = new Padding(12, 6, 12, 6), Visible = false };
+        private readonly Label updateLabel = new Label { AutoSize = true, Margin = new Padding(0, 8, 12, 0) };
+        private readonly Button updateButton = Skin.Primary(new Button { Text = "Update...", AutoSize = true });
         private readonly Button rollbackButton = new Button { Text = "Roll back...", AutoSize = true };
         private ArrayList modelRows = new ArrayList();
         private bool showHiddenModels;
@@ -742,13 +727,14 @@ namespace DSHProxy
         private string suggestionsKey = "";
         private Dictionary<string, object> lastUpdate;
         private string previousBackend = "";
-        private readonly ListView profilesList = new ListView();
-        private readonly TextBox logBox = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, WordWrap = false, Dock = DockStyle.Fill, Font = new Font("Consolas", 9f), BackColor = Color.White };
+        private readonly ListView profilesList = new DarkList();
+        private readonly TextBox logBox = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, WordWrap = false, Dock = DockStyle.Fill, Font = Theme.Mono(9f), BackColor = Theme.Input };
         private readonly CheckBox autostartBox = new CheckBox { Text = "Start with Windows", AutoSize = true };
         private readonly Label footer = new Label { AutoSize = true, ForeColor = Theme.Muted };
-        private readonly TabControl tabs = new TabControl { Dock = DockStyle.Fill };
+        private readonly TabControl tabs = new FlatTabs { Dock = DockStyle.Fill, Appearance = TabAppearance.FlatButtons, ItemSize = new Size(0, 1), SizeMode = TabSizeMode.Fixed };
 
         private readonly string previewLimits;
+        public static bool ReadOnly;
 
         public MainForm(bool hidden, string previewLimits)
         {
@@ -758,7 +744,7 @@ namespace DSHProxy
             var node = Cli.FindNode();
             if (root == null || node == null)
             {
-                MessageBox.Show(root == null ? "DSHProxy.exe must stay in the DSHProxy folder (next to bin\\dshproxy.js)." : "Node.js was not found. Install Node.js 22 or later.", "DSHProxy", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Msg.Show(root == null ? "DSHProxy.exe must stay in the DSHProxy folder (next to bin\\dshproxy.js)." : "Node.js was not found. Install Node.js 22 or later.", "DSHProxy", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Environment.Exit(1);
             }
             cli = new Cli(root, node);
@@ -769,11 +755,12 @@ namespace DSHProxy
             Height = 760;
             MinimumSize = new Size(860, 600);
             StartPosition = FormStartPosition.CenterScreen;
-            Font = new Font("Segoe UI", 9f);
+            Font = Theme.Ui(9.5f);
             Icon = AppIcon.Load(SystemInformation.IconSize);
 
             BuildLayout();
             BuildTray();
+            Skin.Apply(this);
 
             startButton.Click += (s, e) => StartGateway();
             stopButton.Click += (s, e) => StopGateway();
@@ -785,6 +772,11 @@ namespace DSHProxy
             limitsTimer.Interval = 60000;
             limitsTimer.Tick += (s, e) => LoadLimits(false);
             Shown += (s, e) => OnShownOnce();
+            // --tab <n>: open on that tab (used to check the layout).
+            var args = Environment.GetCommandLineArgs();
+            var tabArg = Array.IndexOf(args, "--tab");
+            int tabIndex;
+            if (tabArg >= 0 && tabArg + 1 < args.Length && int.TryParse(args[tabArg + 1], out tabIndex) && tabIndex >= 0 && tabIndex < tabs.TabPages.Count) tabs.SelectedIndex = tabIndex;
             FormClosing += OnClosing;
             accountsPanel.Resize += (s, e) => FitCards();
         }
@@ -809,11 +801,16 @@ namespace DSHProxy
             {
                 Text = "DeepSeekProxy (preview)";
                 tray.Visible = false;
-                stateLabel.Text = "Preview";
-                stateLabel.ForeColor = Theme.Accent;
+                ShowState("Preview", Theme.Accent);
                 detailLabel.Text = "Sample limits. Nothing is running.";
                 limitsAt = DateTime.Now;
                 ShowLimits(Json.Arr(Json.Get(Json.Obj(Json.Serializer.DeserializeObject(previewLimits)), "accounts")));
+                return;
+            }
+            if (ReadOnly)
+            {
+                tray.Visible = false;
+                BeginInvoke(new Action(() => { RefreshStatus(); timer.Start(); }));
                 return;
             }
             BeginInvoke(new Action(() =>
@@ -829,39 +826,75 @@ namespace DSHProxy
 
         private static FlowLayoutPanel Row(params System.Windows.Forms.Control[] controls)
         {
-            var row = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, Padding = new Padding(0, 6, 0, 0) };
+            var row = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, Padding = new Padding(0, 10, 0, 0) };
             foreach (var item in controls) row.Controls.Add(item);
             return row;
         }
 
         private static Label Note(string text)
         {
-            return new Label { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 38, ForeColor = Theme.Muted };
+            return new Label { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 40, ForeColor = Theme.Muted, Padding = new Padding(0, 2, 0, 0) };
+        }
+
+        // Lists sit in a bordered panel so they read as one surface.
+        private static System.Windows.Forms.Control Framed(System.Windows.Forms.Control body)
+        {
+            if (!(body is ListView) && !(body is TextBox)) return body;
+            var frame = new Panel { Dock = DockStyle.Fill, Padding = new Padding(1), BackColor = Theme.Border };
+            body.Dock = DockStyle.Fill;
+            frame.Controls.Add(body);
+            return frame;
         }
 
         private static TabPage Page(string title, System.Windows.Forms.Control body, System.Windows.Forms.Control top, System.Windows.Forms.Control bottom)
         {
-            var page = new TabPage(title) { Padding = new Padding(10) };
-            page.Controls.Add(body);
+            var page = new TabPage(title) { Padding = new Padding(18, 14, 18, 14) };
+            page.Controls.Add(Framed(body));
             if (bottom != null) page.Controls.Add(bottom);
             if (top != null) page.Controls.Add(top);
             return page;
         }
 
-        private void BuildLayout()
+        // The header: app icon and name, a status pill, and what is running.
+        private System.Windows.Forms.Control BuildHeader()
         {
-            var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = 86, ColumnCount = 2, Padding = new Padding(12, 8, 12, 8) };
+            var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = 92, ColumnCount = 3, Padding = new Padding(18, 14, 18, 10), BackColor = Theme.Page };
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            var stateStack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Dock = DockStyle.Fill, WrapContents = false };
-            stateStack.Controls.Add(stateLabel);
-            stateStack.Controls.Add(detailLabel);
-            stateStack.Controls.Add(lowestLabel);
-            var buttons = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Anchor = AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(0, 6, 0, 0) };
+
+            var mark = new PictureBox { Size = new Size(52, 52), SizeMode = PictureBoxSizeMode.Zoom, Margin = new Padding(0, 0, 14, 0) };
+            var big = AppIcon.Load(new Size(64, 64));
+            if (big != null) mark.Image = big.ToBitmapExact(52, Theme.Page);
+            header.Controls.Add(mark, 0, 0);
+
+            var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0) };
+            var nameRow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+            nameRow.Controls.Add(new Label { Text = "DeepSeekProxy", AutoSize = true, Font = Theme.Ui(17f, FontStyle.Bold), ForeColor = Theme.Text, Margin = new Padding(0, 0, 0, 0) });
+            nameRow.Controls.Add(stateLabel);
+            text.Controls.Add(nameRow);
+            text.Controls.Add(detailLabel);
+            text.Controls.Add(lowestLabel);
+            header.Controls.Add(text, 1, 0);
+
+            var buttons = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Anchor = AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(0, 8, 0, 0) };
             buttons.Controls.Add(startButton);
             buttons.Controls.Add(stopButton);
-            header.Controls.Add(stateStack, 0, 0);
-            header.Controls.Add(buttons, 1, 0);
+            header.Controls.Add(buttons, 2, 0);
+            return header;
+        }
+
+        // The status pill next to the app name.
+        private void ShowState(string text, Color color)
+        {
+            stateLabel.Text = text;
+            stateLabel.ForeColor = color;
+            stateLabel.BackColor = Color.FromArgb(40, color.R, color.G, color.B).Blend(Theme.Page);
+        }
+
+        private void BuildLayout()
+        {
+            var header = BuildHeader();
 
             // Shown when a newer CLIProxyAPI is available or a rollback is possible.
             updateBar.Controls.Add(updateLabel);
@@ -871,7 +904,7 @@ namespace DSHProxy
             rollbackButton.Click += (s, e) => Rollback();
 
             // Accounts and limits
-            var addAccount = new Button { Text = "+ Add account", AutoSize = true, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
+            var addAccount = Skin.Primary(new Button { Text = "+ Add account", AutoSize = true });
             addAccount.Click += (s, e) => AddAccount();
             var refreshLimits = new Button { Text = "Refresh limits", AutoSize = true };
             refreshLimits.Click += (s, e) => LoadLimits(true);
@@ -894,9 +927,9 @@ namespace DSHProxy
                 if (image != null) keyLogos.Images.Add(name, image);
             }
             keysList.SmallImageList = keyLogos;
-            var addKey = new Button { Text = "Add or replace key", AutoSize = true };
+            var addKey = Skin.Primary(new Button { Text = "Add or replace key", AutoSize = true });
             addKey.Click += (s, e) => AddKey();
-            var removeKey = new Button { Text = "Remove selected", AutoSize = true };
+            var removeKey = Skin.Danger(new Button { Text = "Remove selected", AutoSize = true });
             removeKey.Click += (s, e) => RemoveKey();
             keyProviderCombo.SelectedIndexChanged += (s, e) => FillRegions();
             tabs.TabPages.Add(Page("API keys", keysList,
@@ -909,10 +942,12 @@ namespace DSHProxy
             lanesList.Columns.Add("Ladder (first to last)", 780);
             lanesList.FullRowSelect = true;
             lanesList.Dock = DockStyle.Fill;
+            lanesList.Font = Theme.Ui(9.5f);
+            lanesList.SmallImageList = new ImageList { ImageSize = new Size(1, 34) };
             var editLanes = new Button { Text = "Edit lanes (settings.json)", AutoSize = true };
             editLanes.Click += (s, e) => EditSettings();
             tabs.TabPages.Add(Page("Lanes", lanesList,
-                Note("A lane tries each model in order until one answers. \u2713 can serve, \u2717 no account or key, \u23F8 sitting out after running out of quota."),
+                Note("A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key."),
                 Row(editLanes)));
 
             // Models
@@ -929,7 +964,7 @@ namespace DSHProxy
             }
             modelsList.SmallImageList = modelLogos;
             modelsList.ItemCheck += (s, e) => OnModelChecked(e);
-            var checkModels = new Button { Text = "Check for new models", AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
+            var checkModels = Skin.Primary(new Button { Text = "Check for new models", AutoSize = true });
             checkModels.Click += (s, e) => RefreshModels();
             var showAll = new CheckBox { Text = "Show hidden models", AutoSize = true, Margin = new Padding(12, 7, 0, 0) };
             showAll.CheckedChanged += (s, e) => { showHiddenModels = showAll.Checked; FillModels(); };
@@ -948,17 +983,18 @@ namespace DSHProxy
             profilesList.Dock = DockStyle.Fill;
             var preview = new Button { Text = "Preview changes", AutoSize = true };
             preview.Click += (s, e) => RunAndShow(new[] { "dsh", "apply", "--dry-run" }, "Preview", false);
-            var apply = new Button { Text = "Apply to DeepSeek Harness", AutoSize = true };
+            var apply = Skin.Primary(new Button { Text = "Apply to DeepSeek Harness", AutoSize = true });
             apply.Click += (s, e) => ApplyToHarness();
-            var remove = new Button { Text = "Remove from DeepSeek Harness", AutoSize = true };
+            var remove = Skin.Danger(new Button { Text = "Remove from DeepSeek Harness", AutoSize = true });
             remove.Click += (s, e) => RemoveFromHarness();
             tabs.TabPages.Add(Page("DeepSeek Harness", profilesList,
                 Note("Apply writes the DSHProxy routes into every DeepSeek Harness profile and keeps everything else. Restart DeepSeek Harness afterwards."),
                 Row(preview, apply, remove)));
 
             // Log
-            var logPage = new TabPage("Log") { Padding = new Padding(10) };
-            logPage.Controls.Add(logBox);
+            var logPage = new TabPage("Log") { Padding = new Padding(18, 14, 18, 14) };
+            logPage.Controls.Add(Framed(logBox));
+            logBox.BorderStyle = BorderStyle.None;
             var openLogFolder = new Button { Text = "Open data folder", AutoSize = true };
             openLogFolder.Click += (s, e) => OpenFolder("");
             logPage.Controls.Add(Row(openLogFolder));
@@ -966,13 +1002,17 @@ namespace DSHProxy
 
             tabs.SelectedIndexChanged += (s, e) => { if (tabs.SelectedIndex == 0) LoadLimits(false); };
 
-            var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 34, ColumnCount = 2, Padding = new Padding(12, 4, 12, 4) };
+            var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 38, ColumnCount = 2, Padding = new Padding(18, 6, 18, 6), BackColor = Theme.Page };
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            footer.Margin = new Padding(0, 5, 0, 0);
             bottom.Controls.Add(footer, 0, 0);
             bottom.Controls.Add(autostartBox, 1, 0);
+            bottom.Paint += (s, e) => { using (var line = new Pen(Theme.Border)) e.Graphics.DrawLine(line, 0, 0, bottom.Width, 0); };
 
+            var nav = new NavStrip(tabs);
             Controls.Add(tabs);
+            Controls.Add(nav);
             Controls.Add(updateBar);
             Controls.Add(bottom);
             Controls.Add(header);
@@ -985,6 +1025,7 @@ namespace DSHProxy
             tray.Text = "DeepSeekProxy";
             tray.Visible = true;
             var menu = new ContextMenuStrip();
+            Skin.Menu(menu);
             menu.Items.Add("Open DeepSeekProxy", null, (s, e) => ShowWindow());
             menu.Items.Add("Add account...", null, (s, e) => { ShowWindow(); AddAccount(); });
             menu.Items.Add(new ToolStripSeparator());
@@ -1006,7 +1047,7 @@ namespace DSHProxy
 
         private void OnClosing(object sender, FormClosingEventArgs e)
         {
-            if (quitting || previewLimits != null || e.CloseReason == CloseReason.WindowsShutDown) return;
+            if (quitting || previewLimits != null || ReadOnly || e.CloseReason == CloseReason.WindowsShutDown) return;
             // Closing the window keeps the gateway running in the tray.
             e.Cancel = true;
             Hide();
@@ -1054,6 +1095,7 @@ namespace DSHProxy
 
         private void StartGateway()
         {
+            if (ReadOnly) return;
             if (gateway != null && !gateway.HasExited) return;
             if (GatewayAnswers())
             {
@@ -1079,6 +1121,7 @@ namespace DSHProxy
 
         private void StopGateway()
         {
+            if (ReadOnly) return;
             if (gateway == null || gateway.HasExited)
             {
                 if (GatewayAnswers()) AppendLog("The running gateway was not started by this window. Stop it from the window it was started in.");
@@ -1118,8 +1161,7 @@ namespace DSHProxy
         {
             if (result.Code != 0)
             {
-                stateLabel.Text = "Status unavailable";
-                stateLabel.ForeColor = Theme.Bad;
+                ShowState("Status unavailable", Theme.Bad);
                 detailLabel.Text = result.Err.Trim();
                 return;
             }
@@ -1134,8 +1176,7 @@ namespace DSHProxy
             var models = Json.Arr(Json.Get(status, "models"));
             var accountCount = Json.Arr(Json.Get(status, "accounts")).Count;
 
-            stateLabel.Text = running ? "Running" : "Stopped";
-            stateLabel.ForeColor = running ? Theme.Ok : Theme.Bad;
+            ShowState(running ? "\u25CF Running" : "\u25CF Stopped", running ? Theme.Ok : Theme.Bad);
             detailLabel.Text = running
                 ? string.Format("{0}  \u00B7  {1} {2}  \u00B7  {3} account{4}  \u00B7  {5} models offered", lastOrigin, Json.Str(Json.Get(backend, "name")), Json.Str(Json.Get(backend, "version")), accountCount, accountCount == 1 ? "" : "s", models.Count)
                 : "The gateway is not running. Press Start.";
@@ -1191,9 +1232,10 @@ namespace DSHProxy
                     var mark = !available ? "\u2717" : cooling.Length > 0 ? "\u23F8" : "\u2713";
                     parts.Add(mark + " " + Json.Str(Json.Get(rung, "model")));
                 }
-                lanesList.Items.Add(new ListViewItem(new[] { "lane-" + Json.Str(Json.Get(lane, "name")), string.Join("   \u2192   ", parts.ToArray()) }));
+                lanesList.Items.Add(new ListViewItem(new[] { "lane-" + Json.Str(Json.Get(lane, "name")), string.Join("\u0001", parts.ToArray()) }));
             }
             lanesList.EndUpdate();
+            lanesList.Invalidate();
 
             // Models and backend updates
             modelRows = Json.Arr(Json.Get(status, "modelList"));
@@ -1252,7 +1294,7 @@ namespace DSHProxy
         private void ShowAccountsMessage(string text, Color color)
         {
             accountsPanel.Controls.Clear();
-            accountsPanel.Controls.Add(new Label { Text = text, Dock = DockStyle.Top, Height = 60, ForeColor = color, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 10f) });
+            accountsPanel.Controls.Add(new Label { Text = text, Dock = DockStyle.Top, Height = 60, ForeColor = color, TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Ui(10f) });
         }
 
         private void LoadLimits(bool force)
@@ -1304,7 +1346,7 @@ namespace DSHProxy
             for (var index = accounts.Count - 1; index >= 0; index -= 1)
             {
                 var account = Json.Obj(accounts[index]);
-                accountsPanel.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 10, BackColor = Theme.Page });
+                accountsPanel.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 12, BackColor = Theme.Page });
                 accountsPanel.Controls.Add(BuildCard(account));
                 foreach (var item in Json.Arr(Json.Get(account, "windows")))
                 {
@@ -1352,26 +1394,30 @@ namespace DSHProxy
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 ColumnCount = 3,
                 BackColor = Theme.Card,
-                Padding = new Padding(14, 10, 14, 12)
+                Padding = new Padding(18, 14, 18, 14)
             };
+            Skin.Border(card);
             card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
             card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 340));
+            card.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             var title = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
             var logo = Logos.Sized(Json.Str(Json.Get(account, "provider")), 24);
             if (logo != null) title.Controls.Add(new PictureBox { Image = logo, Size = new Size(24, 24), Margin = new Padding(0, 1, 8, 0) });
-            title.Controls.Add(new Label { Text = label, AutoSize = true, Font = new Font("Segoe UI", 11f, FontStyle.Bold), Margin = new Padding(0, 2, 8, 0) });
-            title.Controls.Add(new Label { Text = email, AutoSize = true, Font = new Font("Segoe UI", 10f), Margin = new Padding(0, 4, 8, 0) });
-            if (plan.Length > 0) title.Controls.Add(new Label { Text = plan, AutoSize = true, BackColor = Color.FromArgb(219, 234, 254), ForeColor = Theme.Accent, Padding = new Padding(6, 2, 6, 2), Margin = new Padding(0, 4, 8, 0) });
-            title.Controls.Add(new Label { Text = disabled ? "Paused" : "Active", AutoSize = true, ForeColor = disabled ? Theme.Muted : Theme.Ok, Margin = new Padding(0, 5, 0, 0) });
+            title.Controls.Add(new Label { Text = label, AutoSize = true, Font = Theme.Ui(11f, FontStyle.Bold), Margin = new Padding(0, 2, 8, 0) });
+            title.Controls.Add(new Label { Text = email, AutoSize = true, Font = Theme.Ui(10f), ForeColor = Theme.Muted, Margin = new Padding(0, 4, 10, 0) });
+            // Plan names such as "self_serve_business_prolite" are made readable and kept short.
+            var planText = plan.Replace("_", " ");
+            if (planText.Length > 22) planText = planText.Substring(0, 21) + "\u2026";
+            if (plan.Length > 0) title.Controls.Add(new Label { Text = planText, AutoSize = true, BackColor = Theme.AccentDim, ForeColor = Theme.Accent, Padding = new Padding(6, 2, 6, 2), Margin = new Padding(0, 4, 8, 0) });
+            title.Controls.Add(new Label { Text = disabled ? "\u25CF Paused" : "\u25CF Active", AutoSize = true, ForeColor = disabled ? Theme.Muted : Theme.Ok, Margin = new Padding(0, 5, 0, 0) });
             card.Controls.Add(title, 0, 0);
             card.SetColumnSpan(title, 2);
 
-            var actions = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Dock = DockStyle.Fill, Margin = new Padding(0) };
-            var signOut = new Button { Text = "Sign out...", AutoSize = true };
+            var actions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Anchor = AnchorStyles.Top | AnchorStyles.Right, Margin = new Padding(0) };
+            var signOut = Skin.Danger(new Button { Text = "Sign out...", AutoSize = true, Margin = new Padding(6, 0, 0, 0) });
             signOut.Click += (s, e) => SignOut(file, label, email);
-            var pause = new Button { Text = disabled ? "Resume" : "Pause", AutoSize = true };
+            var pause = new Button { Text = disabled ? "Resume" : "Pause", AutoSize = true, Margin = new Padding(6, 0, 0, 0) };
             pause.Click += (s, e) => SetPaused(file, label, email, !disabled);
             actions.Controls.Add(signOut);
             actions.Controls.Add(pause);
@@ -1379,7 +1425,7 @@ namespace DSHProxy
             var resetCount = (int)Json.Num(resets, "available", 0);
             if (resetCount > 0 && !disabled)
             {
-                var useReset = new Button { Text = string.Format("Use a reset ({0})", resetCount), AutoSize = true, ForeColor = Theme.Accent, Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
+                var useReset = Skin.Outline(new Button { Text = string.Format("Use a reset ({0})", resetCount), AutoSize = true, Margin = new Padding(6, 0, 0, 0) });
                 useReset.Click += (s, e) => UseReset(file, label, email, windows);
                 actions.Controls.Add(useReset);
             }
@@ -1391,11 +1437,11 @@ namespace DSHProxy
                 var w = Json.Obj(item);
                 var reported = !(Json.Get(w, "reported") is bool) || Json.Bool(w, "reported");
                 var left = Json.Num(w, "leftPercent", 0);
-                card.Controls.Add(new Label { Text = Json.Str(Json.Get(w, "title")), AutoSize = true, Margin = new Padding(0, 4, 0, 4), Font = new Font("Segoe UI", 9.5f), ForeColor = reported ? Color.Black : Theme.Muted }, 0, row);
+                card.Controls.Add(new Label { Text = Json.Str(Json.Get(w, "title")), AutoSize = true, Margin = new Padding(0, 4, 0, 4), Font = Theme.Ui(9.5f), ForeColor = reported ? Theme.Text : Theme.Muted }, 0, row);
                 if (reported)
                 {
                     card.Controls.Add(new Meter { LeftPercent = left, Dock = DockStyle.Fill }, 1, row);
-                    card.Controls.Add(new Label { Text = string.Format("{0:0}% left \u00B7 {1}", left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 4, 0, 4) }, 2, row);
+                    card.Controls.Add(new Label { Text = string.Format("{0:0}% left \u00B7 {1}", left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, MinimumSize = new Size(330, 0), ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 4, 0, 4) }, 2, row);
                 }
                 else
                 {
@@ -1432,7 +1478,7 @@ namespace DSHProxy
         {
             if (!running)
             {
-                MessageBox.Show(this, "Start the gateway first. Sign-in runs through it.", "Add account", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Msg.Show(this, "Start the gateway first. Sign-in runs through it.", "Add account", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             using (var dialog = new SignInDialog(control, loginProviders))
@@ -1466,7 +1512,7 @@ namespace DSHProxy
                     UseWaitCursor = false;
                     if (failure != null)
                     {
-                        MessageBox.Show(this, "Could not list your resets: " + failure, "Limit reset", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        Msg.Show(this, "Could not list your resets: " + failure, "Limit reset", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
                     var credits = Json.Arr(Json.Get(listed, "credits"));
@@ -1476,7 +1522,7 @@ namespace DSHProxy
                     {
                         if (Json.Num(listed, "available", 0) <= 0)
                         {
-                            MessageBox.Show(this, "No limit reset is available on this account right now.", "Limit reset", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            Msg.Show(this, "No limit reset is available on this account right now.", "Limit reset", MessageBoxButtons.OK, MessageBoxIcon.Information);
                             return;
                         }
                         creditId = null;
@@ -1489,7 +1535,7 @@ namespace DSHProxy
                         creditId = Json.Str(Json.Get(chosen, "id"));
                         title = Json.Str(Json.Get(chosen, "title"));
                     }
-                    var confirm = MessageBox.Show(this,
+                    var confirm = Msg.Show(this,
                         string.Format("Use \"{0}\" on {1} ({2})?\n\nThis spends one reset. It cannot be undone, and ChatGPT keeps it only if there is nothing to reset.", title, label, email),
                         "Use this reset?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
                     if (confirm != DialogResult.Yes) return;
@@ -1515,12 +1561,12 @@ namespace DSHProxy
                     UseWaitCursor = false;
                     if (failure != null)
                     {
-                        MessageBox.Show(this, "The reset was not confirmed: " + failure + "\n\nRefresh the limits to see whether it was used before trying again.", "Limit reset", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        Msg.Show(this, "The reset was not confirmed: " + failure + "\n\nRefresh the limits to see whether it was used before trying again.", "Limit reset", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
                     var ok = Json.Str(Json.Get(result, "code")) == "reset";
                     AppendLog(Json.Str(Json.Get(result, "message")));
-                    MessageBox.Show(this, Json.Str(Json.Get(result, "message")), "Limit reset", MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                    Msg.Show(this, Json.Str(Json.Get(result, "message")), "Limit reset", MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
                     LoadLimits(true);
                 }));
             });
@@ -1528,7 +1574,7 @@ namespace DSHProxy
 
         private void SignOut(string file, string label, string email)
         {
-            var answer = MessageBox.Show(this,
+            var answer = Msg.Show(this,
                 string.Format("Sign out of {0} ({1})?\n\nDSHProxy stops using this account and deletes its saved sign-in. Lanes move to their other models. You can sign in again at any time.", label, email),
                 "Sign out", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
             if (answer != DialogResult.Yes) return;
@@ -1554,7 +1600,7 @@ namespace DSHProxy
                     UseWaitCursor = false;
                     if (failure != null)
                     {
-                        MessageBox.Show(this, failure, "Account", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        Msg.Show(this, failure, "Account", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
                     AppendLog(done);
@@ -1654,7 +1700,7 @@ namespace DSHProxy
             if (!running)
             {
                 e.NewValue = e.CurrentValue;
-                MessageBox.Show(this, "Start the gateway first.", "Models", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Msg.Show(this, "Start the gateway first.", "Models", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             var on = e.NewValue == CheckState.Checked;
@@ -1670,7 +1716,7 @@ namespace DSHProxy
         {
             if (!running)
             {
-                MessageBox.Show(this, "Start the gateway first.", "Models", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Msg.Show(this, "Start the gateway first.", "Models", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             modelsNote.Text = "Checking for new models...";
@@ -1713,7 +1759,7 @@ namespace DSHProxy
 
         private void ReplaceOnLanes(string from, string to, string[] lanes)
         {
-            var answer = MessageBox.Show(this, string.Format("Put {0} in place of {1} on lane {2}?\n\nThe rest of each ladder stays as it is. You can change it back in settings.json.", to, from, string.Join(", ", lanes)), "Lanes", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            var answer = Msg.Show(this, string.Format("Put {0} in place of {1} on lane {2}?\n\nThe rest of each ladder stays as it is. You can change it back in settings.json.", to, from, string.Join(", ", lanes)), "Lanes", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
             if (answer != DialogResult.Yes) return;
             ControlInBackground("lanes/replace", new Dictionary<string, object> { { "from", from }, { "to", to }, { "lanes", lanes } }, result =>
             {
@@ -1750,7 +1796,7 @@ namespace DSHProxy
         {
             if (lastUpdate == null || !Json.Bool(lastUpdate, "available")) return;
             var latest = Json.Str(Json.Get(lastUpdate, "latest"));
-            var answer = MessageBox.Show(this,
+            var answer = Msg.Show(this,
                 string.Format("Update the backend to CLIProxyAPI {0}?\n\n1. Download it and check it against the release's published checksum.\n2. Start it on a spare port and send one short request through each signed-in account (uses a tiny bit of quota).\n3. Only if that passes: restart DSHProxy on {0}, about 5 seconds offline.\n\nIf anything fails, DSHProxy stays on the version you have.", latest),
                 "Update CLIProxyAPI", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
             if (answer != DialogResult.Yes) return;
@@ -1763,7 +1809,7 @@ namespace DSHProxy
                 foreach (var c in Json.Arr(Json.Get(result, "checks"))) checks.Add("\u2022 " + Json.Str(c));
                 var ok = Json.Bool(result, "ok");
                 AppendLog(Json.Str(Json.Get(result, "message")));
-                MessageBox.Show(this, Json.Str(Json.Get(result, "message")) + (checks.Count > 0 ? "\n\nTrial run:\n" + string.Join("\n", checks.ToArray()) : "") + (ok ? "\n\nDSHProxy is restarting on the new version." : ""),
+                Msg.Show(this, Json.Str(Json.Get(result, "message")) + (checks.Count > 0 ? "\n\nTrial run:\n" + string.Join("\n", checks.ToArray()) : "") + (ok ? "\n\nDSHProxy is restarting on the new version." : ""),
                     "Update CLIProxyAPI", MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
             }, 300000, () => updateButton.Enabled = true);
         }
@@ -1771,7 +1817,7 @@ namespace DSHProxy
         private void Rollback()
         {
             if (previousBackend.Length == 0) return;
-            var answer = MessageBox.Show(this, string.Format("Go back to CLIProxyAPI {0}?\n\nDSHProxy restarts, about 5 seconds offline.", previousBackend), "Roll back", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            var answer = Msg.Show(this, string.Format("Go back to CLIProxyAPI {0}?\n\nDSHProxy restarts, about 5 seconds offline.", previousBackend), "Roll back", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
             if (answer != DialogResult.Yes) return;
             ControlInBackground("update/rollback", new Dictionary<string, object>(), result => AppendLog(Json.Str(Json.Get(result, "message"))));
         }
@@ -1794,7 +1840,7 @@ namespace DSHProxy
                     {
                         if (failed != null) failed();
                         modelsKey = "";
-                        MessageBox.Show(this, failure, "DSHProxy", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        Msg.Show(this, failure, "DSHProxy", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         RefreshStatus();
                         return;
                     }
@@ -1821,19 +1867,19 @@ namespace DSHProxy
             if (keysList.SelectedItems.Count == 0) return;
             var key = keysList.SelectedItems[0].Tag as string;
             if (key == null) return;
-            if (MessageBox.Show(this, "Remove the saved " + keysList.SelectedItems[0].Text + " key?", "API key", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            if (Msg.Show(this, "Remove the saved " + keysList.SelectedItems[0].Text + " key?", "API key", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
             RunInBackground(new[] { "key", "remove", key }, null, "API key", true);
         }
 
         private void ApplyToHarness()
         {
-            if (MessageBox.Show(this, "Write the DSHProxy routes into every DeepSeek Harness profile?\n\nEach profile is backed up first, and nothing else in it is changed. Restart DeepSeek Harness afterwards.", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (Msg.Show(this, "Write the DSHProxy routes into every DeepSeek Harness profile?\n\nEach profile is backed up first, and nothing else in it is changed. Restart DeepSeek Harness afterwards.", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             RunAndShow(new[] { "dsh", "apply" }, "DeepSeek Harness", false);
         }
 
         private void RemoveFromHarness()
         {
-            if (MessageBox.Show(this, "Remove the DSHProxy routes from every DeepSeek Harness profile?", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            if (Msg.Show(this, "Remove the DSHProxy routes from every DeepSeek Harness profile?", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
             RunAndShow(new[] { "dsh", "remove" }, "DeepSeek Harness", false);
         }
 
@@ -1857,7 +1903,7 @@ namespace DSHProxy
                     AppendLog(text);
                     if (result.Code == 0 && restartHint && gateway != null && !gateway.HasExited)
                     {
-                        if (MessageBox.Show(this, text + "\n\nRestart the gateway now so it uses the change?", title, MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                        if (Msg.Show(this, text + "\n\nRestart the gateway now so it uses the change?", title, MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
                         {
                             StopGateway();
                             StartGateway();
@@ -1865,7 +1911,7 @@ namespace DSHProxy
                     }
                     else
                     {
-                        MessageBox.Show(this, text.Length > 0 ? text : "Done.", title, MessageBoxButtons.OK, result.Code == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+                        Msg.Show(this, text.Length > 0 ? text : "Done.", title, MessageBoxButtons.OK, result.Code == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Error);
                     }
                     RefreshStatus();
                 }));
@@ -1885,7 +1931,7 @@ namespace DSHProxy
             var file = Path.Combine(GatewayControl.Home(), "settings.json");
             if (!File.Exists(file))
             {
-                MessageBox.Show(this, "settings.json is created the first time a setting is saved, for example when you add an API key. Until then the default lanes are used.", "Lanes", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Msg.Show(this, "settings.json is created the first time a setting is saved, for example when you add an API key. Until then the default lanes are used.", "Lanes", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             Process.Start("notepad.exe", "\"" + file + "\"");
@@ -1924,11 +1970,11 @@ namespace DSHProxy
                 form.MaximizeBox = false;
                 form.ShowInTaskbar = false;
                 form.ClientSize = new Size(480, 360);
-                form.Font = new Font("Segoe UI", 9.5f);
+                form.Font = Theme.Ui(9.5f);
                 form.BackColor = Theme.Card;
 
                 var body = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = false, Padding = new Padding(18, 14, 18, 8) };
-                body.Controls.Add(new Label { Text = label + " \u00B7 " + email, AutoSize = true, Font = new Font("Segoe UI", 12f, FontStyle.Bold), Margin = new Padding(0, 0, 0, 6) });
+                body.Controls.Add(new Label { Text = label + " \u00B7 " + email, AutoSize = true, Font = Theme.Ui(12f, FontStyle.Bold), Margin = new Padding(0, 0, 0, 6) });
                 body.Controls.Add(new Label { Text = "A reset makes your used-up limits full again straight away.", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 10) });
                 foreach (var item in windows)
                 {
@@ -1937,7 +1983,7 @@ namespace DSHProxy
                     var left = Json.Num(w, "leftPercent", 0);
                     body.Controls.Add(new Label { Text = string.Format("Now: {0} {1:0}% left \u00B7 {2}", Json.Str(Json.Get(w, "title")), left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 0, 0, 2) });
                 }
-                body.Controls.Add(new Label { Text = "Resets you have:", AutoSize = true, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold), Margin = new Padding(0, 12, 0, 4) });
+                body.Controls.Add(new Label { Text = "Resets you have:", AutoSize = true, Font = Theme.Ui(9.5f, FontStyle.Bold), Margin = new Padding(0, 12, 0, 4) });
 
                 Dictionary<string, object> picked = null;
                 foreach (var item in credits)
@@ -1946,7 +1992,7 @@ namespace DSHProxy
                     var expires = Format.ParseTime(Json.Str(Json.Get(credit, "expiresAt")));
                     var detail = Json.Str(Json.Get(credit, "description"));
                     if (expires.HasValue) detail = (detail.Length > 0 ? detail + " \u00B7 " : "") + "expires " + expires.Value.ToString("d MMM yyyy", CultureInfo.CurrentCulture);
-                    var choice = new RadioButton { Text = Json.Str(Json.Get(credit, "title")), AutoSize = true, Tag = credit, Margin = new Padding(0, 2, 0, 0), Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
+                    var choice = new RadioButton { Text = Json.Str(Json.Get(credit, "title")), AutoSize = true, Tag = credit, Margin = new Padding(0, 2, 0, 0), Font = Theme.Ui(9.5f, FontStyle.Bold) };
                     choice.CheckedChanged += (s, e) => { if (choice.Checked) picked = (Dictionary<string, object>)choice.Tag; };
                     body.Controls.Add(choice);
                     if (detail.Length > 0) body.Controls.Add(new Label { Text = detail, AutoSize = true, MaximumSize = new Size(420, 0), ForeColor = Theme.Muted, Margin = new Padding(18, 0, 0, 6) });
@@ -1954,14 +2000,17 @@ namespace DSHProxy
                 }
 
                 var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 48, Padding = new Padding(12, 8, 12, 8) };
-                var cancel = new Button { Text = "Cancel", Width = 96, Height = 30, DialogResult = DialogResult.Cancel };
-                var next = new Button { Text = "Continue...", Width = 110, Height = 30, DialogResult = DialogResult.OK };
+                var cancel = new Button { Text = "Cancel", Width = 96, Height = 32, DialogResult = DialogResult.Cancel };
+                var next = Skin.Primary(new Button { Text = "Continue...", Width = 116, Height = 32, DialogResult = DialogResult.OK });
                 buttons.Controls.Add(cancel);
                 buttons.Controls.Add(next);
                 form.Controls.Add(body);
                 form.Controls.Add(buttons);
                 form.AcceptButton = next;
                 form.CancelButton = cancel;
+                Skin.Apply(form);
+                form.BackColor = Theme.Card;
+                buttons.BackColor = Theme.Page;
                 return form.ShowDialog(owner) == DialogResult.OK ? picked : null;
             }
         }
@@ -1980,14 +2029,16 @@ namespace DSHProxy
                 form.MinimizeBox = false;
                 form.MaximizeBox = false;
                 form.ClientSize = new Size(420, 130);
-                form.Font = new Font("Segoe UI", 9f);
+                form.Font = Theme.Ui(9f);
                 var label = new Label { Text = "API key for " + provider + ":", Left = 12, Top = 14, AutoSize = true };
                 var box = new TextBox { Left = 12, Top = 38, Width = 396, UseSystemPasswordChar = true };
-                var ok = new Button { Text = "Save", Left = 236, Top = 84, Width = 80, DialogResult = DialogResult.OK };
-                var cancel = new Button { Text = "Cancel", Left = 328, Top = 84, Width = 80, DialogResult = DialogResult.Cancel };
+                var ok = Skin.Primary(new Button { Text = "Save", Left = 236, Top = 84, Width = 80, Height = 32, DialogResult = DialogResult.OK });
+                var cancel = new Button { Text = "Cancel", Left = 328, Top = 84, Width = 80, Height = 32, DialogResult = DialogResult.Cancel };
                 form.Controls.AddRange(new System.Windows.Forms.Control[] { label, box, ok, cancel });
                 form.AcceptButton = ok;
                 form.CancelButton = cancel;
+                Skin.Apply(form);
+                form.BackColor = Theme.Card;
                 return form.ShowDialog(owner) == DialogResult.OK ? box.Text.Trim() : null;
             }
         }
