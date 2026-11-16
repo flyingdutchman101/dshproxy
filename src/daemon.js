@@ -86,6 +86,27 @@ async function start({ home, print = console.log, restart = null } = {}) {
     return offered.isAvailable(model) || availability({ accounts: activeAccounts(), providers: state.readable })(model);
   };
 
+  // The other models a subscription account serves, so a forced pick that is out
+  // of quota can be answered by a sibling from the same provider.
+  let siblingCache = { at: 0, lists: [] };
+  const siblings = (id) => {
+    if (Date.now() - siblingCache.at > ACCOUNT_CACHE_MS) {
+      try {
+        const list = app.offeredModels(settings, activeAccounts(), state.readable, app.readDiscovery(state.home)).models;
+        const byAccount = new Map();
+        for (const model of list) {
+          if (!model.account) continue;
+          if (!byAccount.has(model.account)) byAccount.set(model.account, []);
+          byAccount.get(model.account).push(model.id);
+        }
+        siblingCache = { at: Date.now(), lists: [...byAccount.values()] };
+      } catch {
+        siblingCache = { at: Date.now(), lists: [] };
+      }
+    }
+    return siblingCache.lists.find((ids) => ids.includes(id)) || [];
+  };
+
   // ---- Model discovery: the catalog plus what the backend serves ----
   let discoveryError = null;
   // Fetches the catalog and served list, then syncs, as one queued step.
@@ -309,7 +330,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
 
   const gateway = createGateway({
     upstream: { host: settings.host, port: settings.backendPort },
-    resolve: createResolver({ lanes: () => settings.lanes, isAvailable }),
+    resolve: createResolver({ lanes: () => settings.lanes, isAvailable, siblings }),
     describe,
     // Which models can take an image. Read from the offered models (their
     // input lists) and refreshed on the same cache as the accounts.

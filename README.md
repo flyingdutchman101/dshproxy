@@ -83,8 +83,18 @@ The default ladders follow the model ladder in the DeepSeek Harness working defa
 | `lane-builder` | `gpt-6-astra`, `claude-sonnet-5-5`, `deepseek/deepseek-v4-pro`, `gemini-4-argon-high` |
 | `lane-architect` | `claude-fable-5-2`, `gpt-6.1-terra`, `deepseek/deepseek-v4-pro`, `gemini-4-argon-high` |
 | `lane-reviewer` | `gemini-4-carbon-high`, `deepseek/deepseek-v4-pro`, `claude-opus-5-5` |
+| `lane-google` | `gemini-3.8-flash-high`, `gemini-4-carbon-high`, `gemini-4-hydrogen-xhigh`, `gemini-3.8-flash-tiered` |
 
 The reviewer ladder has no GPT model. The main and builder lanes start on GPT, and the gateway cannot check which model wrote the code under review.
+
+### Forced (single) models still fail over
+
+Picking one model instead of a lane does not mean a single point of failure. If that model answers out of quota (402/429/503/529), is cooling, or is not served by any signed-in account, the gateway serves the request from a sibling model instead of returning the error:
+
+1. the other models of the lane that contains the picked model (for `gemini-3.8-flash-high` that is `lane-google`), then
+2. the other models the same signed-in account serves.
+
+The answer carries `x-dshproxy-model` with the model that actually served it and `x-dshproxy-fallback` with the forced model when a sibling stood in; the gateway log says `… returned HTTP 429, skipped until …; using …`. A healthy forced model is always used as picked, and a request error (400/404/413/422) is returned to the caller rather than retried elsewhere. Image requests only fall back to models that accept images.
 
 Change the ladders under `lanes` in `~/.dshproxy/settings.json`, then restart the gateway and run `dsh apply`.
 

@@ -166,11 +166,16 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
         return;
       }
       route.ladder = capable;
+      // A fallback rung has to accept the image too.
+      if (route.fallbacks) route.fallbacks = route.fallbacks.filter((model) => supportsImages(model));
     }
 
     // A conversation stays on the rung that last served it, while that rung is
-    // still serving.
-    let rungs = failover.order(route.ladder);
+    // still serving. A forced model keeps its own provider's siblings behind it
+    // as a safety net, so a transient 429 does not fail the request.
+    const forced = route.lane ? null : route.ladder[0];
+    const candidates = route.lane ? route.ladder : [...route.ladder, ...(route.fallbacks || [])];
+    let rungs = failover.order(candidates);
     const sessionKey = route.lane && sessions ? sessions.keyFor(route.lane, headers, parsed) : null;
     const pinned = sessionKey ? sessions.get(sessionKey) : null;
     if (pinned && rungs.includes(pinned) && failover.coolingUntil(pinned) === null) rungs = [pinned, ...rungs.filter((model) => model !== pinned)];
@@ -220,6 +225,7 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
 
       if (sessionKey && code < 400) sessions.set(sessionKey, model);
       const extra = { "x-dshproxy-model": model };
+      if (forced && model !== forced) extra["x-dshproxy-fallback"] = forced;
       if (route.lane) extra["x-dshproxy-lane"] = route.lane;
       relay(upstreamRes, extra, read);
       return;

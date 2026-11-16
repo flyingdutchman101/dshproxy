@@ -89,3 +89,17 @@ test("invalid settings fall back to the defaults", () => {
   assert.equal(clean.cooldownMinutes, 10);
   assert.deepEqual(clean.lanes, { ok: ["gpt-6-astra"] });
 });
+
+test("a forced model gets its lane siblings, then its account siblings, as fallbacks", () => {
+  const lanes = { google: ["gemini-3.8-flash-high", "gemini-4-carbon-high"] };
+  const resolve = createResolver({ lanes: () => lanes, isAvailable: () => true, siblings: (id) => (id === "claude-opus-5" ? ["claude-sonnet-5-5", "claude-opus-5"] : []) });
+  assert.deepEqual(resolve("gemini-4-carbon-high"), { lane: null, ladder: ["gemini-4-carbon-high"], fallbacks: ["gemini-3.8-flash-high"] });
+  assert.deepEqual(resolve("claude-opus-5"), { lane: null, ladder: ["claude-opus-5"], fallbacks: ["claude-sonnet-5-5"] });
+  assert.deepEqual(resolve("gemini-3-flash"), { lane: null, ladder: ["gemini-3-flash"] });
+});
+
+test("a forced model's fallbacks skip models with no account", () => {
+  const lanes = { google: ["gemini-3.8-flash-high", "gemini-4-carbon-high", "gemini-4-hydrogen-xhigh"] };
+  const resolve = createResolver({ lanes: () => lanes, isAvailable: (id) => id !== "gemini-4-hydrogen-xhigh" });
+  assert.deepEqual(resolve("gemini-3.8-flash-high").fallbacks, ["gemini-4-carbon-high"]);
+});

@@ -63,11 +63,11 @@ async function startBackend(t, answer) {
 const LANES = { main: ["gpt-6-astra", "claude-fable-5-2", "gemini-4-carbon-high"], empty: [] };
 const EFFORTS = { "gemini-4-carbon-high": ["high"] };
 
-async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages = null } = {}) {
+async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages = null, resolve = null } = {}) {
   const logs = [];
   const gateway = createGateway({
     upstream: { host: "127.0.0.1", port: backendPort },
-    resolve: (id) => (id.startsWith("lane-") ? { lane: id.slice(5), ladder: lanes[id.slice(5)] || [] } : { lane: null, ladder: [id] }),
+    resolve: resolve || ((id) => (id.startsWith("lane-") ? { lane: id.slice(5), ladder: lanes[id.slice(5)] || [] } : { lane: null, ladder: [id] })),
     describe: (model) => (EFFORTS[model] ? { efforts: EFFORTS[model] } : {}),
     failover: createFailover(now ? { now } : {}),
     sessions: createSessions(),
@@ -378,4 +378,59 @@ test("an image on a lane with no image-capable rung is refused before anything i
   assert.equal(body.error.type, "dshproxy_no_image_rung");
   assert.match(body.error.message, /accepts images/);
   assert.equal(backend.seen.length, 0);
+});
+
+test("a forced model is served by a sibling when it is out of quota", async (t) => {
+  const backend = await startBackend(t, (model) =>
+    model === "gemini-4-carbon-high"
+      ? { status: 200, body: { served: model } }
+      : { status: 429, body: { error: { message: "Resource has been exhausted (e.g. check quota)." } } });
+  const { url, logs } = await startGateway(t, backend.port, {
+    resolve: (id) => (id === "gemini-3.8-flash-high"
+      ? { lane: null, ladder: [id], fallbacks: ["gemini-4-carbon-high"] }
+      : { lane: null, ladder: [id] })
+  });
+  const response = await post(url, { model: "gemini-3.8-flash-high", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { served: "gemini-4-carbon-high" });
+  assert.equal(response.headers.get("x-dshproxy-model"), "gemini-4-carbon-high");
+  assert.equal(response.headers.get("x-dshproxy-fallback"), "gemini-3.8-flash-high");
+  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-3.8-flash-high", "gemini-4-carbon-high"]);
+  assert.match(logs.join("\n"), /gemini-3\.8-flash-high returned HTTP 429.*using gemini-4-carbon-high/);
+});
+
+test("a forced model keeps its own answer when it is healthy", async (t) => {
+  const backend = await startBackend(t, (model) => ({ status: 200, body: { served: model } }));
+  const { url } = await startGateway(t, backend.port, {
+    resolve: (id) => (id === "gemini-3.8-flash-high" ? { lane: null, ladder: [id], fallbacks: ["gemini-4-carbon-high"] } : { lane: null, ladder: [id] })
+  });
+  const response = await post(url, { model: "gemini-3.8-flash-high", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-dshproxy-model"), "gemini-3.8-flash-high");
+  assert.equal(response.headers.get("x-dshproxy-fallback"), null);
+  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-3.8-flash-high"]);
+});
+
+test("a bad request from a forced model is not retried on a sibling", async (t) => {
+  const backend = await startBackend(t, () => ({ status: 400, body: { error: { message: "invalid request" } } }));
+  const { url } = await startGateway(t, backend.port, {
+    resolve: (id) => (id === "gemini-3.8-flash-high" ? { lane: null, ladder: [id], fallbacks: ["gemini-4-carbon-high"] } : { lane: null, ladder: [id] })
+  });
+  const response = await post(url, { model: "gemini-3.8-flash-high", messages: [{ role: "user", content: "hi" }] });
+  assert.equal(response.status, 400);
+  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-3.8-flash-high"]);
+});
+test("a forced image request does not fall back to a text-only sibling", async (t) => {
+  const backend = await startBackend(t, (model) => (model === "gemini-4-carbon-high" ? { status: 200, body: { served: model } } : { status: 429, body: { error: { message: "Resource has been exhausted (e.g. check quota)." } } }));
+  const { url } = await startGateway(t, backend.port, {
+    supportsImages: (model) => model === "gemini-3.8-flash-high" || model === "gemini-4-carbon-high",
+    resolve: (id) => (id === "gemini-3.8-flash-high" ? { lane: null, ladder: [id], fallbacks: ["gemini-4-carbon-high", "gpt-6-astra"] } : { lane: null, ladder: [id] })
+  });
+  const image = { type: "image", source: { type: "base64", media_type: "image/png", data: "AAA" } };
+  const response = await post(url, { model: "gemini-3.8-flash-high", max_tokens: 5, messages: [{ role: "user", content: [image] }] });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-dshproxy-model"), "gemini-4-carbon-high");
+  // The forced model was tried first, then its vision-capable sibling; the
+  // text-only model was never sent an image.
+  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-3.8-flash-high", "gemini-4-carbon-high"]);
 });
