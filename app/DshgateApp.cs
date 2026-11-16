@@ -1300,16 +1300,34 @@ namespace Dshgate
             pause.Click += (s, e) => SetPaused(file, label, email, !disabled);
             actions.Controls.Add(signOut);
             actions.Controls.Add(pause);
+            var resets = Json.Obj(Json.Get(account, "resets"));
+            var resetCount = (int)Json.Num(resets, "available", 0);
+            if (resetCount > 0 && !disabled)
+            {
+                var useReset = new Button { Text = string.Format("Use a reset ({0})", resetCount), AutoSize = true, ForeColor = Theme.Accent, Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
+                useReset.Click += (s, e) => UseReset(file, label, email, windows);
+                actions.Controls.Add(useReset);
+            }
             card.Controls.Add(actions, 2, 0);
 
             var row = 1;
             foreach (var item in windows)
             {
                 var w = Json.Obj(item);
+                var reported = !(Json.Get(w, "reported") is bool) || Json.Bool(w, "reported");
                 var left = Json.Num(w, "leftPercent", 0);
-                card.Controls.Add(new Label { Text = Json.Str(Json.Get(w, "title")), AutoSize = true, Margin = new Padding(0, 4, 0, 4), Font = new Font("Segoe UI", 9.5f) }, 0, row);
-                card.Controls.Add(new Meter { LeftPercent = left, Dock = DockStyle.Fill }, 1, row);
-                card.Controls.Add(new Label { Text = string.Format("{0:0}% left \u00B7 {1}", left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 4, 0, 4) }, 2, row);
+                card.Controls.Add(new Label { Text = Json.Str(Json.Get(w, "title")), AutoSize = true, Margin = new Padding(0, 4, 0, 4), Font = new Font("Segoe UI", 9.5f), ForeColor = reported ? Color.Black : Theme.Muted }, 0, row);
+                if (reported)
+                {
+                    card.Controls.Add(new Meter { LeftPercent = left, Dock = DockStyle.Fill }, 1, row);
+                    card.Controls.Add(new Label { Text = string.Format("{0:0}% left \u00B7 {1}", left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 4, 0, 4) }, 2, row);
+                }
+                else
+                {
+                    var none = new Label { Text = "Not reported for this plan", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 4, 0, 4) };
+                    card.Controls.Add(none, 1, row);
+                    card.SetColumnSpan(none, 2);
+                }
                 row += 1;
             }
             string note = null;
@@ -1353,6 +1371,84 @@ namespace Dshgate
                     LoadLimits(true);
                 }
             }
+        }
+
+        // Lists the resets ChatGPT offers, asks which one to use, confirms, and
+        // uses it. Each attempt carries its own request ID, so a retried
+        // request cannot use a second reset.
+        private void UseReset(string file, string label, string email, ArrayList windows)
+        {
+            UseWaitCursor = true;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                Dictionary<string, object> listed = null;
+                string failure = null;
+                try { listed = control.Call("GET", "resets?file=" + Uri.EscapeDataString(file), null, 30000); }
+                catch (ControlException error) { failure = error.Message; }
+                catch (WebException error) { failure = error.Message; }
+                BeginInvoke(new Action(() =>
+                {
+                    UseWaitCursor = false;
+                    if (failure != null)
+                    {
+                        MessageBox.Show(this, "Could not list your resets: " + failure, "Limit reset", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                    var credits = Json.Arr(Json.Get(listed, "credits"));
+                    string creditId;
+                    string title;
+                    if (credits.Count == 0)
+                    {
+                        if (Json.Num(listed, "available", 0) <= 0)
+                        {
+                            MessageBox.Show(this, "No limit reset is available on this account right now.", "Limit reset", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            return;
+                        }
+                        creditId = null;
+                        title = "Limit reset";
+                    }
+                    else
+                    {
+                        var chosen = ResetDialog.Choose(this, label, email, credits, windows);
+                        if (chosen == null) return;
+                        creditId = Json.Str(Json.Get(chosen, "id"));
+                        title = Json.Str(Json.Get(chosen, "title"));
+                    }
+                    var confirm = MessageBox.Show(this,
+                        string.Format("Use \"{0}\" on {1} ({2})?\n\nThis spends one reset. It cannot be undone, and ChatGPT keeps it only if there is nothing to reset.", title, label, email),
+                        "Use this reset?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+                    if (confirm != DialogResult.Yes) return;
+                    ConsumeReset(file, creditId, Guid.NewGuid().ToString());
+                }));
+            });
+        }
+
+        private void ConsumeReset(string file, string creditId, string requestId)
+        {
+            UseWaitCursor = true;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                Dictionary<string, object> result = null;
+                string failure = null;
+                var body = new Dictionary<string, object> { { "file", file }, { "requestId", requestId } };
+                if (!string.IsNullOrEmpty(creditId)) body["creditId"] = creditId;
+                try { result = control.Call("POST", "resets/use", body, 60000); }
+                catch (ControlException error) { failure = error.Message; }
+                catch (WebException error) { failure = error.Message; }
+                BeginInvoke(new Action(() =>
+                {
+                    UseWaitCursor = false;
+                    if (failure != null)
+                    {
+                        MessageBox.Show(this, "The reset was not confirmed: " + failure + "\n\nRefresh the limits to see whether it was used before trying again.", "Limit reset", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                    var ok = Json.Str(Json.Get(result, "code")) == "reset";
+                    AppendLog(Json.Str(Json.Get(result, "message")));
+                    MessageBox.Show(this, Json.Str(Json.Get(result, "message")), "Limit reset", MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                    LoadLimits(true);
+                }));
+            });
         }
 
         private void SignOut(string file, string label, string email)
@@ -1496,6 +1592,64 @@ namespace Dshgate
         public override string ToString()
         {
             return Label;
+        }
+    }
+
+    // Shows the account's current limits and the resets on offer, and returns
+    // the reset the user picks, or null.
+    internal static class ResetDialog
+    {
+        public static Dictionary<string, object> Choose(IWin32Window owner, string label, string email, ArrayList credits, ArrayList windows)
+        {
+            using (var form = new Form())
+            {
+                form.Text = "Use a limit reset";
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.StartPosition = FormStartPosition.CenterParent;
+                form.MinimizeBox = false;
+                form.MaximizeBox = false;
+                form.ShowInTaskbar = false;
+                form.ClientSize = new Size(480, 360);
+                form.Font = new Font("Segoe UI", 9.5f);
+                form.BackColor = Theme.Card;
+
+                var body = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = false, Padding = new Padding(18, 14, 18, 8) };
+                body.Controls.Add(new Label { Text = label + " \u00B7 " + email, AutoSize = true, Font = new Font("Segoe UI", 12f, FontStyle.Bold), Margin = new Padding(0, 0, 0, 6) });
+                body.Controls.Add(new Label { Text = "A reset makes your used-up limits full again straight away.", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 10) });
+                foreach (var item in windows)
+                {
+                    var w = Json.Obj(item);
+                    if (Json.Get(w, "reported") is bool && !Json.Bool(w, "reported")) continue;
+                    var left = Json.Num(w, "leftPercent", 0);
+                    body.Controls.Add(new Label { Text = string.Format("Now: {0} {1:0}% left \u00B7 {2}", Json.Str(Json.Get(w, "title")), left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 0, 0, 2) });
+                }
+                body.Controls.Add(new Label { Text = "Resets you have:", AutoSize = true, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold), Margin = new Padding(0, 12, 0, 4) });
+
+                Dictionary<string, object> picked = null;
+                foreach (var item in credits)
+                {
+                    var credit = Json.Obj(item);
+                    var expires = Format.ParseTime(Json.Str(Json.Get(credit, "expiresAt")));
+                    var detail = Json.Str(Json.Get(credit, "description"));
+                    if (expires.HasValue) detail = (detail.Length > 0 ? detail + " \u00B7 " : "") + "expires " + expires.Value.ToString("d MMM yyyy", CultureInfo.CurrentCulture);
+                    var choice = new RadioButton { Text = Json.Str(Json.Get(credit, "title")), AutoSize = true, Tag = credit, Margin = new Padding(0, 2, 0, 0), Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
+                    choice.CheckedChanged += (s, e) => { if (choice.Checked) picked = (Dictionary<string, object>)choice.Tag; };
+                    body.Controls.Add(choice);
+                    if (detail.Length > 0) body.Controls.Add(new Label { Text = detail, AutoSize = true, MaximumSize = new Size(420, 0), ForeColor = Theme.Muted, Margin = new Padding(18, 0, 0, 6) });
+                    if (picked == null) choice.Checked = true;
+                }
+
+                var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 48, Padding = new Padding(12, 8, 12, 8) };
+                var cancel = new Button { Text = "Cancel", Width = 96, Height = 30, DialogResult = DialogResult.Cancel };
+                var next = new Button { Text = "Continue...", Width = 110, Height = 30, DialogResult = DialogResult.OK };
+                buttons.Controls.Add(cancel);
+                buttons.Controls.Add(next);
+                form.Controls.Add(body);
+                form.Controls.Add(buttons);
+                form.AcceptButton = next;
+                form.CancelButton = cancel;
+                return form.ShowDialog(owner) == DialogResult.OK ? picked : null;
+            }
         }
     }
 

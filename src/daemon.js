@@ -93,6 +93,13 @@ async function start({ home, print = console.log } = {}) {
       }),
       "POST login/cancel": ({ id }) => logins.cancel(String(id || "")).then((cancelled) => ({ cancelled })),
       "GET limits": (_body, { refresh }) => limits.read({ accounts: accounts.list(state.authDir), force: refresh === "1" }),
+      "GET limits/raw": (_body, { file }) => limits.raw({ accounts: accounts.list(state.authDir), file: String(file || "") }),
+      "GET resets": (_body, { file }) => limits.listResets({ accounts: accounts.list(state.authDir), file: String(file || "") }),
+      "POST resets/use": async ({ file, creditId, requestId }) => {
+        const result = await limits.useReset({ accounts: accounts.list(state.authDir), file: String(file || ""), creditId: creditId ? String(creditId) : null, requestId: String(requestId || "") });
+        log(`limit reset for ${String(file || "")}: ${result.message}`);
+        return result;
+      },
       "POST accounts/remove": async ({ file }) => {
         const account = accountFile(String(file || ""));
         await management.deleteCredential(account.file);

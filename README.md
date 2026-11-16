@@ -18,7 +18,7 @@ It is a standalone project. It shares no code or git history with DroidProxy or 
 
 `dshgate.exe` is a window and tray icon that runs the gateway and controls it:
 
-- **Accounts**: one card per subscription with its plan and, for each limit window (5-hour, daily, weekly, monthly), a bar of what is left and when it resets. Bars turn amber below 30% and red below 10%, and a tray notification warns once when a limit drops to 10%. Pause, resume or sign out of an account (signing out asks first). **+ Add account** walks through sign-in: pick the service, the provider's page opens in your browser, and the window confirms which account was added. Kimi shows a short code to type instead.
+- **Accounts**: one card per subscription with its plan and, for each limit window (5-hour, daily, weekly, monthly, and per-model limits such as Claude Fable), a bar of what is left and when it resets. ChatGPT accounts that have free limit resets show **Use a reset**. Bars turn amber below 30% and red below 10%, and a tray notification warns once when a limit drops to 10%. Pause, resume or sign out of an account (signing out asks first). **+ Add account** walks through sign-in: pick the service, the provider's page opens in your browser, and the window confirms which account was added. Kimi shows a short code to type instead.
 - **API keys**: add, replace or remove keys.
 - **Lanes**: each ladder, with ✓ can serve, ✗ no account or key, ⏸ sitting out.
 - **DeepSeek Harness**: preview, apply or remove the routes.
@@ -146,6 +146,10 @@ Sign-in and limits run through CLIProxyAPI's Management API, which the gateway s
 
 - **Sign-in**: the backend creates the provider's sign-in link. The provider sends the browser back to a fixed address on this machine (port 54545 for Claude, 1455 for ChatGPT, 51121 for Gemini); dshgate listens there on loopback only while a sign-in is open, passes the address to the backend, and shows a confirmation page. The backend exchanges the code and saves the account. A sign-in left open expires after 5 minutes.
 - **Limits**: the backend calls each provider's usage endpoint with the account's own token. ChatGPT, Claude and Gemini report limits; Kimi does not. Limits are read at most once a minute.
+  - Claude: 5-hour and weekly, plus each per-model weekly limit the plan sets (for example "Weekly (Fable)" on team plans), read from the `limits` list in Claude's reply.
+  - ChatGPT: the 5-hour window is always listed; plans that report none show "Not reported for this plan". Per-model limits are added when ChatGPT reports them.
+  - Gemini: 5-hour and weekly for Gemini models and for Claude/GPT models served through Google.
+- **Limit resets (ChatGPT)**: when ChatGPT offers free limit resets, the account card shows **Use a reset (n)**. The app lists the resets with their expiry, asks which one to use, and asks again before spending it. Each attempt carries its own request ID, so a retried request cannot spend a second reset. ChatGPT keeps the reset if nothing is used up. These are the same resets the Codex CLI offers; Claude and Gemini do not offer resets.
 
 The Windows app reaches these through a control API on the gateway (`/dshgate/control/`). Each call needs the token in `~/.dshgate/control.token`, which is new every start, and calls that come from a web page are refused.
 

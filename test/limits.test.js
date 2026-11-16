@@ -1,14 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { parseCodex, parseClaude, parseAntigravitySummary, parseAntigravityModels, createLimits } = require("../src/limits");
+const { parseCodex, parseClaude, parseAntigravitySummary, parseAntigravityModels, codexResets, createLimits } = require("../src/limits");
 
 const NOW = Date.parse("2026-11-16T00:00:00Z");
 
 test("ChatGPT windows are named by their length, not their position", () => {
   // Since November 2026 some plans send the weekly window first and no 5-hour one.
   const weeklyOnly = { rate_limit: { primary_window: { used_percent: 40, limit_window_seconds: 604800, reset_after_seconds: 3600 } } };
-  assert.deepEqual(parseCodex(weeklyOnly, NOW), [{ title: "Weekly", kind: "weekly", usedPercent: 40, leftPercent: 60, resetsAt: "2026-11-16T01:00:00.000Z" }]);
+  assert.deepEqual(parseCodex(weeklyOnly, NOW).filter((item) => item.reported), [{ title: "Weekly", kind: "weekly", usedPercent: 40, leftPercent: 60, resetsAt: "2026-11-16T01:00:00.000Z", reported: true }]);
 
   // 1794805200 is 2026-11-16T05:00:00Z in Unix seconds.
   const both = { rate_limit: { primary_window: { used_percent: 12.5, limit_window_seconds: 18000, reset_at: 1794805200 }, secondary_window: { used_percent: 70, limit_window_seconds: 2592000, reset_at: "2026-12-01T00:00:00Z" } } };
@@ -31,9 +31,85 @@ test("Claude windows keep their names and treat utilization as a percentage", ()
     extra_usage: { is_enabled: false }
   };
   assert.deepEqual(parseClaude(reply, NOW), [
-    { title: "5-hour", kind: "short", usedPercent: 23, leftPercent: 77, resetsAt: "2026-11-16T03:00:00.000Z" },
-    { title: "Weekly", kind: "weekly", usedPercent: 81.2, leftPercent: 18.8, resetsAt: "2026-11-20T10:00:00.000Z" }
+    { title: "5-hour", kind: "short", usedPercent: 23, leftPercent: 77, resetsAt: "2026-11-16T03:00:00.000Z", reported: true },
+    { title: "Weekly", kind: "weekly", usedPercent: 81.2, leftPercent: 18.8, resetsAt: "2026-11-20T10:00:00.000Z", reported: true }
   ]);
+});
+
+// The shape Claude returned for a team account on 2026-11-16: the per-model
+// weekly limit appears only in `limits`, not in the named windows.
+const CLAUDE_WITH_SCOPED = {
+  five_hour: { utilization: 8, resets_at: "2026-11-16T15:10:00.248661+00:00" },
+  seven_day: { utilization: 78, resets_at: "2026-11-19T16:00:00.248684+00:00" },
+  seven_day_opus: null,
+  seven_day_sonnet: null,
+  limits: [
+    { kind: "session", group: "session", percent: 8, resets_at: "2026-11-16T15:10:00.248661+00:00", scope: null, is_active: false },
+    { kind: "weekly_all", group: "weekly", percent: 78, resets_at: "2026-11-19T16:00:00.248684+00:00", scope: null, is_active: false },
+    { kind: "weekly_scoped", group: "weekly", percent: 100, severity: "critical", resets_at: "2026-11-19T16:00:00.248874+00:00", scope: { model: { id: null, display_name: "Fable" }, surface: null }, is_active: true }
+  ]
+};
+
+test("a Claude per-model weekly limit is shown as its own window", () => {
+  assert.deepEqual(parseClaude(CLAUDE_WITH_SCOPED, NOW).map((item) => [item.title, item.kind, item.leftPercent, item.resetsAt]), [
+    ["5-hour", "short", 92, "2026-11-16T15:10:00.248Z"],
+    ["Weekly", "weekly", 22, "2026-11-19T16:00:00.248Z"],
+    ["Weekly (Fable)", "weekly", 0, "2026-11-19T16:00:00.248Z"]
+  ]);
+});
+
+test("a per-model limit already reported as a named window is not shown twice", () => {
+  const reply = {
+    seven_day: { utilization: 40 },
+    seven_day_opus: { utilization: 70, resets_at: "2026-11-19T16:00:00Z" },
+    limits: [
+      { kind: "weekly_all", percent: 40, scope: null },
+      { kind: "weekly_scoped", percent: 70, resets_at: "2026-11-19T16:00:00Z", scope: { model: { display_name: "Opus" } } }
+    ]
+  };
+  assert.deepEqual(parseClaude(reply, NOW).map((item) => item.title), ["Weekly", "Weekly (Opus)"]);
+});
+
+test("a scoped Claude limit without a model name is labelled by its surface or left generic", () => {
+  const reply = { limits: [
+    { kind: "weekly_scoped", percent: 10, scope: { model: null, surface: { display_name: "Claude Code" } } },
+    { kind: "weekly_scoped", percent: 20, scope: null }
+  ] };
+  assert.deepEqual(parseClaude(reply, NOW).map((item) => item.title), ["Weekly (Claude Code)", "Weekly (limited)"]);
+});
+
+test("ChatGPT always shows its hourly window, as not reported when the plan has none", () => {
+  // The reply this account returned on 2026-11-16: weekly only.
+  const weeklyOnly = { rate_limit: { allowed: false, limit_reached: true, primary_window: { used_percent: 100, limit_window_seconds: 604800, reset_after_seconds: 242624, reset_at: 1795068520 }, secondary_window: null } };
+  const windows = parseCodex(weeklyOnly, NOW);
+  assert.deepEqual(windows.map((item) => [item.title, item.kind, item.leftPercent, item.reported]), [
+    ["5-hour", "short", null, false],
+    ["Weekly", "weekly", 0, true]
+  ]);
+});
+
+test("ChatGPT shows the hourly window it reports, first", () => {
+  const both = { rate_limit: { primary_window: { used_percent: 30, limit_window_seconds: 604800 }, secondary_window: { used_percent: 60, limit_window_seconds: 18000, reset_after_seconds: 600 } } };
+  assert.deepEqual(parseCodex(both, NOW).map((item) => [item.title, item.leftPercent, item.reported]), [
+    ["5-hour", 40, true],
+    ["Weekly", 70, true]
+  ]);
+});
+
+test("ChatGPT model limits are added from additional_rate_limits", () => {
+  const reply = { rate_limit: { primary_window: { used_percent: 10, limit_window_seconds: 18000 } }, additional_rate_limits: [{ limit_name: "GPT 6 Astra", normal_model_slug: "gpt-6-astra", rate_limit: { primary_window: { used_percent: 75, limit_window_seconds: 604800 } } }] };
+  assert.deepEqual(parseCodex(reply, NOW).map((item) => [item.title, item.leftPercent]), [
+    ["5-hour", 90],
+    ["Weekly", null],
+    ["GPT 6 Astra · Weekly", 25]
+  ]);
+});
+
+test("the resets ChatGPT offers are read from its usage reply", () => {
+  assert.deepEqual(codexResets({ rate_limit_reset_credits: { available_count: 1, applicable_available_count: 1 } }), { available: 1, applicable: 1 });
+  assert.deepEqual(codexResets({ rate_limit_reset_credits: { available_count: 2 } }), { available: 2, applicable: 2 });
+  assert.equal(codexResets({}), null);
+  assert.equal(codexResets({ rate_limit_reset_credits: { available_count: 0 } }), null);
 });
 
 test("a usage percentage outside 0 to 100 is clamped", () => {
@@ -49,8 +125,21 @@ test("Gemini groups give one window per bucket, with the fraction that is left",
     ]
   };
   assert.deepEqual(parseAntigravitySummary(reply, NOW).map((item) => [item.title, item.kind, item.leftPercent, item.resetsAt]), [
-    ["Gemini models · 5-hour", "short", 75, "2026-11-16T02:00:00.000Z"],
-    ["Gemini models · Weekly", "weekly", 20, "2026-11-19T00:00:00.000Z"]
+    ["Gemini · 5-hour", "short", 75, "2026-11-16T02:00:00.000Z"],
+    ["Gemini · Weekly", "weekly", 20, "2026-11-19T00:00:00.000Z"]
+  ]);
+});
+
+test("Gemini's long window names are shortened", () => {
+  // The names Gemini returned on 2026-11-16.
+  const reply = { groups: [
+    { displayName: "Gemini Models", buckets: [{ displayName: "Five Hour Limit Remaining", remainingFraction: 1 }, { displayName: "Weekly Limit Remaining", remainingFraction: 1 }] },
+    { displayName: "Claude and GPT models", buckets: [{ displayName: "Weekly Limit Remaining", remainingFraction: 0.259 }] }
+  ] };
+  assert.deepEqual(parseAntigravitySummary(reply, NOW).map((item) => [item.title, item.kind]), [
+    ["Gemini · 5-hour", "short"],
+    ["Gemini · Weekly", "weekly"],
+    ["Claude/GPT · Weekly", "weekly"]
   ]);
 });
 
@@ -125,6 +214,69 @@ test("a refused account is reported, and the other accounts still show their lim
   const result = await createLimits({ management, detailsFor: () => ({}), now: () => NOW }).read({ accounts: ACCOUNTS.slice(0, 2) });
   assert.match(result.accounts[0].error, /refused the account \(HTTP 401\)\. Sign in again/);
   assert.equal(result.accounts[1].windows[0].title, "Weekly");
+});
+
+test("an account's limits carry the resets ChatGPT offers", async () => {
+  const management = fakeManagement({
+    credentials: CREDENTIALS,
+    replies: { "https://chatgpt.com/backend-api/wham/usage": { body: { rate_limit: { primary_window: { used_percent: 100, limit_window_seconds: 604800 } }, rate_limit_reset_credits: { available_count: 1, applicable_available_count: 1 } } } }
+  });
+  const result = await createLimits({ management, detailsFor: () => ({}), now: () => NOW }).read({ accounts: ACCOUNTS.slice(0, 1) });
+  assert.deepEqual(result.accounts[0].resets, { available: 1, applicable: 1 });
+});
+
+// A stand-in that records calls and answers the reset endpoints.
+function resetManagement(replies) {
+  const calls = [];
+  return {
+    calls,
+    credentials: async () => CREDENTIALS,
+    apiCall: async (request) => {
+      calls.push(request);
+      const reply = replies[`${request.method || "GET"} ${request.url}`];
+      if (!reply) return { status_code: 404, body: "" };
+      return { status_code: reply.status || 200, body: JSON.stringify(reply.body) };
+    }
+  };
+}
+
+const RESET_LIST = "GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
+const RESET_USE = "POST https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume";
+
+test("the resets on offer are listed with their titles and expiry", async () => {
+  const management = resetManagement({ [RESET_LIST]: { body: { credits: [{ id: "credit-1", reset_type: "codex_rate_limits", status: "available", granted_at: "2026-11-01T00:00:00Z", expires_at: "2026-12-01T00:00:00Z", title: "Full reset (Weekly + 5 hr)", description: "Ready to redeem" }, { id: "credit-2", status: "redeemed", granted_at: "2026-10-01T00:00:00Z" }], available_count: 1 } } });
+  const limits = createLimits({ management, detailsFor: () => ({ accountId: "acct-1" }), now: () => NOW });
+  const listed = await limits.listResets({ accounts: ACCOUNTS, file: "codex-a.json" });
+  assert.deepEqual(listed, { available: 1, credits: [{ id: "credit-1", title: "Full reset (Weekly + 5 hr)", description: "Ready to redeem", expiresAt: "2026-12-01T00:00:00Z" }] });
+  assert.equal(management.calls[0].header.Authorization, "Bearer $TOKEN$");
+  assert.equal(management.calls[0].header["ChatGPT-Account-Id"], "acct-1");
+});
+
+test("using a reset sends one request with a request ID and the chosen reset, and reports what happened", async () => {
+  const management = resetManagement({ [RESET_USE]: { body: { code: "reset", windows_reset: 2 } } });
+  const limits = createLimits({ management, detailsFor: () => ({}), now: () => NOW });
+  const result = await limits.useReset({ accounts: ACCOUNTS, file: "codex-a.json", creditId: "credit-1", requestId: "req-1" });
+  assert.deepEqual(result, { code: "reset", windowsReset: 2, message: "Reset used: 2 limit windows are full again." });
+  assert.equal(management.calls.length, 1);
+  assert.equal(management.calls[0].method, "POST");
+  assert.deepEqual(JSON.parse(management.calls[0].data), { redeem_request_id: "req-1", credit_id: "credit-1" });
+});
+
+for (const [code, pattern] of [["nothing_to_reset", /nothing to reset/i], ["no_credit", /no reset available/i], ["already_redeemed", /already been used/i]]) {
+  test(`a reset that is not applied (${code}) is reported plainly`, async () => {
+    const management = resetManagement({ [RESET_USE]: { body: { code } } });
+    const result = await createLimits({ management, detailsFor: () => ({}), now: () => NOW }).useReset({ accounts: ACCOUNTS, file: "codex-a.json", requestId: "req-2" });
+    assert.equal(result.code, code);
+    assert.match(result.message, pattern);
+  });
+}
+
+test("a reset cannot be used without a request ID or on an account that does not offer resets", async () => {
+  const management = resetManagement({});
+  const limits = createLimits({ management, detailsFor: () => ({}), now: () => NOW });
+  await assert.rejects(limits.useReset({ accounts: ACCOUNTS, file: "codex-a.json" }), /request ID/);
+  await assert.rejects(limits.useReset({ accounts: ACCOUNTS, file: "claude-b.json", requestId: "r" }), /offered by ChatGPT only/);
+  assert.equal(management.calls.length, 0);
 });
 
 test("an account the backend has not loaded is reported instead of asked", async () => {

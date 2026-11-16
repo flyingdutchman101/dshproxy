@@ -3,6 +3,7 @@
 // backend with the account's own token, so dshgate never handles tokens.
 
 const WINDOW_KIND = { short: "short", daily: "daily", weekly: "weekly", monthly: "monthly", other: "other" };
+const KIND_ORDER = ["short", "daily", "weekly", "monthly", "other"];
 
 function numberValue(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -65,18 +66,50 @@ function titleFromSeconds(seconds, fallback) {
 function window(title, usedPercent, reset, kind) {
   if (typeof usedPercent !== "number") return null;
   const used = Math.max(0, Math.min(100, usedPercent));
-  return { title, kind: kind || kindFromTitle(title), usedPercent: Math.round(used * 10) / 10, leftPercent: Math.round((100 - used) * 10) / 10, resetsAt: reset };
+  return { title, kind: kind || kindFromTitle(title), usedPercent: Math.round(used * 10) / 10, leftPercent: Math.round((100 - used) * 10) / 10, resetsAt: reset, reported: true };
 }
 
-// ChatGPT: rate_limit.primary_window / secondary_window. The window's length
-// names it, because plans differ (5-hour and weekly, or only weekly).
-function parseCodex(json, now = Date.now()) {
-  const limits = json?.rate_limit;
+// A window the plan is expected to have but the provider did not report.
+function unreported(title, kind) {
+  return { title, kind, usedPercent: null, leftPercent: null, resetsAt: null, reported: false };
+}
+
+// The windows of one ChatGPT rate_limit object. The window's length names it,
+// because plans differ (5-hour and weekly, or weekly only).
+function codexWindows(limits, now, prefix = "") {
   if (!limits || typeof limits !== "object") return [];
   return [limits.primary_window, limits.secondary_window].filter((item) => item && typeof item === "object").map((item, index) => {
     const seconds = numberValue(item.limit_window_seconds);
-    return window(titleFromSeconds(seconds, index === 0 ? "5-hour" : "Weekly"), numberValue(item.used_percent), resetAt(item, now), kindFromSeconds(seconds) || (index === 0 ? WINDOW_KIND.short : WINDOW_KIND.weekly));
+    const title = titleFromSeconds(seconds, index === 0 ? "5-hour" : "Weekly");
+    return window(prefix ? `${prefix} · ${title}` : title, numberValue(item.used_percent), resetAt(item, now), kindFromSeconds(seconds) || (index === 0 ? WINDOW_KIND.short : WINDOW_KIND.weekly));
   }).filter(Boolean);
+}
+
+// ChatGPT: the account's hourly and weekly windows, hourly first. A plan that
+// reports no hourly window still shows one, marked as not reported, so it is
+// clear the hourly limit was asked for. Model limits follow.
+function parseCodex(json, now = Date.now()) {
+  if (!json?.rate_limit || typeof json.rate_limit !== "object") return [];
+  const main = codexWindows(json.rate_limit, now);
+  if (!main.length) return [];
+  const short = main.filter((item) => item.kind === WINDOW_KIND.short);
+  const longer = main.filter((item) => item.kind !== WINDOW_KIND.short);
+  const ordered = [...(short.length ? short : [unreported("5-hour", WINDOW_KIND.short)]), ...longer];
+  if (!longer.length) ordered.push(unreported("Weekly", WINDOW_KIND.weekly));
+  const extra = (Array.isArray(json.additional_rate_limits) ? json.additional_rate_limits : []).flatMap((item) => {
+    const name = String(item?.limit_name || item?.normal_model_slug || "Model");
+    return codexWindows(item?.rate_limit || item, now, name);
+  });
+  return [...ordered, ...extra];
+}
+
+// The limit resets ChatGPT offers on this account, or null when it offers none.
+function codexResets(json) {
+  const summary = json?.rate_limit_reset_credits;
+  const available = numberValue(summary?.available_count);
+  if (!available || available <= 0) return null;
+  const applicable = numberValue(summary?.applicable_available_count);
+  return { available, applicable: applicable === null ? available : applicable };
 }
 
 const CLAUDE_WINDOWS = [
@@ -88,10 +121,43 @@ const CLAUDE_WINDOWS = [
   ["seven_day_cowork", "Weekly (Cowork)", WINDOW_KIND.weekly]
 ];
 
-// Claude: one object per window, `utilization` already a percentage.
+function scopeName(scope) {
+  const name = scope?.model?.display_name || scope?.model?.id || scope?.surface?.display_name || scope?.surface?.id;
+  return name ? String(name) : "limited";
+}
+
+// Claude: one object per window, `utilization` already a percentage. Limits
+// that apply to one model (for example Fable on a team plan) appear only in
+// `limits` as "weekly_scoped"; each becomes its own window unless a named
+// window above already shows it.
 function parseClaude(json, now = Date.now()) {
   if (!json || typeof json !== "object") return [];
-  return CLAUDE_WINDOWS.filter(([key]) => json[key] && typeof json[key] === "object").map(([key, title, kind]) => window(title, numberValue(json[key].utilization), resetAt(json[key], now), kind)).filter(Boolean);
+  const named = CLAUDE_WINDOWS.filter(([key]) => json[key] && typeof json[key] === "object").map(([key, title, kind]) => window(title, numberValue(json[key].utilization), resetAt(json[key], now), kind)).filter(Boolean);
+  const shown = new Set(named.map((item) => item.title.toLowerCase()));
+  const scoped = (Array.isArray(json.limits) ? json.limits : [])
+    .filter((item) => item && typeof item === "object" && String(item.kind || "").endsWith("_scoped"))
+    .map((item) => {
+      const group = String(item.group || item.kind).startsWith("session") ? "5-hour" : "Weekly";
+      return window(`${group} (${scopeName(item.scope)})`, numberValue(item.percent), resetAt(item, now), group === "5-hour" ? WINDOW_KIND.short : WINDOW_KIND.weekly);
+    })
+    .filter((item) => item && !shown.has(item.title.toLowerCase()));
+  return [...named, ...scoped];
+}
+
+// "Gemini Models" -> "Gemini", "Claude and GPT models" -> "Claude/GPT".
+function shortGroup(name) {
+  const trimmed = String(name).replace(/\s*models?\s*$/i, "").trim();
+  return trimmed.replace(/\s+and\s+/i, "/") || "Gemini";
+}
+
+// "Five Hour Limit Remaining" -> "5-hour", "Weekly Limit Remaining" -> "Weekly".
+function shortBucket(name) {
+  const text = String(name);
+  if (/five.?hour|5.?h/i.test(text)) return "5-hour";
+  if (/week/i.test(text)) return "Weekly";
+  if (/month/i.test(text)) return "Monthly";
+  if (/day|daily/i.test(text)) return "Daily";
+  return text.replace(/\s*(limit\s*)?remaining\s*$/i, "").trim() || "Limit";
 }
 
 // Gemini (Antigravity): groups such as "Gemini models" and "Claude and GPT
@@ -102,10 +168,12 @@ function parseAntigravitySummary(json, now = Date.now()) {
   return groups.flatMap((group) => (Array.isArray(group.buckets) ? group.buckets : []).filter((bucket) => !bucket.disabled).map((bucket) => {
     const left = numberValue(bucket.remaining?.remainingFraction ?? bucket.remainingFraction);
     if (left === null) return null;
-    const groupName = group.displayName || group.name || "Gemini";
-    const bucketName = bucket.displayName || bucket.name || bucket.window || "Limit";
-    return window(`${groupName} · ${bucketName}`, (1 - left) * 100, resetAt(bucket, now) || resetAt(bucket.remaining, now), kindFromTitle(String(bucketName)));
-  }).filter(Boolean));
+    const groupName = shortGroup(group.displayName || group.name || "Gemini");
+    const bucketName = shortBucket(bucket.displayName || bucket.name || bucket.window || "Limit");
+    return window(`${groupName} · ${bucketName}`, (1 - left) * 100, resetAt(bucket, now) || resetAt(bucket.remaining, now), kindFromTitle(bucketName));
+  }).filter(Boolean))
+    // Shorter windows first within each group, as for the other services.
+    .sort((a, b) => (a.title.split(" · ")[0] === b.title.split(" · ")[0] ? KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) : 0));
 }
 
 // Fallback: per-model quota from the model list.
@@ -131,13 +199,25 @@ function bodyOf(reply, what) {
   }
 }
 
+const CHATGPT = "https://chatgpt.com/backend-api";
+
+function codexHeader(details, extra = {}) {
+  const header = { Authorization: "Bearer $TOKEN$", Accept: "application/json", "User-Agent": "codex-cli", ...extra };
+  if (details.accountId) header["ChatGPT-Account-Id"] = details.accountId;
+  return header;
+}
+
+// Returns { windows, resets }.
 async function fetchWindows({ management, account, authIndex, details, wantedModels, now }) {
   if (account.provider === "codex") {
-    const header = { Authorization: "Bearer $TOKEN$", Accept: "application/json", "User-Agent": "codex-cli" };
-    if (details.accountId) header["ChatGPT-Account-Id"] = details.accountId;
-    const reply = await management.apiCall({ authIndex, url: "https://chatgpt.com/backend-api/wham/usage", header });
-    return parseCodex(bodyOf(reply, "ChatGPT"), now);
+    const json = bodyOf(await management.apiCall({ authIndex, url: `${CHATGPT}/wham/usage`, header: codexHeader(details) }), "ChatGPT");
+    return { windows: parseCodex(json, now), resets: codexResets(json) };
   }
+  const windows = await fetchOtherWindows({ management, account, authIndex, details, wantedModels, now });
+  return { windows, resets: null };
+}
+
+async function fetchOtherWindows({ management, account, authIndex, details, wantedModels, now }) {
   if (account.provider === "claude") {
     const reply = await management.apiCall({ authIndex, url: "https://api.anthropic.com/api/oauth/usage", header: { Authorization: "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20", Accept: "application/json" } });
     return parseClaude(bodyOf(reply, "Claude"), now);
@@ -183,6 +263,7 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
         state: credential ? String(credential.status || "active") : "not loaded",
         stateMessage: credential?.status_message ? String(credential.status_message) : null,
         windows: [],
+        resets: null,
         supported: account.provider !== "kimi",
         error: null
       };
@@ -192,8 +273,10 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
         return entry;
       }
       try {
-        entry.windows = (await fetchWindows({ management, account, authIndex: String(credential.auth_index), details, wantedModels, now: now() })) || [];
-        if (!entry.windows.length) entry.error = "No limits were reported.";
+        const fetched = await fetchWindows({ management, account, authIndex: String(credential.auth_index), details, wantedModels, now: now() });
+        entry.windows = fetched.windows || [];
+        entry.resets = fetched.resets || null;
+        if (!entry.windows.some((item) => item.reported !== false)) entry.error = "No limits were reported.";
       } catch (error) {
         entry.error = error.message;
       }
@@ -204,7 +287,83 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
     return value;
   }
 
-  return { read, clear: () => (cache = null) };
+  // The provider's usage reply for one account, as received, with anything
+  // that looks like a credential removed. For diagnosing what a provider
+  // reports.
+  async function raw({ accounts, file }) {
+    const account = accounts.find((item) => item.file === file);
+    if (!account) throw new Error("That account is not signed in.");
+    const credential = (await management.credentials()).find((item) => item.name === file);
+    if (!credential) throw new Error("The backend has not loaded this account yet.");
+    const authIndex = String(credential.auth_index);
+    const details = detailsFor(file) || {};
+    const urls = {
+      codex: "https://chatgpt.com/backend-api/wham/usage",
+      claude: "https://api.anthropic.com/api/oauth/usage"
+    };
+    const url = urls[account.provider];
+    if (!url) throw new Error(`No raw usage view for ${account.label}.`);
+    const header = account.provider === "codex"
+      ? { Authorization: "Bearer $TOKEN$", Accept: "application/json", "User-Agent": "codex-cli", ...(details.accountId ? { "ChatGPT-Account-Id": details.accountId } : {}) }
+      : { Authorization: "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20", Accept: "application/json" };
+    const reply = await management.apiCall({ authIndex, url, header });
+    let body;
+    try {
+      body = JSON.parse(String(reply.body || ""));
+    } catch {
+      body = String(reply.body || "").slice(0, 2000);
+    }
+    return { status: Number(reply.status_code), body: scrub(body) };
+  }
+
+  // The ChatGPT account whose resets are asked for, with its backend index.
+  async function codexAccount(accounts, file) {
+    const account = accounts.find((item) => item.file === file);
+    if (!account) throw new Error("That account is not signed in.");
+    if (account.provider !== "codex") throw new Error("Limit resets are offered by ChatGPT only.");
+    const credential = (await management.credentials()).find((item) => item.name === file);
+    if (!credential) throw new Error("The backend has not loaded this account yet.");
+    return { account, authIndex: String(credential.auth_index), details: detailsFor(file) || {} };
+  }
+
+  // The resets on offer, with what each one restores.
+  async function listResets({ accounts, file }) {
+    const { authIndex, details } = await codexAccount(accounts, file);
+    const json = bodyOf(await management.apiCall({ authIndex, url: `${CHATGPT}/wham/rate-limit-reset-credits`, header: codexHeader(details) }), "ChatGPT");
+    const credits = (Array.isArray(json?.credits) ? json.credits : [])
+      .filter((item) => item && String(item.status) === "available" && item.id)
+      .map((item) => ({ id: String(item.id), title: item.title ? String(item.title) : "Limit reset", description: item.description ? String(item.description) : null, expiresAt: item.expires_at ? String(item.expires_at) : null }));
+    return { available: numberValue(json?.available_count) ?? credits.length, credits };
+  }
+
+  // Uses one reset. `requestId` makes a retried request count once.
+  // `creditId` picks a reset; without it ChatGPT picks one.
+  async function useReset({ accounts, file, creditId = null, requestId }) {
+    if (!requestId) throw new Error("A request ID is required to use a reset.");
+    const { authIndex, details } = await codexAccount(accounts, file);
+    const body = { redeem_request_id: String(requestId), ...(creditId ? { credit_id: String(creditId) } : {}) };
+    const json = bodyOf(await management.apiCall({ authIndex, method: "POST", url: `${CHATGPT}/wham/rate-limit-reset-credits/consume`, header: codexHeader(details, { "Content-Type": "application/json" }), data: JSON.stringify(body) }), "ChatGPT");
+    cache = null;
+    const code = String(json?.code || "unknown");
+    const windowsReset = numberValue(json?.windows_reset) || 0;
+    const messages = {
+      reset: `Reset used: ${windowsReset} limit window${windowsReset === 1 ? " is" : "s are"} full again.`,
+      nothing_to_reset: "Nothing to reset: your limits are not used up, so the reset was kept.",
+      no_credit: "No reset available on this account.",
+      already_redeemed: "That reset has already been used."
+    };
+    return { code, windowsReset, message: messages[code] || `ChatGPT answered "${code}".` };
+  }
+
+  return { read, raw, listResets, useReset, clear: () => (cache = null) };
 }
 
-module.exports = { WINDOW_KIND, parseCodex, parseClaude, parseAntigravitySummary, parseAntigravityModels, createLimits };
+const SECRET_KEY = /token|secret|password|authorization|cookie|api_?key/i;
+
+function scrub(value) {
+  if (Array.isArray(value)) return value.map(scrub);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, SECRET_KEY.test(key) ? "[removed]" : scrub(item)]));
+}
+
+module.exports = { WINDOW_KIND, parseCodex, parseClaude, parseAntigravitySummary, parseAntigravityModels, codexResets, createLimits };
