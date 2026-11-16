@@ -734,6 +734,10 @@ namespace DSHProxy
         private bool showHiddenModels;
         private bool fillingModels;
         private string modelsKey = "";
+        private string keysKey = "";
+        private string lanesKey = "";
+        private string profilesKey = "";
+        private string routingKey = "";
         private string suggestionsKey = "";
         private Dictionary<string, object> lastUpdate;
         private string previousBackend = "";
@@ -1232,21 +1236,28 @@ namespace DSHProxy
             var unreadable = new HashSet<string>();
             foreach (var item in Json.Arr(Json.Get(keys, "unreadable"))) unreadable.Add(Json.Str(item));
             providers = Json.Arr(Json.Get(status, "providers"));
-            keysList.BeginUpdate();
-            keysList.Items.Clear();
-            foreach (var item in providers)
+            // Rebuilt only when something actually changed: rebuilding every few
+            // seconds wiped the hover highlight and read as a glitch.
+            var keysPrint = Json.Serializer.Serialize(new object[] { Json.Get(status, "providers"), Json.Get(keys, "readable"), Json.Get(keys, "unreadable") });
+            if (keysPrint != keysKey)
             {
-                var provider = Json.Obj(item);
-                var key = Json.Str(Json.Get(provider, "key"));
-                string state;
-                Color color;
-                if (readable.ContainsKey(key)) { state = "Saved"; color = Theme.Ok; }
-                else if (unreadable.Contains(key)) { state = "Saved, cannot be read: add it again"; color = Theme.Bad; }
-                else { state = "Not set"; color = Theme.Muted; }
-                var region = readable.ContainsKey(key) ? RegionLabel(provider, readable[key]) : "";
-                keysList.Items.Add(new ListViewItem(new[] { Json.Str(Json.Get(provider, "label")), region, state }) { ForeColor = color, Tag = key, ImageKey = key });
+                keysKey = keysPrint;
+                keysList.BeginUpdate();
+                keysList.Items.Clear();
+                foreach (var item in providers)
+                {
+                    var provider = Json.Obj(item);
+                    var key = Json.Str(Json.Get(provider, "key"));
+                    string state;
+                    Color color;
+                    if (readable.ContainsKey(key)) { state = "Saved"; color = Theme.Ok; }
+                    else if (unreadable.Contains(key)) { state = "Saved, cannot be read: add it again"; color = Theme.Bad; }
+                    else { state = "Not set"; color = Theme.Muted; }
+                    var region = readable.ContainsKey(key) ? RegionLabel(provider, readable[key]) : "";
+                    keysList.Items.Add(new ListViewItem(new[] { Json.Str(Json.Get(provider, "label")), region, state }) { ForeColor = color, Tag = key, ImageKey = key });
+                }
+                keysList.EndUpdate();
             }
-            keysList.EndUpdate();
             if (keyProviderCombo.Items.Count == 0)
             {
                 foreach (var item in providers) keyProviderCombo.Items.Add(new Choice(Json.Str(Json.Get(Json.Obj(item), "key")), Json.Str(Json.Get(Json.Obj(item), "label"))));
@@ -1254,23 +1265,28 @@ namespace DSHProxy
             }
 
             // Lanes
-            lanesList.BeginUpdate();
-            lanesList.Items.Clear();
-            foreach (var item in Json.Arr(Json.Get(status, "lanes")))
+            var lanesPrint = Json.Serializer.Serialize(Json.Get(status, "lanes"));
+            if (lanesPrint != lanesKey)
             {
-                var lane = Json.Obj(item);
-                var parts = new List<string>();
-                foreach (var rungItem in Json.Arr(Json.Get(lane, "ladder")))
+                lanesKey = lanesPrint;
+                lanesList.BeginUpdate();
+                lanesList.Items.Clear();
+                foreach (var item in Json.Arr(Json.Get(status, "lanes")))
                 {
-                    var rung = Json.Obj(rungItem);
-                    var available = Json.Bool(rung, "available");
-                    var cooling = Json.Str(Json.Get(rung, "coolingUntil"));
-                    var mark = !available ? "\u2717" : cooling.Length > 0 ? "\u23F8" : "\u2713";
-                    parts.Add(mark + " " + Json.Str(Json.Get(rung, "model")));
+                    var lane = Json.Obj(item);
+                    var parts = new List<string>();
+                    foreach (var rungItem in Json.Arr(Json.Get(lane, "ladder")))
+                    {
+                        var rung = Json.Obj(rungItem);
+                        var available = Json.Bool(rung, "available");
+                        var cooling = Json.Str(Json.Get(rung, "coolingUntil"));
+                        var mark = !available ? "\u2717" : cooling.Length > 0 ? "\u23F8" : "\u2713";
+                        parts.Add(mark + " " + Json.Str(Json.Get(rung, "model")));
+                    }
+                    lanesList.Items.Add(new ListViewItem(new[] { "lane-" + Json.Str(Json.Get(lane, "name")), string.Join("\u0001", parts.ToArray()) }));
                 }
-                lanesList.Items.Add(new ListViewItem(new[] { "lane-" + Json.Str(Json.Get(lane, "name")), string.Join("\u0001", parts.ToArray()) }));
+                lanesList.EndUpdate();
             }
-            lanesList.EndUpdate();
             ShowRouting(Json.Obj(Json.Get(status, "routing")));
             lanesList.Invalidate();
 
@@ -1287,6 +1303,10 @@ namespace DSHProxy
 
             // DeepSeek Harness
             var harness = Json.Obj(Json.Get(status, "deepseekHarness"));
+            var profilesPrint = Json.Serializer.Serialize(Json.Get(harness, "profiles"));
+            if (profilesPrint != profilesKey)
+            {
+            profilesKey = profilesPrint;
             profilesList.BeginUpdate();
             profilesList.Items.Clear();
             foreach (var item in Json.Arr(Json.Get(harness, "profiles")))
@@ -1301,6 +1321,7 @@ namespace DSHProxy
                 profilesList.Items.Add(new ListViewItem(new[] { Json.Str(Json.Get(p, "profile")), routes.Count.ToString(), count.ToString(), pointing }) { ForeColor = routes.Count > 0 && current ? Theme.Ok : Theme.Muted });
             }
             profilesList.EndUpdate();
+            }
         }
 
         private static string RegionLabel(Dictionary<string, object> provider, string regionKey)
@@ -1654,6 +1675,9 @@ namespace DSHProxy
         // Shows which routing preset the ladders are, and what it does.
         private void ShowRouting(Dictionary<string, object> routing)
         {
+            var routingPrint = Json.Serializer.Serialize(routing);
+            if (routingPrint == routingKey) return;
+            routingKey = routingPrint;
             var active = Json.Obj(Json.Get(routing, "active"));
             activePreset = Json.Str(Json.Get(active, "name"));
             routingPresets = Json.Arr(Json.Get(routing, "presets"));

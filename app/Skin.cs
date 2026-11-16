@@ -32,8 +32,8 @@ namespace DSHProxy
         public static readonly Color Track = Color.FromArgb(26, 255, 255, 255);
 
         // Text: sea spray.
-        public static readonly Color Text = Hex("#EAF7F8");
-        public static readonly Color Muted = Hex("#94B3C0");
+        public static readonly Color Text = Hex("#F5FCFB");
+        public static readonly Color Muted = Hex("#B4CCD4");
 
         // Brass (primary actions), sea glass (accents) and the deck.
         public static readonly Color Accent = Hex("#E4B26A");
@@ -42,6 +42,7 @@ namespace DSHProxy
         public static readonly Color AccentInk = Hex("#1E1403");
         public static readonly Color AccentDim = Hex("#15303E");
         public static readonly Color Teal = Hex("#57D9C9");
+        public static readonly Color GlassBase = Hex("#04161D");
         public static readonly Color Banner = AccentDim;
 
         // Navigation lights: starboard green, brass amber, port red.
@@ -187,18 +188,18 @@ namespace DSHProxy
                 var h = (float)size.Height;
                 var horizon = h * 0.44f;
                 // Night sky, lighter towards the horizon.
-                using (var sky = new LinearGradientBrush(new RectangleF(0, 0, w, horizon + 2), ColorTranslator.FromHtml("#071E2C"), ColorTranslator.FromHtml("#104456"), LinearGradientMode.Vertical)) g.FillRectangle(sky, 0, 0, w, horizon + 2);
+                using (var sky = new LinearGradientBrush(new RectangleF(0, 0, w, horizon + 2), ColorTranslator.FromHtml("#04141D"), ColorTranslator.FromHtml("#0B3140"), LinearGradientMode.Vertical)) g.FillRectangle(sky, 0, 0, w, horizon + 2);
                 // The moon, low in the east: a wide halo, a soft rim, a bright disc.
                 // The moon: a wide, faint glow and a small bright disc. Drawn as
                 // two soft blobs rather than one hard rim, which read as a grey
                 // ball at full resolution.
-                Blob(g, w * 0.86f, h * 0.13f, w * 0.30f, h * 0.22f, Color.FromArgb(36, 0xBF, 0xE9, 0xE4));
-                Blob(g, w * 0.86f, h * 0.13f, w * 0.12f, h * 0.09f, Color.FromArgb(64, 0xDD, 0xF5, 0xF0));
+                Blob(g, w * 0.86f, h * 0.13f, w * 0.30f, h * 0.22f, Color.FromArgb(24, 0xBF, 0xE9, 0xE4));
+                Blob(g, w * 0.86f, h * 0.13f, w * 0.12f, h * 0.09f, Color.FromArgb(50, 0xDD, 0xF5, 0xF0));
                 var radius = Math.Min(w, h) * 0.028f;
                 using (var moon = new SolidBrush(Color.FromArgb(248, 0xF4, 0xFC, 0xFA))) g.FillEllipse(moon, w * 0.86f - radius, h * 0.13f - radius, radius * 2, radius * 2);
                 // Stars, crisp, kept clear of the moon.
                 var random = new Random(1846);
-                using (var star = new SolidBrush(Color.FromArgb(120, 0xE6, 0xF3, 0xF2)))
+                using (var star = new SolidBrush(Color.FromArgb(90, 0xE6, 0xF3, 0xF2)))
                 {
                     for (var i = 0; i < 160; i++)
                     {
@@ -210,7 +211,7 @@ namespace DSHProxy
                     }
                 }
                 // The sea.
-                using (var sea = new LinearGradientBrush(new RectangleF(0, horizon, w, h - horizon), ColorTranslator.FromHtml("#0A3746"), ColorTranslator.FromHtml("#020C16"), LinearGradientMode.Vertical)) g.FillRectangle(sea, 0, horizon, w, h - horizon);
+                using (var sea = new LinearGradientBrush(new RectangleF(0, horizon, w, h - horizon), ColorTranslator.FromHtml("#072734"), ColorTranslator.FromHtml("#010810"), LinearGradientMode.Vertical)) g.FillRectangle(sea, 0, horizon, w, h - horizon);
                 // Long swell lines, closer together towards the horizon.
                 for (var i = 0; i < 10; i++)
                 {
@@ -222,7 +223,7 @@ namespace DSHProxy
                         wave.AddBezier(-w * 0.02f, y0, w * 0.28f, y0 - amp, w * 0.62f, y0 + amp * 0.8f, w * 1.02f, y0 - amp * 0.5f);
                         wave.AddLine(w * 1.02f, h, -w * 0.02f, h);
                         wave.CloseFigure();
-                        using (var brush = new SolidBrush(Color.FromArgb(12 + i * 2, 0x3F, 0xC8, 0xBE))) g.FillPath(brush, wave);
+                        using (var brush = new SolidBrush(Color.FromArgb(7 + i * 2, 0x3F, 0xC8, 0xBE))) g.FillPath(brush, wave);
                     }
                 }
                 // A faint compass rose off the port quarter.
@@ -281,6 +282,9 @@ namespace DSHProxy
             Skin.PaintsBehind(control);
             control.Paint += (s, e) =>
             {
+                // The body is drawn by PaintBehind (which includes this surface
+                // itself); drawing it again here would double the tint and leave
+                // lighter patches wherever a child recomposed the background.
                 var surface = Surfaces[control];
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 Edge(e.Graphics, new Rectangle(0, 0, control.Width - 1, control.Height - 1), surface.Radius);
@@ -307,8 +311,8 @@ namespace DSHProxy
         {
             using (var path = Rounded(r, radius))
             {
-                var baseColor = tint.HasValue ? tint.Value : Color.White;
-                var alpha = tint.HasValue ? (strong ? 90 : 55) : (strong ? 46 : 28);
+                var baseColor = tint.HasValue ? tint.Value : Theme.GlassBase;
+                var alpha = tint.HasValue ? (strong ? 105 : 72) : (strong ? 178 : 150);
                 using (var fill = new SolidBrush(Color.FromArgb(alpha, baseColor))) g.FillPath(fill, path);
                 var sheenHeight = Math.Max(2, Math.Min(r.Height, 80));
                 var sheen = new Rectangle(r.X, r.Y, r.Width, sheenHeight);
@@ -382,10 +386,13 @@ namespace DSHProxy
         private bool hover;
         private bool down;
         private Bitmap background;
+        private Point backgroundAt;
 
         // The glass under a button almost never changes, so it is composed once
         // and reused: a hover then repaints one blit instead of re-composing the
-        // backdrop, which is what flickered.
+        // backdrop, which is what flickered. The position is part of the key:
+        // scrolling the page moves the button over a different part of the
+        // backdrop, and a stale cache would leave a lighter patch behind it.
         private void Forget()
         {
             if (background != null) { background.Dispose(); background = null; }
@@ -394,10 +401,13 @@ namespace DSHProxy
 
         private void PaintBackground(Graphics g)
         {
-            if (background == null || background.Width != Width || background.Height != Height)
+            var form = FindForm();
+            var at = form == null ? Point.Empty : form.PointToClient(PointToScreen(Point.Empty));
+            if (background == null || background.Width != Width || background.Height != Height || backgroundAt != at)
             {
                 if (background != null) background.Dispose();
                 background = new Bitmap(Math.Max(1, Width), Math.Max(1, Height));
+                backgroundAt = at;
                 using (var bg = Graphics.FromImage(background)) Glass.PaintBehind(bg, this, new Rectangle(0, 0, Width, Height));
             }
             g.DrawImageUnscaled(background, 0, 0);
@@ -479,6 +489,7 @@ namespace DSHProxy
                 if (kind == ButtonKind.Outline && hover) using (var path = Glass.Rounded(r, radius)) using (var fill = new SolidBrush(Color.FromArgb(30, Theme.Accent))) g.FillPath(fill, path);
                 if (down) using (var path = Glass.Rounded(r, radius)) using (var fill = new SolidBrush(Color.FromArgb(18, 0, 0, 0))) g.FillPath(fill, path);
                 Glass.Body(g, r, radius, false);
+                using (var path = Glass.Rounded(r, radius)) using (var fill = new SolidBrush(Color.FromArgb(down ? 22 : hover ? 52 : 34, 255, 255, 255))) g.FillPath(fill, path);
                 if (kind == ButtonKind.Outline) Glass.Edge(g, r, radius, Theme.Accent);
                 else Glass.Edge(g, r, radius);
                 text = kind == ButtonKind.Danger ? Theme.Bad : kind == ButtonKind.Outline ? Theme.Accent : Theme.Text;
@@ -971,7 +982,7 @@ namespace DSHProxy
         // A card or panel drawn as glass.
         public static void Border(Control panel)
         {
-            Glass.Make(panel, 20);
+            Glass.Make(panel, 20, true);
         }
 
         // Styles a window and everything in it, now and whatever is added later.
