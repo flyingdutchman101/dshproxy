@@ -140,6 +140,18 @@ Everything is under `~/.dshproxy` (override with `DSHPROXY_HOME`):
 
 If `settings.json` exists but cannot be read, every command stops with an error and leaves the file as it is. Fix the file, or move it away to start from the defaults.
 
+## Lanes and routing presets
+
+A lane is one model ID that tries a ladder of real models in order. The ladders come in three ready-made sets, switched on the **Lanes** tab (or with `dshproxy preset use <name>`); switching replaces all five ladders at once and re-applies the DeepSeek Harness routes:
+
+| Preset | What it does |
+|---|---|
+| **Max performance** | The strongest model each lane can reach, whatever it costs. Slowest and most quota-hungry. |
+| **Balanced** | Strong models first with cheaper ones as failover. The working default. |
+| **Cheap production** | Subscription quota first, then the cheapest paid models. Leaves GPT and Opus out. |
+
+Once the ladders have been edited by hand (in settings.json), the tab shows **Custom** until a preset is chosen again. The CLI can list the presets and the active one with `dshproxy preset list`; `dshproxy preset use` while a gateway is running needs a restart to take effect (the app switches it live).
+
 ## New models and backend updates
 
 **Models are found automatically.** About 3 seconds after start and then every 3 hours, DSHProxy reads which models the backend serves to your accounts and CLIProxyAPI's public model catalog ([models.router-for.me](https://models.router-for.me/models.json)) for each model's context size, output limit and reasoning levels. A current-generation chat model that your accounts serve is offered without a DSHProxy update. Image models, older generations and models the catalog does not describe are hidden; switch any model on or off on the **Models** tab (saved as `models.extra` / `models.hidden` in settings.json). When the offered list changes, DSHProxy updates its routes in the DeepSeek Harness profiles that already have them (each backed up first) and asks you to restart DeepSeek Harness. Profiles you never applied DSHProxy to are not touched.

@@ -21,6 +21,7 @@ const { fetchCatalog } = require("./models");
 const { checkForUpdate, createUpdater } = require("./backend/updater");
 const { runTrial } = require("./backend/trial");
 const settingsFile = require("./settings");
+const presets = require("./presets");
 
 const ACCOUNT_CACHE_MS = 5000;
 // The model catalog and the backend's model list are refreshed this often.
@@ -166,6 +167,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
     startedAt,
     origin: state.origin,
     backend: { name: lock.name, version: lock.version, port: settings.backendPort, ...supervisor.state() },
+    routing: presets.describe(settings.lanes),
     update,
     discovery: { error: discoveryError, harness: harnessNote },
     lanes: Object.entries(settings.lanes).map(([name, ladder]) => ({
@@ -269,6 +271,19 @@ async function start({ home, print = console.log, restart = null } = {}) {
         log(`lanes ${changed.join(", ")}: ${from} replaced by ${to}`);
         await syncHarness("lanes changed");
         return { ok: true, lanes: changed };
+      },
+      // Switches every lane to a routing preset (performance / balanced / cheap).
+      "POST lanes/preset": async ({ name }) => {
+        const preset = presets.get(String(name || ""));
+        const current = settingsFile.load(state.home);
+        // Copied so later edits cannot change the preset table.
+        current.lanes = JSON.parse(JSON.stringify(preset.lanes));
+        settingsFile.save(current, state.home);
+        settings.lanes = current.lanes;
+        offered.at = 0;
+        log(`routing preset: ${preset.label}`);
+        const result = await syncHarness(`routing preset ${preset.label}`);
+        return { ok: true, preset: presets.describe(current.lanes), harnessChanged: Boolean(result.changed) };
       },
       "POST update/check": () => checkUpdate(),
       "POST update/apply": async () => {

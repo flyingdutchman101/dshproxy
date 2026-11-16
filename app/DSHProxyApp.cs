@@ -935,7 +935,7 @@ namespace DSHProxy
                 Note("Pay-per-use API keys. Keys are stored encrypted for your Windows account. Restart the gateway after a change."),
                 Row(keyProviderCombo, keyRegionCombo, addKey, removeKey)));
 
-            // Lanes
+            // Lanes, with the routing presets above them
             lanesList.View = View.Details;
             lanesList.Columns.Add("Lane", 110);
             lanesList.Columns.Add("Ladder (first to last)", 780);
@@ -945,9 +945,24 @@ namespace DSHProxy
             lanesList.SmallImageList = new ImageList { ImageSize = new Size(1, 34) };
             var editLanes = new PillButton { Text = "Edit lanes (settings.json)", AutoSize = true };
             editLanes.Click += (s, e) => EditSettings();
-            tabs.TabPages.Add(Page("Lanes", lanesList,
-                Note("A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key."),
-                Row(editLanes)));
+            var presetRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, Dock = DockStyle.Top, Margin = new Padding(0), Padding = new Padding(0, 2, 0, 2) };
+            presetRow.Controls.Add(new Label { Text = "Routing:", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 11, 10, 0) });
+            presetTips = new ToolTip { AutoPopDelay = 12000, InitialDelay = 400 };
+            foreach (var preset in new[] { new[] { "performance", "Max performance" }, new[] { "balanced", "Balanced" }, new[] { "cheap", "Cheap production" } })
+            {
+                var button = new PillButton { Text = preset[1], AutoSize = true, Margin = new Padding(0, 2, 8, 2) };
+                var key = preset[0];
+                button.Click += (s, e) => UsePreset(key, button.Text);
+                presetButtons[key] = button;
+                presetRow.Controls.Add(button);
+            }
+            var lanesTop = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 3, Margin = new Padding(0) };
+            lanesTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            lanesTop.Controls.Add(Note("A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key."), 0, 0);
+            lanesTop.Controls.Add(presetRow, 0, 1);
+            lanesTop.Controls.Add(presetNote, 0, 2);
+            tabs.TabPages.Add(Page("Lanes", lanesList, lanesTop, Row(editLanes)));
+
 
             // Models
             modelsList.View = View.Details;
@@ -1233,6 +1248,7 @@ namespace DSHProxy
                 lanesList.Items.Add(new ListViewItem(new[] { "lane-" + Json.Str(Json.Get(lane, "name")), string.Join("\u0001", parts.ToArray()) }));
             }
             lanesList.EndUpdate();
+            ShowRouting(Json.Obj(Json.Get(status, "routing")));
             lanesList.Invalidate();
 
             // Models and backend updates
@@ -1604,6 +1620,54 @@ namespace DSHProxy
                     RefreshStatus();
                     LoadLimits(true);
                 }));
+            });
+        }
+
+        private readonly Dictionary<string, Button> presetButtons = new Dictionary<string, Button>();
+        private readonly Label presetNote = new Label { AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 6, 0, 2) };
+        private ToolTip presetTips;
+        private string activePreset = "";
+        private ArrayList routingPresets = new ArrayList();
+
+        // Shows which routing preset the ladders are, and what it does.
+        private void ShowRouting(Dictionary<string, object> routing)
+        {
+            var active = Json.Obj(Json.Get(routing, "active"));
+            activePreset = Json.Str(Json.Get(active, "name"));
+            routingPresets = Json.Arr(Json.Get(routing, "presets"));
+            foreach (var pair in presetButtons)
+            {
+                if (pair.Key == activePreset) Skin.Primary(pair.Value);
+                else pair.Value.Tag = null;
+                pair.Value.Invalidate();
+            }
+            string summary = null;
+            foreach (var item in routingPresets)
+            {
+                var preset = Json.Obj(item);
+                var name = Json.Str(Json.Get(preset, "name"));
+                if (presetButtons.ContainsKey(name) && presetTips != null) presetTips.SetToolTip(presetButtons[name], Json.Str(Json.Get(preset, "summary")));
+                if (name == activePreset) summary = Json.Str(Json.Get(preset, "summary"));
+            }
+            presetNote.Text = activePreset == "custom"
+                ? "Custom ladders, edited in settings.json. Pick a preset to replace them."
+                : "Active: " + Json.Str(Json.Get(active, "label")) + ". " + (summary ?? "");
+        }
+
+        private void UsePreset(string name, string label)
+        {
+            if (!running)
+            {
+                Msg.Show(this, "Start the gateway first.", "Routing preset", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            var answer = Msg.Show(this, string.Format("Use the {0} routing preset?\n\nThis replaces the ladders of all five lanes. You can switch back or edit them at any time.", label), "Routing preset", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes) return;
+            ControlInBackground("lanes/preset", new Dictionary<string, object> { { "name", name } }, result =>
+            {
+                AppendLog("Routing preset: " + label + ".");
+                if (Json.Bool(result, "harnessChanged")) AppendLog("DeepSeek Harness routes updated. Restart DeepSeek Harness to see them.");
+                RefreshStatus();
             });
         }
 

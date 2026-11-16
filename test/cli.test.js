@@ -87,3 +87,27 @@ test("a settings file that cannot be read stops the CLI with its name", (t) => {
   assert.match(status.stderr, /settings\.json/);
   assert.equal(fs.readFileSync(path.join(home, "settings.json"), "utf8"), "{broken");
 });
+
+test("routing presets can be listed and used from the command line", (t) => {
+  const home = tempHome(t);
+  fs.writeFileSync(path.join(home, "settings.json"), JSON.stringify({ port: 65433, backendPort: 65434 }));
+  const list = run(home, ["preset", "list"]);
+  assert.equal(list.status, 0, list.stderr);
+  assert.match(list.stdout, /Max performance/);
+  assert.match(list.stdout, /Cheap production/);
+  assert.match(list.stdout, /\* balanced/);
+  for (const lane of ["main:", "scout:", "builder:", "architect:", "reviewer:"]) assert.ok(list.stdout.includes(lane), `list misses ${lane}`);
+
+  const use = run(home, ["preset", "use", "cheap"]);
+  assert.equal(use.status, 0, use.stderr);
+  const saved = JSON.parse(fs.readFileSync(path.join(home, "settings.json"), "utf8"));
+  assert.deepEqual(saved.lanes, require("../src/presets").get("cheap").lanes);
+
+  const status = JSON.parse(run(home, ["status", "--json"]).stdout);
+  assert.deepEqual(status.routing.active, { name: "cheap", label: "Cheap production" });
+  assert.equal(status.routing.presets.length, 3);
+
+  const bad = run(home, ["preset", "use", "fastest"]);
+  assert.notEqual(bad.status, 0);
+  assert.match(bad.stderr, /Unknown routing preset "fastest"/);
+});

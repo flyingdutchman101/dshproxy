@@ -7,6 +7,7 @@ const settingsFile = require("./settings");
 const { render } = require("./backend/config");
 const { install } = require("./backend/install");
 const { STATUS_PATH } = require("./gateway/server");
+const presets = require("./presets");
 const fs = require("fs");
 const { readLock, compareVersions } = require("./backend/updater");
 
@@ -26,6 +27,8 @@ Usage:
   dshproxy dsh remove [--dry-run]      Remove DSHProxy's routes from DeepSeek Harness
   dshproxy backend version             Show the CLIProxyAPI version in use
   dshproxy backend rollback            Go back to the previous CLIProxyAPI version
+  dshproxy preset list                 Show the routing presets and the active one
+  dshproxy preset use <name>           Switch all lanes to a preset: performance, balanced, cheap
 
 Settings and data: ${settingsFile.homeDir()}`;
 
@@ -150,6 +153,10 @@ async function statusJson() {
       name,
       ladder: ladder.map((model) => ({ model, available: state.isAvailable(model), coolingUntil: liveLanes.get(name)?.get(model) ?? null }))
     })),
+    routing: {
+      active: presets.describe(state.settings.lanes),
+      presets: presets.names().map((name) => ({ name, label: presets.get(name).label, summary: presets.get(name).summary }))
+    },
     models: state.models.map((model) => model.id),
     deepseekHarness: profile.state(state.origin)
   };
@@ -317,6 +324,32 @@ async function main(argv, out = console.log) {
         return undefined;
       }
       throw new Error("Usage: dshproxy backend version|rollback");
+    }
+    case "preset": {
+      const [action, name] = args;
+      if (action === "list" || action === undefined) {
+        const state = await app.snapshot();
+        const active = presets.describe(state.settings.lanes);
+        for (const presetName of presets.names()) {
+          const preset = presets.get(presetName);
+          out(`${presetName === active.name ? "*" : " "} ${presetName.padEnd(12)} ${preset.label}`);
+          out(`    ${preset.summary}`);
+          for (const [lane, ladder] of Object.entries(preset.lanes)) out(`    ${`${lane}:`.padEnd(11)} ${ladder.join(" > ")}`);
+        }
+        out(`Active: ${active.name}. Use \`dshproxy preset use <name>\` to switch.`);
+        return undefined;
+      }
+      if (action === "use") {
+        const preset = presets.get(name);
+        const current = settingsFile.load();
+        // Copied so later edits cannot change the preset table.
+        current.lanes = JSON.parse(JSON.stringify(preset.lanes));
+        settingsFile.save(current);
+        out(`Routing preset: ${preset.label}.`);
+        out("If the gateway is running, restart it (Stop, then Start in the app) so it uses the new ladders, then run `dshproxy dsh apply`.");
+        return undefined;
+      }
+      throw new Error("Usage: dshproxy preset list | dshproxy preset use <performance|balanced|cheap>");
     }
     case undefined:
     case "help":
