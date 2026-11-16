@@ -368,3 +368,14 @@ test("removing also takes out routes from before the rename", (t) => {
   const text = fs.readFileSync(patchPath(home), "utf8");
   assert.doesNotMatch(text, /dshgate-|dshproxy-/);
 });
+
+test("every route keeps the retained image count under the many-image limit", (t) => {
+  const home = tempHome(t);
+  profile.apply(MODELS, ORIGIN, home);
+  const routes = providers(home);
+  for (const key of ["dshproxy-lanes", "dshproxy-claude", "dshproxy-openai", "dshproxy-compat"]) {
+    assert.equal(routes[key].maxRequestImages, profile.MAX_REQUEST_IMAGES, `${key} lacks the image cap`);
+    assert.equal(routes[key].maxRequestImageBytes, profile.MAX_REQUEST_IMAGE_BYTES, `${key} lacks the image payload cap`);
+  }
+  assert.ok(profile.MAX_REQUEST_IMAGES < 20, "the cap must stay under the many-image threshold");
+});

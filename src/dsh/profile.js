@@ -20,6 +20,15 @@ const ADDED_MARK = " added by dshproxy";
 // The app was called dshgate before; its routes and marks are migrated.
 const LEGACY_ADDED_MARK = " added by dshgate";
 const legacyKey = (key) => key.replace(/^dshproxy-/, "dshgate-");
+// Providers shrink the per-image size limit once a request carries many
+// images (Anthropic: 2000-3000 px instead of 8000). Keeping the retained count
+// below that threshold makes DeepSeek Harness replace older images with text
+// placeholders, so a long session with screenshots keeps completing.
+const MAX_REQUEST_IMAGES = 12;
+// Total base64 image payload per request. Beyond this, older images become text
+// placeholders, which keeps the upstream token burst (and the provider quota)
+// sane.
+const MAX_REQUEST_IMAGE_BYTES = 8 * 1024 * 1024;
 
 // Each model family is declared with its native protocol. Lanes use Anthropic
 // Messages; CLIProxyAPI translates for whichever model serves the request.
@@ -74,7 +83,7 @@ function buildRoutes(models, origin, previous = {}, keepModelPrefixes = []) {
       list.push({ ...entry, input: declaredInput(entry) || [...DEFAULT_INPUT] });
     }
     if (!list.length) continue;
-    routes[key] = { displayName: route.label, apiKeyEnv: KEY_REF, api: route.protocol, baseURL: `${origin}${route.suffix}`, models: list };
+    routes[key] = { displayName: route.label, apiKeyEnv: KEY_REF, api: route.protocol, baseURL: `${origin}${route.suffix}`, maxRequestImages: MAX_REQUEST_IMAGES, maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES, models: list };
   }
   return routes;
 }
@@ -282,4 +291,4 @@ function state(origin, home = dshHome()) {
   return result;
 }
 
-module.exports = { ROUTES, KEY_REF, dshHome, apply, remove, state, buildRoutes };
+module.exports = { ROUTES, KEY_REF, MAX_REQUEST_IMAGES, MAX_REQUEST_IMAGE_BYTES, dshHome, apply, remove, state, buildRoutes };

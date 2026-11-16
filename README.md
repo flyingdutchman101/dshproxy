@@ -146,6 +146,8 @@ DeepSeek Harness accepts two kinds of input: text and images (PNG, JPEG, WebP, G
 
 Images work on lanes without any setting. A lane declares image input when at least one rung accepts images, and the gateway then sends an image request only to those rungs, skipping text-only models (API-key models are declared text-only). A lane with no vision rung refuses the image immediately with "no model on this lane accepts images" instead of failing rung by rung.
 
+The routes also keep a lid on image-heavy conversations: at most **12 images** and **8 MiB of image payload** per request. Providers shrink the per-image size limit once a request carries many images (Anthropic rejects anything over ~3000 px in that case), so DeepSeek Harness replaces older images with text placeholders instead of sending a request the provider will refuse. Large full-screen screenshots are still worth cropping before attaching.
+
 ## Lanes and routing presets
 
 A lane is one model ID that tries a ladder of real models in order. The ladders come in three ready-made sets, switched on the **Lanes** tab (or with `dshproxy preset use <name>`); switching replaces all five ladders at once and re-applies the DeepSeek Harness routes:
