@@ -732,6 +732,7 @@ namespace DSHProxy
         private readonly CheckBox autostartBox = new GlassCheck { Text = "Start with Windows", AutoSize = true };
         private readonly Label footer = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted };
         private readonly PageHost tabs = new PageHost { Dock = DockStyle.Fill };
+        private NavStrip navStrip;
 
         private readonly string previewLimits;
         public static bool ReadOnly;
@@ -1014,7 +1015,18 @@ namespace DSHProxy
             logPage.Controls.Add(Row(openLogFolder));
             tabs.TabPages.Add(logPage);
 
-            tabs.SelectedIndexChanged += (s, e) => { if (tabs.SelectedIndex == 0) LoadLimits(false); };
+            tabs.SelectedIndexChanged += (s, e) =>
+            {
+                // A control on a hidden page must not keep the focus: WinForms
+                // then scrolls its AutoScroll panel on the way back, which looks
+                // like the page jumping.
+                if (navStrip != null) navStrip.Focus();
+                if (tabs.SelectedIndex == 0)
+                {
+                    accountsPanel.AutoScrollPosition = Point.Empty;
+                    LoadLimits(false);
+                }
+            };
 
             var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 42, ColumnCount = 2, Padding = new Padding(22, 8, 22, 8) };
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -1024,6 +1036,7 @@ namespace DSHProxy
             bottom.Controls.Add(autostartBox, 1, 0);
             
             var nav = new NavStrip(tabs);
+            navStrip = nav;
             Controls.Add(tabs);
             Controls.Add(nav);
             Controls.Add(updateBar);

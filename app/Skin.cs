@@ -386,13 +386,29 @@ namespace DSHProxy
     // a button with an image is drawn as a glass tile instead.
     internal class PillButton : Button
     {
-        protected override void OnPaintBackground(PaintEventArgs e)
-        {
-            Glass.PaintBehind(e.Graphics, this, ClientRectangle);
-        }
-
         private bool hover;
         private bool down;
+        private Bitmap background;
+
+        // The glass under a button almost never changes, so it is composed once
+        // and reused: a hover then repaints one blit instead of re-composing the
+        // backdrop, which is what flickered.
+        private void Forget()
+        {
+            if (background != null) { background.Dispose(); background = null; }
+            Invalidate();
+        }
+
+        private void PaintBackground(Graphics g)
+        {
+            if (background == null || background.Width != Width || background.Height != Height)
+            {
+                if (background != null) background.Dispose();
+                background = new Bitmap(Math.Max(1, Width), Math.Max(1, Height));
+                using (var bg = Graphics.FromImage(background)) Glass.PaintBehind(bg, this, new Rectangle(0, 0, Width, Height));
+            }
+            g.DrawImageUnscaled(background, 0, 0);
+        }
 
         public PillButton()
         {
@@ -402,6 +418,11 @@ namespace DSHProxy
             Cursor = Cursors.Hand;
             ForeColor = Theme.Text;
         }
+
+        protected override void OnLocationChanged(EventArgs e) { Forget(); base.OnLocationChanged(e); }
+        protected override void OnParentChanged(EventArgs e) { Forget(); base.OnParentChanged(e); }
+        protected override void OnVisibleChanged(EventArgs e) { Forget(); base.OnVisibleChanged(e); }
+        protected override void OnResize(EventArgs e) { Forget(); base.OnResize(e); }
 
         protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
         protected override void OnMouseLeave(EventArgs e) { hover = false; down = false; Invalidate(); base.OnMouseLeave(e); }
@@ -419,8 +440,8 @@ namespace DSHProxy
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            Glass.PaintBehind(e.Graphics, this, ClientRectangle);
             var g = e.Graphics;
+            PaintBackground(g);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             var tile = Image != null;
             var r = new Rectangle(1, 1, Width - 2, Height - 2);
@@ -726,11 +747,17 @@ namespace DSHProxy
             set
             {
                 if (value < 0 || value >= TabPages.Count || value == selected) return;
+                // Hide the old page only after the new one is on top, so there
+                // is never a blank frame between them.
                 SuspendLayout();
-                TabPages[value].Visible = true;
-                TabPages[selected].Visible = false;
+                var previous = TabPages[selected];
                 selected = value;
-                ResumeLayout();
+                var next = TabPages[selected];
+                next.Visible = true;
+                next.BringToFront();
+                previous.Visible = false;
+                ResumeLayout(true);
+                next.Invalidate(true);
                 if (SelectedIndexChanged != null) SelectedIndexChanged(this, EventArgs.Empty);
             }
         }
@@ -986,6 +1013,10 @@ namespace DSHProxy
         private static void Style(Control control)
         {
             if (control is Form) return;
+            // Every control paints into its own buffer: an un-buffered container
+            // flickers under the glass whenever a child repaints (hovering a
+            // button, switching tabs).
+            Buffered(control);
             var button = control as Button;
             if (button != null) { StyleButton(button); return; }
             var list = control as ListView;
@@ -1021,6 +1052,15 @@ namespace DSHProxy
             }
             var scroller = control as ScrollableControl;
             if (scroller != null) DarkScrollbars(scroller);
+        }
+
+        private static readonly PropertyInfo DoubleBufferedProperty = typeof(Control).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        private static void Buffered(Control control)
+        {
+            if (DoubleBufferedProperty == null || !DoubleBufferedProperty.CanWrite) return;
+            if (control is TextBox || control is ComboBox) return;
+            DoubleBufferedProperty.SetValue(control, true, null);
         }
 
         private static void StyleButton(Button button)
