@@ -24,6 +24,10 @@ namespace DSHProxy
 {
     internal static class Program
     {
+        // A second launch signals this event, so the instance already in the tray
+        // brings its window up instead of showing an "already running" box.
+        private const string ShowEvent = "dshproxy-windows-app-show";
+
         [STAThread]
         private static void Main(string[] args)
         {
@@ -47,9 +51,26 @@ namespace DSHProxy
             {
                 if (!created)
                 {
-                    Msg.Show("DeepSeekProxy is already running. Open it from the tray icon.", "DeepSeekProxy", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    // A second launch (desktop shortcut, Start menu) should bring
+                    // up the window that is already running in the tray rather
+                    // than complain about it.
+                    try
+                    {
+                        using (var show = EventWaitHandle.OpenExisting(ShowEvent))
+                        {
+                            show.Set();
+                            return;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        Msg.Show("DeepSeekProxy is already running. Open it from the tray icon.", "DeepSeekProxy", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
                     return;
                 }
+                // Created before the window so a concurrent second launch can
+                // always find it.
+                var showEventHandle = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEvent);
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 // --preview-limits <file.json>: shows the Accounts tab with
@@ -60,7 +81,7 @@ namespace DSHProxy
                     Application.Run(new MainForm(false, File.ReadAllText(args[preview + 1])));
                     return;
                 }
-                Application.Run(new MainForm(Array.IndexOf(args, "--hidden") >= 0, null));
+                Application.Run(new MainForm(Array.IndexOf(args, "--hidden") >= 0, null, ShowEvent));
             }
         }
     }
@@ -751,10 +772,27 @@ namespace DSHProxy
         private readonly string previewLimits;
         public static bool ReadOnly;
 
-        public MainForm(bool hidden, string previewLimits)
+        public MainForm(bool hidden, string previewLimits, string showEvent = null)
         {
             startHidden = hidden;
             this.previewLimits = previewLimits;
+            if (showEvent != null)
+            {
+                // Listen for a second launch wanting this window on screen.
+                var handle = new EventWaitHandle(false, EventResetMode.AutoReset, showEvent);
+                var watcher = new Thread(() =>
+                {
+                    while (true)
+                    {
+                        handle.WaitOne();
+                        if (IsDisposed) return;
+                        try { BeginInvoke(new Action(ShowRequested)); }
+                        catch (Exception) { return; }
+                    }
+                });
+                watcher.IsBackground = true;
+                watcher.Start();
+            }
             var root = Cli.FindRoot();
             var node = Cli.FindNode();
             if (root == null || node == null)
@@ -1083,6 +1121,15 @@ namespace DSHProxy
             Show();
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
             Activate();
+        }
+
+        // Called when a second launch asks for the window.
+        internal void ShowRequested()
+        {
+            ShowWindow();
+            TopMost = true;
+            TopMost = false;
+            BringToFront();
         }
 
         private void OnClosing(object sender, FormClosingEventArgs e)

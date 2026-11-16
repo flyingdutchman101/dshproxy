@@ -139,6 +139,7 @@ namespace DSHProxy
     internal static class Backdrop
     {
         private static readonly Dictionary<Form, Bitmap> Cache = new Dictionary<Form, Bitmap>();
+        private static readonly Dictionary<Form, Timer> Pending = new Dictionary<Form, Timer>();
 
         public static Bitmap For(Form form)
         {
@@ -146,14 +147,59 @@ namespace DSHProxy
             if (size.Width < 1 || size.Height < 1) return null;
             Bitmap bitmap;
             if (Cache.TryGetValue(form, out bitmap) && bitmap.Size == size) return bitmap;
-            if (bitmap != null) bitmap.Dispose();
+            if (bitmap != null)
+            {
+                // Mid-resize: bridge with the previous scene stretched to the new
+                // size, then render the real one once the size settles. Rendering
+                // at full resolution on every dragged pixel made maximizing hitch.
+                var bridge = Scaled(bitmap, size);
+                bitmap.Dispose();
+                Cache[form] = bridge;
+                Schedule(form);
+                return bridge;
+            }
             bitmap = Render(size);
             Cache[form] = bitmap;
             return bitmap;
         }
 
+        private static void Schedule(Form form)
+        {
+            Timer timer;
+            if (Pending.TryGetValue(form, out timer)) { timer.Stop(); timer.Start(); return; }
+            timer = new Timer { Interval = 160 };
+            timer.Tick += (s, e) =>
+            {
+                timer.Stop();
+                Pending.Remove(form);
+                var size = form.ClientSize;
+                if (size.Width < 1 || size.Height < 1) return;
+                Bitmap current;
+                if (Cache.TryGetValue(form, out current) && current.Size == size) return;
+                if (current != null) current.Dispose();
+                Cache[form] = Render(size);
+                form.Invalidate(true);
+            };
+            Pending[form] = timer;
+            timer.Start();
+        }
+
+        private static Bitmap Scaled(Bitmap source, Size size)
+        {
+            var scaled = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppPArgb);
+            using (var g = Graphics.FromImage(scaled))
+            {
+                g.InterpolationMode = InterpolationMode.HighQualityBilinear;
+                g.PixelOffsetMode = PixelOffsetMode.HighSpeed;
+                g.DrawImage(source, new Rectangle(0, 0, size.Width, size.Height));
+            }
+            return scaled;
+        }
+
         public static void Forget(Form form)
         {
+            Timer timer;
+            if (Pending.TryGetValue(form, out timer)) { timer.Stop(); timer.Dispose(); Pending.Remove(form); }
             Bitmap bitmap;
             if (Cache.TryGetValue(form, out bitmap)) { bitmap.Dispose(); Cache.Remove(form); }
         }
