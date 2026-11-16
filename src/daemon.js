@@ -88,7 +88,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
 
   // Catalog order, so a fallback prefers the stronger model of the family.
   const catalogRank = (() => {
-    const order = new Map(SUBSCRIPTION_MODELS.map((model, index) => [model.id, index]));
+    const order = new Map(catalog.SUBSCRIPTION_MODELS.map((model, index) => [model.id, index]));
     return (id) => order.get(id) ?? Number.MAX_SAFE_INTEGER;
   })();
 
