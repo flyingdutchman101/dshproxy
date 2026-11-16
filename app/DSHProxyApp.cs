@@ -815,6 +815,13 @@ namespace DSHProxy
             BuildTray();
             Skin.Apply(this);
 
+            // Dragging the window edge to a new size: show a stretched snapshot
+            // of the window and lay out again when the drag ends. Rebuilding the
+            // glass for every dragged pixel is what tore the window apart.
+            ResizeBegin += (s, e) => BeginResizePreview();
+            ResizeEnd += (s, e) => EndResizePreview();
+            Resize += (s, e) => { if (resizePreview != null) { resizeWatchdog.Stop(); resizeWatchdog.Start(); } };
+
             startButton.Click += (s, e) => StartGateway();
             stopButton.Click += (s, e) => StopGateway();
             autostartBox.Checked = Autostart.IsOn();
@@ -1121,6 +1128,53 @@ namespace DSHProxy
             Show();
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
             Activate();
+        }
+
+        // ---------- resize preview ----------
+
+        private PictureBox resizePreview;
+        private readonly System.Windows.Forms.Timer resizeWatchdog = new System.Windows.Forms.Timer { Interval = 220 };
+
+        private void BeginResizePreview()
+        {
+            if (resizePreview != null || IsDisposed || !IsHandleCreated) return;
+            var size = ClientSize;
+            if (size.Width < 2 || size.Height < 2) return;
+            Bitmap shot;
+            try
+            {
+                shot = new Bitmap(size.Width, size.Height);
+                using (var g = Graphics.FromImage(shot)) g.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, size);
+            }
+            catch (Exception) { return; }
+            Skin.SuppressBackdrop = true;
+            resizePreview = new PictureBox { Image = shot, SizeMode = PictureBoxSizeMode.StretchImage, Dock = DockStyle.Fill };
+            foreach (Control child in Controls) child.Visible = false;
+            Controls.Add(resizePreview);
+            resizePreview.BringToFront();
+            // If ResizeEnd never arrives (a sizing loop that ends oddly, a
+            // programmatic resize), the snapshot must still go away.
+            if (!resizeWatchdog.Enabled)
+            {
+                resizeWatchdog.Tick += (s, e) => { resizeWatchdog.Stop(); EndResizePreview(); };
+                resizeWatchdog.Start();
+            }
+            else resizeWatchdog.Stop();
+            resizeWatchdog.Start();
+        }
+
+        private void EndResizePreview()
+        {
+            resizeWatchdog.Stop();
+            if (resizePreview == null) return;
+            Controls.Remove(resizePreview);
+            var image = resizePreview.Image;
+            resizePreview.Dispose();
+            resizePreview = null;
+            if (image != null) image.Dispose();
+            foreach (Control child in Controls) child.Visible = true;
+            Skin.SuppressBackdrop = false;
+            Invalidate(true);
         }
 
         // Called when a second launch asks for the window.

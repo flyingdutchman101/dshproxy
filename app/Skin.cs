@@ -141,6 +141,9 @@ namespace DSHProxy
         private static readonly Dictionary<Form, Bitmap> Cache = new Dictionary<Form, Bitmap>();
         private static readonly Dictionary<Form, Timer> Pending = new Dictionary<Form, Timer>();
 
+        // Bumped whenever the cached scene changes, so glass caches rebuild.
+        public static int Version { get; private set; }
+
         public static Bitmap For(Form form)
         {
             var size = form.ClientSize;
@@ -155,11 +158,13 @@ namespace DSHProxy
                 var bridge = Scaled(bitmap, size);
                 bitmap.Dispose();
                 Cache[form] = bridge;
+                Version++;
                 Schedule(form);
                 return bridge;
             }
             bitmap = Render(size);
             Cache[form] = bitmap;
+            Version++;
             return bitmap;
         }
 
@@ -178,6 +183,7 @@ namespace DSHProxy
                 if (Cache.TryGetValue(form, out current) && current.Size == size) return;
                 if (current != null) current.Dispose();
                 Cache[form] = Render(size);
+                Version++;
                 form.Invalidate(true);
             };
             Pending[form] = timer;
@@ -201,7 +207,7 @@ namespace DSHProxy
             Timer timer;
             if (Pending.TryGetValue(form, out timer)) { timer.Stop(); timer.Dispose(); Pending.Remove(form); }
             Bitmap bitmap;
-            if (Cache.TryGetValue(form, out bitmap)) { bitmap.Dispose(); Cache.Remove(form); }
+            if (Cache.TryGetValue(form, out bitmap)) { bitmap.Dispose(); Cache.Remove(form); Version++; }
         }
 
         private static void Blob(Graphics g, float cx, float cy, float rx, float ry, Color color)
@@ -309,6 +315,13 @@ namespace DSHProxy
             public int Radius;
             public bool Strong;
             public Color? Tint;
+            // The backdrop plus this surface's own body, composed once and
+            // reused: every child inside it then paints with a single blit
+            // instead of re-blending the whole background on every repaint.
+            public Bitmap Background;
+            public Point BackgroundAt;
+            public Size BackgroundSize;
+            public int BackgroundVersion = -1;
         }
 
         private static readonly Dictionary<Control, Surface> Surfaces = new Dictionary<Control, Surface>();
@@ -335,7 +348,12 @@ namespace DSHProxy
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 Edge(e.Graphics, new Rectangle(0, 0, control.Width - 1, control.Height - 1), surface.Radius);
             };
-            control.Disposed += (s, e) => Surfaces.Remove(control);
+            control.Disposed += (s, e) =>
+            {
+                Surface surface;
+                if (Surfaces.TryGetValue(control, out surface) && surface.Background != null) surface.Background.Dispose();
+                Surfaces.Remove(control);
+            };
             return control;
         }
 
@@ -394,6 +412,50 @@ namespace DSHProxy
         // bodies of every glass surface it sits on. Used by native controls
         // (lists) that cannot be transparent.
         public static void PaintBehind(Graphics g, Control control, Rectangle rect)
+        {
+            var form = control.FindForm();
+            if (form == null) { using (var b = new SolidBrush(Theme.Card)) g.FillRectangle(b, rect); return; }
+
+            // Find the glass surface this control sits on (itself included).
+            Control hostControl = null;
+            Surface host = null;
+            for (var c = control; c != null && c != form; c = c.Parent)
+            {
+                Surface candidate;
+                if (Surfaces.TryGetValue(c, out candidate)) { host = candidate; hostControl = c; break; }
+            }
+
+            if (host != null)
+            {
+                var at = hostControl.PointToScreen(Point.Empty);
+                var size = hostControl.ClientSize;
+                var version = Backdrop.Version;
+                if (host.Background == null || host.BackgroundAt != at || host.BackgroundSize != size || host.BackgroundVersion != version)
+                {
+                    if (host.Background != null) host.Background.Dispose();
+                    host.Background = new Bitmap(Math.Max(1, size.Width), Math.Max(1, size.Height));
+                    using (var bg = Graphics.FromImage(host.Background))
+                        Compose(bg, hostControl, new Rectangle(0, 0, host.Background.Width, host.Background.Height));
+                    host.BackgroundAt = at;
+                    host.BackgroundSize = size;
+                    host.BackgroundVersion = version;
+                }
+                var origin = control.PointToScreen(Point.Empty);
+                var source = new Rectangle(origin.X - at.X + rect.X, origin.Y - at.Y + rect.Y, rect.Width, rect.Height);
+                var state = g.Save();
+                g.SetClip(rect, CombineMode.Intersect);
+                g.DrawImage(host.Background, new Rectangle(rect.X, rect.Y, rect.Width, rect.Height), source, GraphicsUnit.Pixel);
+                g.Restore(state);
+                return;
+            }
+
+            Compose(g, control, rect);
+        }
+
+        // Backdrop plus the bodies of every glass surface the control sits on,
+        // drawn straight to the target. Used to build a surface's cache and for
+        // controls that are not on a glass surface at all.
+        private static void Compose(Graphics g, Control control, Rectangle rect)
         {
             var form = control.FindForm();
             if (form == null) { using (var b = new SolidBrush(Theme.Card)) g.FillRectangle(b, rect); return; }
@@ -1009,6 +1071,9 @@ namespace DSHProxy
 
         private static readonly HashSet<Control> Painting = new HashSet<Control>();
 
+        // True while the window is being dragged to a new size.
+        public static bool SuppressBackdrop;
+
         // Makes a container paint the backdrop and any glass behind it first.
         public static void PaintsBehind(Control control)
         {
@@ -1054,7 +1119,14 @@ namespace DSHProxy
                 form.BackColor = Theme.Page;
                 form.ForeColor = Theme.Text;
                 form.Styles(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
-                form.Paint += (s, e) => Backdrop.Paint(e.Graphics, form, e.ClipRectangle);
+                form.Paint += (s, e) =>
+                {
+                    // While the user drags the window edge the app shows a
+                    // stretched snapshot instead; re-rendering the scene for
+                    // every dragged pixel is what made the window tear.
+                    if (SuppressBackdrop) { using (var fill = new SolidBrush(Theme.Page)) e.Graphics.FillRectangle(fill, e.ClipRectangle); return; }
+                    Backdrop.Paint(e.Graphics, form, e.ClipRectangle);
+                };
                 form.Resize += (s, e) => form.Invalidate(true);
                 form.FormClosed += (s, e) => Backdrop.Forget(form);
                 if (form.IsHandleCreated) DarkTitleBar(form.Handle);
