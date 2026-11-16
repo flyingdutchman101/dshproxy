@@ -1467,9 +1467,9 @@ namespace DSHProxy
             if (resetCount > 0 && !disabled)
             {
                 var strip = Glass.Make(new FlowLayoutPanel { AutoSize = false, Height = 56, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 12, 0, 0), Padding = new Padding(14, 10, 14, 10) }, 14, false, Theme.Bad);
-                strip.Controls.Add(new Chip { Text = resetCount == 1 ? "\u26A0 1 limit reset" : string.Format("\u26A0 {0} limit resets", resetCount), Tint = Theme.Warn, Margin = new Padding(0, 2, 12, 0) });
-                strip.Controls.Add(new GlassLabel { Text = "Danger zone: spending one cannot be undone.", AutoSize = true, ForeColor = Theme.Bad, Margin = new Padding(0, 8, 14, 0) });
-                var useReset = Skin.Danger(new PillButton { Text = "Use a reset\u2026", AutoSize = true });
+                strip.Controls.Add(new Chip { Text = resetCount == 1 ? "\u26A0 1 limit reset" : string.Format("\u26A0 {0} limit resets", resetCount), Tint = Theme.Warn, Margin = new Padding(0, 5, 12, 0) });
+                strip.Controls.Add(new GlassLabel { Text = "Danger zone: spending one cannot be undone.", AutoSize = true, ForeColor = Theme.Bad, Margin = new Padding(0, 9, 14, 0) });
+                var useReset = Skin.DangerStrong(new PillButton { Text = "Use a reset\u2026", AutoSize = true });
                 useReset.Click += (s, e) => UseReset(file, label, email, windows, resetCount);
                 strip.Controls.Add(useReset);
                 card.Controls.Add(strip, 0, row);
@@ -2082,7 +2082,7 @@ namespace DSHProxy
 
                 var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 60, Padding = new Padding(14, 10, 14, 10) };
                 var cancel = new PillButton { Text = "Cancel", Width = 104, Height = 38, DialogResult = DialogResult.Cancel };
-                var spend = Skin.Danger(new PillButton { Text = "Use this reset", Width = 150, Height = 38, DialogResult = DialogResult.OK, Enabled = false });
+                var spend = Skin.DangerStrong(new PillButton { Text = "Use this reset", Width = 150, Height = 38, DialogResult = DialogResult.OK, Enabled = false });
                 buttons.Controls.Add(cancel);
                 buttons.Controls.Add(spend);
                 typing.TextChanged += (s, e) => spend.Enabled = string.Equals(typing.Text.Trim(), Phrase, StringComparison.Ordinal);

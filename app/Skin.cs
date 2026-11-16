@@ -423,7 +423,7 @@ namespace DSHProxy
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             var tile = Image != null;
-            var r = new Rectangle(1, 1, Width - 3, Height - 3);
+            var r = new Rectangle(1, 1, Width - 2, Height - 2);
             var radius = tile ? 16 : r.Height / 2;
             var kind = Skin.KindOf(this);
             var focus = Focused && ShowFocusCues;
@@ -451,12 +451,19 @@ namespace DSHProxy
                 Glass.Edge(g, r, radius, Color.White, 60);
                 text = Theme.AccentInk;
             }
+            else if (kind == ButtonKind.DangerStrong)
+            {
+                // Filled red: the one action on the card that spends something.
+                using (var path = Glass.Rounded(r, radius))
+                using (var fill = new SolidBrush(Color.FromArgb(down ? 235 : hover ? 225 : 200, Theme.Bad))) g.FillPath(fill, path);
+                Glass.Edge(g, r, radius, Color.White, 45);
+                text = Color.White;
+            }
             else
             {
-                var alpha = down ? 14 : hover ? 36 : 22;
                 if (kind == ButtonKind.Danger && hover) using (var path = Glass.Rounded(r, radius)) using (var fill = new SolidBrush(Color.FromArgb(46, Theme.Bad))) g.FillPath(fill, path);
-                if (kind == ButtonKind.Outline && hover) using (var path = Glass.Rounded(r, radius)) using (var fill = new SolidBrush(Color.FromArgb(36, Theme.Accent))) g.FillPath(fill, path);
-                using (var path = Glass.Rounded(r, radius)) using (var fill = new SolidBrush(Color.FromArgb(alpha, 255, 255, 255))) g.FillPath(fill, path);
+                if (kind == ButtonKind.Outline && hover) using (var path = Glass.Rounded(r, radius)) using (var fill = new SolidBrush(Color.FromArgb(30, Theme.Accent))) g.FillPath(fill, path);
+                if (down) using (var path = Glass.Rounded(r, radius)) using (var fill = new SolidBrush(Color.FromArgb(18, 0, 0, 0))) g.FillPath(fill, path);
                 Glass.Body(g, r, radius, false);
                 if (kind == ButtonKind.Outline) Glass.Edge(g, r, radius, Theme.Accent);
                 else Glass.Edge(g, r, radius);
@@ -465,9 +472,10 @@ namespace DSHProxy
 
             if (focus)
             {
-                var ring = Rectangle.Inflate(r, -3, -3);
-                using (var path = Glass.Rounded(ring, Math.Max(4, radius - 3)))
-                using (var pen = new Pen(kind == ButtonKind.Primary ? Theme.AccentInk : Theme.Accent, 1.5f) { DashStyle = DashStyle.Solid }) g.DrawPath(pen, path);
+                // Dashed and inset, so it cannot read as a second border.
+                var ring = Rectangle.Inflate(r, -4, -4);
+                using (var path = Glass.Rounded(ring, Math.Max(4, radius - 4)))
+                using (var pen = new Pen(kind == ButtonKind.Primary ? Theme.AccentInk : Theme.Accent, 1.3f) { DashStyle = DashStyle.Dot }) g.DrawPath(pen, path);
             }
 
             if (tile)
@@ -893,17 +901,19 @@ namespace DSHProxy
     // ---------------------------------------------------------------------
     // Applying the look.
     // ---------------------------------------------------------------------
-    internal enum ButtonKind { Normal, Primary, Danger, Outline }
+    internal enum ButtonKind { Normal, Primary, Danger, DangerStrong, Outline }
 
     internal static class Skin
     {
         private const string PrimaryTag = "skin:primary";
         private const string DangerTag = "skin:danger";
         private const string OutlineTag = "skin:outline";
+        private const string DangerStrongTag = "skin:danger-strong";
         private static readonly HashSet<Control> Walked = new HashSet<Control>();
 
         public static T Primary<T>(T button) where T : Button { button.Tag = PrimaryTag; button.Invalidate(); return button; }
         public static T Danger<T>(T button) where T : Button { button.Tag = DangerTag; button.Invalidate(); return button; }
+        public static T DangerStrong<T>(T button) where T : Button { button.Tag = DangerStrongTag; button.Invalidate(); return button; }
         public static T Outline<T>(T button) where T : Button { button.Tag = OutlineTag; button.Invalidate(); return button; }
 
         private static readonly HashSet<Control> Painting = new HashSet<Control>();
@@ -933,6 +943,7 @@ namespace DSHProxy
             var tag = button.Tag as string;
             if (tag == PrimaryTag) return ButtonKind.Primary;
             if (tag == DangerTag) return ButtonKind.Danger;
+            if (tag == DangerStrongTag) return ButtonKind.DangerStrong;
             if (tag == OutlineTag) return ButtonKind.Outline;
             return ButtonKind.Normal;
         }
