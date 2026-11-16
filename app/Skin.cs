@@ -20,34 +20,35 @@ namespace DSHProxy
 {
     internal static class Theme
     {
-        // Solid colours (for native controls that cannot be translucent).
-        public static readonly Color Page = Hex("#03110E");      // window base under the backdrop
-        public static readonly Color Card = Hex("#0B2420");      // solid stand-in for glass
-        public static readonly Color Input = Hex("#071A16");     // text boxes, drop-downs
-        public static readonly Color GlassDeep = Hex("#0A1F1B"); // the log
-        public static readonly Color Raised = Hex("#0E2A25");
-        public static readonly Color Hover = Hex("#143A33");
+        // Maritime palette: night sea and wet teak for the surfaces, sea spray
+        // for text, brass for the fittings.
+        public static readonly Color Page = Hex("#02101A");      // window base under the backdrop
+        public static readonly Color Card = Hex("#0A2230");      // solid stand-in for glass
+        public static readonly Color Input = Hex("#061824");     // text boxes, drop-downs
+        public static readonly Color GlassDeep = Hex("#04121C"); // the log
+        public static readonly Color Raised = Hex("#0D2B39");
+        public static readonly Color Hover = Hex("#12374A");
         public static readonly Color Border = Color.FromArgb(46, 255, 255, 255);
         public static readonly Color Track = Color.FromArgb(26, 255, 255, 255);
 
-        // Text.
-        public static readonly Color Text = Hex("#ECFDF6");
-        public static readonly Color Muted = Hex("#9DC4B7");
+        // Text: sea spray.
+        public static readonly Color Text = Hex("#EAF7F8");
+        public static readonly Color Muted = Hex("#94B3C0");
 
-        // Emerald, mint and teal.
-        public static readonly Color Accent = Hex("#4BE3A6");
-        public static readonly Color AccentHover = Hex("#7CF0C2");
-        public static readonly Color AccentDeep = Hex("#1FAF7A");
-        public static readonly Color AccentInk = Hex("#03231A");
-        public static readonly Color AccentDim = Hex("#10392E");
-        public static readonly Color Teal = Hex("#2CC9C2");
+        // Brass (primary actions), sea glass (accents) and the deck.
+        public static readonly Color Accent = Hex("#E4B26A");
+        public static readonly Color AccentHover = Hex("#F3CB8B");
+        public static readonly Color AccentDeep = Hex("#B8873F");
+        public static readonly Color AccentInk = Hex("#1E1403");
+        public static readonly Color AccentDim = Hex("#15303E");
+        public static readonly Color Teal = Hex("#57D9C9");
         public static readonly Color Banner = AccentDim;
 
-        // States.
-        public static readonly Color Ok = Accent;
-        public static readonly Color Warn = Hex("#F5BE55");
-        public static readonly Color Bad = Hex("#FF7A72");
-        public static readonly Color BadDim = Hex("#3A1714");
+        // Navigation lights: starboard green, brass amber, port red.
+        public static readonly Color Ok = Hex("#5BDCA8");
+        public static readonly Color Warn = Hex("#F2C14E");
+        public static readonly Color Bad = Hex("#F27C6C");
+        public static readonly Color BadDim = Hex("#3A1A18");
 
         public static Color ForLeft(double left)
         {
@@ -130,8 +131,9 @@ namespace DSHProxy
     }
 
     // ---------------------------------------------------------------------
-    // The backdrop: dark teal-green with emerald and teal glows and a mint
-    // ribbon, like light through deep water.
+    // The backdrop: night at sea. A moon low in the east over a dark horizon,
+    // stars, a moonpath on the water, long swell lines and a faint compass
+    // rose off the port quarter.
     // ---------------------------------------------------------------------
     internal static class Backdrop
     {
@@ -172,30 +174,62 @@ namespace DSHProxy
 
         private static Bitmap Render(Size size)
         {
-            // Drawn at 1/8 size and scaled up, which blurs it softly.
-            var w = Math.Max(16, size.Width / 8);
-            var h = Math.Max(16, size.Height / 8);
+            // Drawn at 1/6 size and scaled up, which blurs it softly.
+            var w = Math.Max(24, size.Width / 6);
+            var h = Math.Max(24, size.Height / 6);
             using (var small = new Bitmap(w, h, PixelFormat.Format32bppArgb))
             {
                 using (var g = Graphics.FromImage(small))
                 {
                     g.SmoothingMode = SmoothingMode.AntiAlias;
-                    using (var basis = new LinearGradientBrush(new Rectangle(0, 0, w, h), ColorTranslator.FromHtml("#06241E"), ColorTranslator.FromHtml("#020A09"), 55f)) g.FillRectangle(basis, 0, 0, w, h);
-                    Blob(g, w * 0.82f, h * 0.18f, w * 0.55f, h * 0.55f, Color.FromArgb(200, 0x0E, 0x9F, 0x6E));  // emerald, top right
-                    Blob(g, w * 0.10f, h * 0.92f, w * 0.55f, h * 0.60f, Color.FromArgb(190, 0x0B, 0x6F, 0x7A));  // teal, bottom left
-                    Blob(g, w * 0.38f, h * 0.30f, w * 0.40f, h * 0.35f, Color.FromArgb(150, 0x0A, 0x4D, 0x3A));  // deep green
-                    Blob(g, w * 0.60f, h * 0.78f, w * 0.30f, h * 0.22f, Color.FromArgb(140, 0x18, 0xB0, 0x9A));  // sea glass
-                    // The ribbon: a bright mint band sweeping across the lower right.
-                    using (var ribbon = new GraphicsPath())
+                    var horizon = h * 0.44f;
+                    // Night sky, lighter towards the horizon.
+                    using (var sky = new LinearGradientBrush(new RectangleF(0, 0, w, horizon + 1), ColorTranslator.FromHtml("#071E2C"), ColorTranslator.FromHtml("#104456"), LinearGradientMode.Vertical)) g.FillRectangle(sky, 0, 0, w, horizon + 1);
+                    // Stars are drawn crisp on the finished image, not blurred with
+                    // the rest of the scene (see below).
+                    // The moon, low in the east, with its halo.
+                    Blob(g, w * 0.86f, h * 0.13f, w * 0.26f, h * 0.20f, Color.FromArgb(90, 0xBF, 0xE9, 0xE4));
+                    using (var moon = new SolidBrush(Color.FromArgb(235, 0xE9, 0xF7, 0xF4))) g.FillEllipse(moon, w * 0.86f - w * 0.030f, h * 0.13f - w * 0.030f, w * 0.06f, w * 0.06f);
+                    // The sea.
+                    using (var sea = new LinearGradientBrush(new RectangleF(0, horizon, w, h - horizon), ColorTranslator.FromHtml("#0A3746"), ColorTranslator.FromHtml("#020C16"), LinearGradientMode.Vertical)) g.FillRectangle(sea, 0, horizon, w, h - horizon);
+                    // The moonpath: broken bars of light running towards us.
+                    using (var path = new SolidBrush(Color.FromArgb(95, 0xC8, 0xEE, 0xE8)))
                     {
-                        ribbon.AddBezier(w * 0.45f, h * 1.05f, w * 0.62f, h * 0.55f, w * 0.80f, h * 0.70f, w * 1.05f, h * 0.35f);
-                        ribbon.AddLine(w * 1.05f, h * 0.35f, w * 1.05f, h * 0.55f);
-                        ribbon.AddBezier(w * 1.05f, h * 0.55f, w * 0.84f, h * 0.86f, w * 0.68f, h * 0.70f, w * 0.58f, h * 1.05f);
-                        ribbon.CloseFigure();
-                        using (var brush = new LinearGradientBrush(new RectangleF(w * 0.45f, h * 0.35f, w * 0.6f, h * 0.7f), Color.FromArgb(150, 0x3D, 0xE8, 0xA8), Color.FromArgb(120, 0x1A, 0xB8, 0xC0), 20f)) g.FillPath(brush, ribbon);
+                        for (var i = 0; i < 10; i++)
+                        {
+                            var left = w * (0.735f + 0.012f * (i % 3));
+                            var top = horizon + (h - horizon) * (0.04f + i * 0.095f);
+                            g.FillRectangle(path, left, top, w * Math.Max(0.03f, 0.10f - 0.008f * i), Math.Max(1f, h * 0.006f));
+                        }
+                    }
+                    // Long swell lines, closer together towards the horizon.
+                    for (var i = 0; i < 9; i++)
+                    {
+                        var t = i / 9f;
+                        var y0 = horizon + (h - horizon) * (0.08f + t * 0.92f);
+                        var amp = 1.2f + 4f * t;
+                        using (var wave = new GraphicsPath())
+                        {
+                            wave.AddBezier(-w * 0.05f, y0, w * 0.30f, y0 - amp, w * 0.62f, y0 + amp, w * 1.05f, y0 - amp * 0.4f);
+                            wave.AddLine(w * 1.05f, h, -w * 0.05f, h);
+                            wave.CloseFigure();
+                            using (var brush = new SolidBrush(Color.FromArgb(24 + i * 3, 0x3F, 0xC8, 0xBE))) g.FillPath(brush, wave);
+                        }
+                    }
+                    // Foam at the horizon; a faint compass rose off the port quarter.
+                    using (var foam = new Pen(Color.FromArgb(50, 0xDD, 0xF1, 0xEE), 1f)) g.DrawLine(foam, 0, horizon, w, horizon);
+                    using (var rose = new Pen(Color.FromArgb(28, 0xBF, 0xE9, 0xE4), 1f))
+                    {
+                        var cx = w * 0.09f;
+                        var cy = h * 0.90f;
+                        var r = Math.Min(w, h) * 0.11f;
+                        g.DrawEllipse(rose, cx - r, cy - r, r * 2, r * 2);
+                        g.DrawEllipse(rose, cx - r * 0.5f, cy - r * 0.5f, r, r);
+                        g.DrawLine(rose, cx, cy - r, cx, cy + r);
+                        g.DrawLine(rose, cx - r, cy, cx + r, cy);
                     }
                     // Darker edges keep text readable at the sides.
-                    using (var edge = new LinearGradientBrush(new Rectangle(0, 0, w, h), Color.FromArgb(70, 0, 0, 0), Color.FromArgb(0, 0, 0, 0), 0f)) g.FillRectangle(edge, 0, 0, w / 3, h);
+                    using (var edge = new LinearGradientBrush(new Rectangle(0, 0, w, h), Color.FromArgb(80, 0, 0, 0), Color.FromArgb(0, 0, 0, 0), 0f)) g.FillRectangle(edge, 0, 0, w / 3, h);
                 }
                 var full = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppPArgb);
                 using (var g = Graphics.FromImage(full))
@@ -206,6 +240,18 @@ namespace DSHProxy
                     {
                         attributes.SetWrapMode(WrapMode.TileFlipXY);
                         g.DrawImage(small, new Rectangle(0, 0, size.Width, size.Height), 0, 0, w, h, GraphicsUnit.Pixel, attributes);
+                    }
+                    // Stars, crisp, in the sky above the horizon.
+                    var random = new Random(1846);
+                    using (var star = new SolidBrush(Color.FromArgb(120, 0xE6, 0xF3, 0xF2)))
+                    {
+                        for (var i = 0; i < 60; i++)
+                        {
+                            var sx = random.Next(size.Width);
+                            var sy = random.Next((int)(size.Height * 0.38f));
+                            if (Math.Abs(sx - size.Width * 0.86f) < size.Width * 0.12f && sy < size.Height * 0.26f) continue;
+                            g.FillRectangle(star, sx, sy, 1, 1);
+                        }
                     }
                 }
                 return full;
@@ -278,10 +324,10 @@ namespace DSHProxy
         {
             using (var path = Rounded(r, radius))
             {
-                using (var fill = new SolidBrush(Color.FromArgb(strong ? 34 : 20, 255, 255, 255))) g.FillPath(fill, path);
+                using (var fill = new SolidBrush(Color.FromArgb(strong ? 46 : 28, 255, 255, 255))) g.FillPath(fill, path);
                 var sheenHeight = Math.Max(2, Math.Min(r.Height, 80));
                 var sheen = new Rectangle(r.X, r.Y, r.Width, sheenHeight);
-                using (var brush = new LinearGradientBrush(new Rectangle(sheen.X, sheen.Y - 1, sheen.Width, sheen.Height + 2), Color.FromArgb(strong ? 26 : 18, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f))
+                using (var brush = new LinearGradientBrush(new Rectangle(sheen.X, sheen.Y - 1, sheen.Width, sheen.Height + 2), Color.FromArgb(strong ? 30 : 20, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f))
                 {
                     var old = g.Clip;
                     g.SetClip(path, CombineMode.Intersect);
@@ -400,7 +446,7 @@ namespace DSHProxy
             else if (kind == ButtonKind.Primary)
             {
                 var top = hover ? Theme.AccentHover : Theme.Accent;
-                var bottom = down ? Theme.AccentDeep : Color.FromArgb(0x2F, 0xCF, 0x8E);
+                var bottom = down ? Theme.AccentDeep : Theme.Accent;
                 using (var path = Glass.Rounded(r, radius))
                 {
                     // A soft glow under the button.
@@ -1094,7 +1140,7 @@ namespace DSHProxy
                 var name = step.Substring(1).Trim();
                 var off = mark == '\u2717';
                 var resting = mark == '\u23F8';
-                var color = off ? Theme.Bad : resting ? Theme.Warn : Theme.Accent;
+                var color = off ? Theme.Bad : resting ? Theme.Warn : Theme.Ok;
                 var size = TextRenderer.MeasureText(g, name, font, Size.Empty, TextFormatFlags.NoPadding);
                 var chip = new Rectangle(x, area.Y + (area.Height - 24) / 2, size.Width + 30, 24);
                 if (chip.Right > area.Right) break;
@@ -1140,9 +1186,9 @@ namespace DSHProxy
             {
                 var on = 1;
                 DwmSetWindowAttribute(hwnd, 20, ref on, 4);
-                var caption = ColorRef(ColorTranslator.FromHtml("#04201B"));
+                var caption = ColorRef(ColorTranslator.FromHtml("#04202E"));
                 DwmSetWindowAttribute(hwnd, 35, ref caption, 4);
-                var border = ColorRef(ColorTranslator.FromHtml("#1B4A3F"));
+                var border = ColorRef(ColorTranslator.FromHtml("#1C4657"));
                 DwmSetWindowAttribute(hwnd, 34, ref border, 4);
                 var text = ColorRef(Theme.Text);
                 DwmSetWindowAttribute(hwnd, 36, ref text, 4);
@@ -1179,7 +1225,7 @@ namespace DSHProxy
 
         private sealed class DarkColors : ProfessionalColorTable
         {
-            private static readonly Color Line = ColorTranslator.FromHtml("#1B4A3F");
+            private static readonly Color Line = ColorTranslator.FromHtml("#1C4657");
             public override Color ToolStripDropDownBackground { get { return Theme.Card; } }
             public override Color ImageMarginGradientBegin { get { return Theme.Card; } }
             public override Color ImageMarginGradientMiddle { get { return Theme.Card; } }
