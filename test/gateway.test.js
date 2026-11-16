@@ -63,7 +63,7 @@ async function startBackend(t, answer) {
 const LANES = { main: ["gpt-6-astra", "claude-fable-5-2", "gemini-4-carbon-high"], empty: [] };
 const EFFORTS = { "gemini-4-carbon-high": ["high"] };
 
-async function startGateway(t, backendPort, { lanes = LANES, now } = {}) {
+async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages = null } = {}) {
   const logs = [];
   const gateway = createGateway({
     upstream: { host: "127.0.0.1", port: backendPort },
@@ -72,7 +72,8 @@ async function startGateway(t, backendPort, { lanes = LANES, now } = {}) {
     failover: createFailover(now ? { now } : {}),
     sessions: createSessions(),
     log: (line) => logs.push(line),
-    status: () => ({ ok: true })
+    status: () => ({ ok: true }),
+    supportsImages: supportsImages || undefined
   });
   const port = await listen(gateway);
   t.after(() => {
@@ -355,5 +356,26 @@ test("the status page is answered by the gateway itself", async (t) => {
   const backend = await startBackend(t, () => ({ status: 200 }));
   const { url } = await startGateway(t, backend.port);
   assert.deepEqual(await (await fetch(`${url}/dshproxy/status`)).json(), { ok: true });
+  assert.equal(backend.seen.length, 0);
+});
+
+test("an image request skips text-only rungs on a lane", async (t) => {
+  const backend = await startBackend(t, (model) => ({ status: 200, body: { served: model } }));
+  const { url } = await startGateway(t, backend.port, { supportsImages: (model) => model !== "gpt-6-astra" });
+  const image = { type: "image", source: { type: "base64", media_type: "image/png", data: "AAA" } };
+  const response = await post(url, { model: "lane-main", max_tokens: 5, messages: [{ role: "user", content: [image] }] });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { served: "claude-fable-5-2" });
+  assert.deepEqual(backend.seen.map((request) => request.model), ["claude-fable-5-2"]);
+});
+
+test("an image on a lane with no image-capable rung is refused before anything is sent", async (t) => {
+  const backend = await startBackend(t, (model) => ({ status: 200, body: { served: model } }));
+  const { url } = await startGateway(t, backend.port, { supportsImages: () => false });
+  const response = await post(url, { model: "lane-main", messages: [{ role: "user", content: [{ type: "input_image", image_url: "data:image/png;base64,AAA" }] }] });
+  assert.equal(response.status, 400);
+  const body = await response.json();
+  assert.equal(body.error.type, "dshproxy_no_image_rung");
+  assert.match(body.error.message, /accepts images/);
   assert.equal(backend.seen.length, 0);
 });

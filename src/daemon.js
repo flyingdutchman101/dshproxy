@@ -66,6 +66,18 @@ async function start({ home, print = console.log, restart = null } = {}) {
   // Subscription models come from the latest discovery; API-key models from
   // the saved keys. Re-read when the model list or the accounts change.
   let offered = { isAvailable: state.isAvailable, at: Date.now() };
+  let imageCache = { at: 0, map: new Map() };
+  const imageModels = () => {
+    if (Date.now() - imageCache.at > ACCOUNT_CACHE_MS) {
+      try {
+        const offered = app.offeredModels(settings, activeAccounts(), state.readable, app.readDiscovery(state.home));
+        imageCache = { at: Date.now(), map: new Map(offered.models.map((m) => [m.id, !Array.isArray(m.input) || m.input.length === 0 || m.input.includes("image")])) };
+      } catch {
+        imageCache = { at: Date.now(), map: new Map() };
+      }
+    }
+    return imageCache.map;
+  };
   const isAvailable = (model) => {
     if (Date.now() - offered.at > ACCOUNT_CACHE_MS) {
       const discovery = app.readDiscovery(state.home);
@@ -299,6 +311,12 @@ async function start({ home, print = console.log, restart = null } = {}) {
     upstream: { host: settings.host, port: settings.backendPort },
     resolve: createResolver({ lanes: () => settings.lanes, isAvailable }),
     describe,
+    // Which models can take an image. Read from the offered models (their
+    // input lists) and refreshed on the same cache as the accounts.
+    supportsImages: (id) => {
+      const model = imageModels().get(id);
+      return model === undefined ? true : model;
+    },
     failover,
     sessions: createSessions(),
     log,

@@ -1,3 +1,4 @@
+const { carriesImage } = require("./content");
 const http = require("http");
 const zlib = require("zlib");
 const { prepareBody } = require("./request");
@@ -76,7 +77,7 @@ function decodedText(buffer, encoding) {
 // on the rung that served it.
 // `control(req, res)` handles the app's control calls and returns true when it
 // took the request.
-function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}), control = null, maxBodyBytes = MAX_BODY_BYTES }) {
+function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}), control = null, supportsImages = null, maxBodyBytes = MAX_BODY_BYTES }) {
   const forward = (req, headers, body, track) => new Promise((resolvePromise, reject) => {
     const out = http.request({
       host: upstream.host,
@@ -152,6 +153,19 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       log(`${label}: no rung is available`);
       sendJson(res, 503, { error: { type: "dshproxy_no_rung", message: `No model on lane "${route.lane}" is available. Sign in to an account or add an API key, then check \`dshproxy status\`.` } });
       return;
+    }
+
+    // An image can only be served by a model that accepts one, so those rungs
+    // are the only ones tried. A lane with no such rung is refused here rather
+    // than failed over rung by rung.
+    if (supportsImages && carriesImage(parsed)) {
+      const capable = route.ladder.filter((model) => supportsImages(model));
+      if (!capable.length) {
+        log(`${label}: no rung accepts images`);
+        sendJson(res, 400, { error: { type: "dshproxy_no_image_rung", message: `No model on ${route.lane ? `lane "${route.lane}"` : "this route"} accepts images. Pick a vision model such as claude-opus-5-5 or gemini-4-carbon-high.` } });
+        return;
+      }
+      route.ladder = capable;
     }
 
     // A conversation stays on the rung that last served it, while that rung is

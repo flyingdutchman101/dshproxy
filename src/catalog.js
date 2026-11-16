@@ -154,6 +154,8 @@ function regionForKey(providerKey, apiKey, regionKey) {
   return providerRegionKey(providerKey, regionKey);
 }
 
+// API-key models are text-only unless the provider entry says otherwise:
+// claiming an image a provider cannot take would fail mid-turn.
 const apiModel = (providerKey, model) => ({
   id: `${providerKey}/${model.name}`,
   name: model.displayName,
@@ -162,7 +164,8 @@ const apiModel = (providerKey, model) => ({
   api: "compat",
   contextWindow: model.contextWindow,
   maxTokens: model.maxTokens,
-  efforts: model.efforts
+  efforts: model.efforts,
+  input: Array.isArray(model.input) && model.input.length ? [...model.input] : ["text"]
 });
 
 // Models a provider serves in the given region.
@@ -205,8 +208,13 @@ const laneName = (id) => (typeof id === "string" && id.startsWith(LANE_PREFIX) ?
 function laneModels(lanes, lookup = () => null) {
   return Object.entries(lanes || {}).map(([name, ladder]) => {
     const known = ladder.map((id) => lookup(id) || findModel(id)).filter(Boolean);
+    // A lane declares image input when any rung accepts one (the gateway then
+    // sends images only to those rungs). A ladder with no vision model stays
+    // text-only, so an attachment is refused before it is attached.
+    const inputs = known.flatMap((model) => (Array.isArray(model.input) && model.input.length ? model.input : ["text", "image"]));
     return {
       id: laneId(name),
+      input: inputs.includes("image") ? ["text", "image"] : ["text"],
       name: `Lane · ${name}`,
       lane: name,
       api: "lanes",

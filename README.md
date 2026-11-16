@@ -140,6 +140,12 @@ Everything is under `~/.dshproxy` (override with `DSHPROXY_HOME`):
 
 If `settings.json` exists but cannot be read, every command stops with an error and leaves the file as it is. Fix the file, or move it away to start from the defaults.
 
+## Attachments
+
+DeepSeek Harness accepts two kinds of input: text and images (PNG, JPEG, WebP, GIF). Nothing else is sent to a model — a PDF, Word file or audio clip is not an attachment any model can receive through DeepSeek Harness, whatever the provider supports.
+
+Images work on lanes without any setting. A lane declares image input when at least one rung accepts images, and the gateway then sends an image request only to those rungs, skipping text-only models (API-key models are declared text-only). A lane with no vision rung refuses the image immediately with "no model on this lane accepts images" instead of failing rung by rung.
+
 ## Lanes and routing presets
 
 A lane is one model ID that tries a ladder of real models in order. The ladders come in three ready-made sets, switched on the **Lanes** tab (or with `dshproxy preset use <name>`); switching replaces all five ladders at once and re-applies the DeepSeek Harness routes:
