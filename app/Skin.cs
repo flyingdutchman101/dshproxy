@@ -227,6 +227,7 @@ namespace DSHProxy
 
         private static Bitmap Render(Size size)
         {
+            Dbg.Write("backdrop render");
             // Drawn at full resolution with vector gradients, so it stays sharp
             // on any window size and any display scaling. The softness comes
             // from the gradients themselves, not from upscaling a small bitmap.
@@ -414,7 +415,7 @@ namespace DSHProxy
         public static void PaintBehind(Graphics g, Control control, Rectangle rect)
         {
             var form = control.FindForm();
-            if (form == null) { using (var b = new SolidBrush(Theme.Card)) g.FillRectangle(b, rect); return; }
+            if (form == null) { Dbg.Write("fallback fill " + control.GetType().Name); using (var b = new SolidBrush(Theme.Card)) g.FillRectangle(b, rect); return; }
 
             // Find the glass surface this control sits on (itself included).
             Control hostControl = null;
@@ -432,6 +433,7 @@ namespace DSHProxy
                 var version = Backdrop.Version;
                 if (host.Background == null || host.BackgroundAt != at || host.BackgroundSize != size || host.BackgroundVersion != version)
                 {
+                    Dbg.Write("glass cache rebuild " + hostControl.GetType().Name + " " + size.Width + "x" + size.Height);
                     if (host.Background != null) host.Background.Dispose();
                     host.Background = new Bitmap(Math.Max(1, size.Width), Math.Max(1, size.Height));
                     using (var bg = Graphics.FromImage(host.Background))
@@ -442,9 +444,18 @@ namespace DSHProxy
                 }
                 var origin = control.PointToScreen(Point.Empty);
                 var source = new Rectangle(origin.X - at.X + rect.X, origin.Y - at.Y + rect.Y, rect.Width, rect.Height);
+                var cache = host.Background;
+                if (source.X < 0 || source.Y < 0 || source.Right > cache.Width || source.Bottom > cache.Height)
+                {
+                    // Part of the control lies outside the cached surface (a control
+                    // straddling a card edge). Blitting that slice would leave the
+                    // uncovered part untouched, so compose it directly instead.
+                    Compose(g, control, rect);
+                    return;
+                }
                 var state = g.Save();
                 g.SetClip(rect, CombineMode.Intersect);
-                g.DrawImage(host.Background, new Rectangle(rect.X, rect.Y, rect.Width, rect.Height), source, GraphicsUnit.Pixel);
+                g.DrawImage(cache, new Rectangle(rect.X, rect.Y, rect.Width, rect.Height), source, GraphicsUnit.Pixel);
                 g.Restore(state);
                 return;
             }

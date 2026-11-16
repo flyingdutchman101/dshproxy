@@ -22,6 +22,24 @@ using System.Web.Script.Serialization;
 
 namespace DSHProxy
 {
+    internal static class Dbg
+    {
+        private static readonly bool On = Environment.GetEnvironmentVariable("DSHProxyDebug") == "1";
+        private static readonly object Gate = new object();
+
+        public static void Write(string what)
+        {
+            if (!On) return;
+            try
+            {
+                lock (Gate)
+                    File.AppendAllText(Path.Combine(Path.GetTempPath(), "dshproxy-paint.log"),
+                        DateTime.Now.ToString("HH:mm:ss.fff") + " " + what + Environment.NewLine);
+            }
+            catch (Exception) { }
+        }
+    }
+
     internal static class Program
     {
         // A second launch signals this event, so the instance already in the tray
@@ -754,6 +772,8 @@ namespace DSHProxy
         private ArrayList modelRows = new ArrayList();
         private bool showHiddenModels;
         private bool fillingModels;
+        private int failedPolls;
+        private string accountsKey = "";
         private string modelsKey = "";
         private string keysKey = "";
         private string lanesKey = "";
@@ -947,8 +967,15 @@ namespace DSHProxy
         // The status pill next to the app name.
         private void ShowState(string text, Color color)
         {
-            stateLabel.Text = text;
-            stateLabel.Tint = color;
+            SetText(stateLabel, text);
+            if (stateLabel.Tint != color) stateLabel.Tint = color;
+        }
+
+        // Assigning the same string still invalidates the control, so a status
+        // refresh every three seconds repainted the whole window for nothing.
+        private static void SetText(Control control, string text)
+        {
+            if (control.Text != text) control.Text = text;
         }
 
         private void BuildLayout()
@@ -1137,6 +1164,7 @@ namespace DSHProxy
 
         private void BeginResizePreview()
         {
+            Dbg.Write("preview begin");
             if (resizePreview != null || IsDisposed || !IsHandleCreated) return;
             var size = ClientSize;
             if (size.Width < 2 || size.Height < 2) return;
@@ -1165,6 +1193,7 @@ namespace DSHProxy
 
         private void EndResizePreview()
         {
+            Dbg.Write("preview end");
             resizeWatchdog.Stop();
             if (resizePreview == null) return;
             Controls.Remove(resizePreview);
@@ -1286,6 +1315,13 @@ namespace DSHProxy
 
         private void RefreshStatus()
         {
+            Dbg.Write("tick start");
+            RefreshStatusCore();
+            Dbg.Write("tick end");
+        }
+
+        private void RefreshStatusCore()
+        {
             if (refreshing) return;
             refreshing = true;
             ThreadPool.QueueUserWorkItem(_ =>
@@ -1302,10 +1338,15 @@ namespace DSHProxy
         {
             if (result.Code != 0)
             {
+                // A single slow or failed poll must not wipe the window: doing so
+                // made the cards and lists flash every few seconds.
+                failedPolls++;
+                if (failedPolls < 3) return;
                 ShowState("Status unavailable", Theme.Bad);
-                detailLabel.Text = result.Err.Trim();
+                SetText(detailLabel, result.Err.Trim());
                 return;
             }
+            failedPolls = 0;
             Dictionary<string, object> status;
             try { status = Json.Obj(Json.Serializer.DeserializeObject(result.Out)); }
             catch (ArgumentException) { return; }
@@ -1318,17 +1359,19 @@ namespace DSHProxy
             var accountCount = Json.Arr(Json.Get(status, "accounts")).Count;
 
             ShowState(running ? "\u25CF Running" : "\u25CF Stopped", running ? Theme.Ok : Theme.Bad);
-            detailLabel.Text = running
+            SetText(detailLabel, running
                 ? string.Format("{0}  \u00B7  {1} {2}  \u00B7  {3} account{4}  \u00B7  {5} models offered", lastOrigin, Json.Str(Json.Get(backend, "name")), Json.Str(Json.Get(backend, "version")), accountCount, accountCount == 1 ? "" : "s", models.Count)
-                : "The gateway is not running. Press Start.";
+                : "The gateway is not running. Press Start.");
             startButton.Enabled = !running;
             stopButton.Enabled = running;
             tray.Text = running ? "DSHProxy: running" : "DSHProxy: stopped";
-            footer.Text = "Data: " + Json.Str(Json.Get(status, "home")) + "    Program: " + cli.Root + "    Build: " + BuildInfo.Stamp;
+            SetText(footer, "Data: " + Json.Str(Json.Get(status, "home")) + "    Program: " + cli.Root + "    Build: " + BuildInfo.Stamp);
             loginProviders = Json.Arr(Json.Get(status, "loginProviders"));
 
             if (running && !wasRunning) LoadLimits(false);
-            if (!running) ShowAccountsMessage("The gateway is not running. Press Start to see accounts and limits.", Theme.Muted);
+            // Only speak up when the gateway actually went down, not on every
+            // poll that reports it: replacing the cards each tick was a flash.
+            if (!running && wasRunning) ShowAccountsMessage("The gateway is not running. Press Start to see accounts and limits.", Theme.Muted);
 
             // API keys
             var keys = Json.Obj(Json.Get(status, "apiKeys"));
@@ -1389,15 +1432,14 @@ namespace DSHProxy
                 lanesList.EndUpdate();
             }
             ShowRouting(Json.Obj(Json.Get(status, "routing")));
-            lanesList.Invalidate();
 
             // Models and backend updates
             modelRows = Json.Arr(Json.Get(status, "modelList"));
             var discovery = Json.Obj(Json.Get(status, "discovery"));
             var fetchedAt = Format.ParseTime(Json.Str(Json.Get(discovery, "fetchedAt")));
             var catalogError = Json.Str(Json.Get(discovery, "catalogError"));
-            modelsNote.Text = catalogError.Length > 0 ? "Model catalog not reachable: " + catalogError
-                : fetchedAt.HasValue ? "Last checked " + Format.Ago(fetchedAt.Value) + "." : "Not checked yet.";
+            SetText(modelsNote, catalogError.Length > 0 ? "Model catalog not reachable: " + catalogError
+                : fetchedAt.HasValue ? "Last checked " + Format.Ago(fetchedAt.Value) + "." : "Not checked yet.");
             FillModels();
             FillSuggestions(Json.Arr(Json.Get(status, "suggestions")));
             ShowUpdate(Json.Obj(Json.Get(status, "update")), Json.Obj(Json.Get(status, "backendLock")));
@@ -1489,7 +1531,12 @@ namespace DSHProxy
 
         private void ShowLimits(ArrayList accounts)
         {
-            limitsNote.Text = "Limits updated " + Format.Ago(limitsAt.Value) + ". They refresh every minute.";
+            SetText(limitsNote, "Limits updated " + Format.Ago(limitsAt.Value) + ". They refresh every minute.");
+            // Rebuilt only when the data changed: rebuilding on a timer threw the
+            // cards away and repainted the panel flat for a frame.
+            var print = Json.Serializer.Serialize(accounts);
+            if (print == accountsKey && accountsPanel.Controls.Count > 0) return;
+            accountsKey = print;
             accountsPanel.SuspendLayout();
             accountsPanel.Controls.Clear();
             if (accounts.Count == 0)
