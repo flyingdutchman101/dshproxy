@@ -29,8 +29,9 @@ namespace DSHProxy
         {
             // The interface is in English, so dates and numbers are formatted in
             // English too. Without this they follow the Windows regional setting
-            // and come out mixed ("Thu" next to "čet"), which reads like a bug.
-            // Times are still converted to the machine's own time zone.
+            // and come out mixed (English weekday names beside local ones), which
+            // reads like a bug. Times are still converted to the machine's own
+            // time zone.
             var display = CultureInfo.GetCultureInfo("en-US");
             CultureInfo.DefaultThreadCurrentCulture = display;
             CultureInfo.DefaultThreadCurrentUICulture = display;
