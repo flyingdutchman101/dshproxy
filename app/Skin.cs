@@ -132,9 +132,10 @@ namespace DSHProxy
     }
 
     // ---------------------------------------------------------------------
-    // The backdrop: night at sea. A moon low in the east over a dark horizon,
-    // stars, a moonpath on the water, long swell lines and a faint compass
-    // rose off the port quarter.
+    // The backdrop: a deep night sky, dark top to bottom, scattered with stars.
+    // Earlier versions had a horizon, a lit sea and a moon; on a full-screen
+    // window those bands read as scaling artifacts, so the scene is one even
+    // colour now and the glass does the rest.
     // ---------------------------------------------------------------------
     internal static class Backdrop
     {
@@ -228,9 +229,9 @@ namespace DSHProxy
         private static Bitmap Render(Size size)
         {
             Dbg.Write("backdrop render");
-            // Drawn at full resolution with vector gradients, so it stays sharp
-            // on any window size and any display scaling. The softness comes
-            // from the gradients themselves, not from upscaling a small bitmap.
+            // One deep, even night colour top to bottom. Earlier versions had a
+            // horizon, a lit sea and swell lines; at full-screen sizes the bands
+            // read as scaling artifacts, and the bright lower half hurt contrast.
             var full = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppPArgb);
             using (var g = Graphics.FromImage(full))
             {
@@ -239,56 +240,21 @@ namespace DSHProxy
                 g.CompositingQuality = CompositingQuality.HighQuality;
                 var w = (float)size.Width;
                 var h = (float)size.Height;
-                var horizon = h * 0.44f;
-                // Night sky, lighter towards the horizon.
-                using (var sky = new LinearGradientBrush(new RectangleF(0, 0, w, horizon + 2), ColorTranslator.FromHtml("#04141D"), ColorTranslator.FromHtml("#0B3140"), LinearGradientMode.Vertical)) g.FillRectangle(sky, 0, 0, w, horizon + 2);
-                // The moon, low in the east: a wide halo, a soft rim, a bright disc.
-                // The moon: a wide, faint glow and a small bright disc. Drawn as
-                // two soft blobs rather than one hard rim, which read as a grey
-                // ball at full resolution.
-                Blob(g, w * 0.86f, h * 0.13f, w * 0.30f, h * 0.22f, Color.FromArgb(24, 0xBF, 0xE9, 0xE4));
-                Blob(g, w * 0.86f, h * 0.13f, w * 0.12f, h * 0.09f, Color.FromArgb(50, 0xDD, 0xF5, 0xF0));
-                var radius = Math.Min(w, h) * 0.028f;
-                using (var moon = new SolidBrush(Color.FromArgb(248, 0xF4, 0xFC, 0xFA))) g.FillEllipse(moon, w * 0.86f - radius, h * 0.13f - radius, radius * 2, radius * 2);
-                // Stars, crisp, kept clear of the moon.
+                // A very slight vertical fall-off: lighter at the top, so the
+                // window keeps some depth without any bands.
+                using (var sky = new LinearGradientBrush(new RectangleF(0, 0, w, h), ColorTranslator.FromHtml("#061A24"), ColorTranslator.FromHtml("#020B11"), LinearGradientMode.Vertical)) g.FillRectangle(sky, 0, 0, w, h);
+                // Stars only: no moon or glow, whose radial gradients band
+                // visibly on a large dark surface.
                 var random = new Random(1846);
-                using (var star = new SolidBrush(Color.FromArgb(90, 0xE6, 0xF3, 0xF2)))
+                using (var star = new SolidBrush(Color.FromArgb(72, 0xE6, 0xF3, 0xF2)))
                 {
-                    for (var i = 0; i < 160; i++)
+                    for (var i = 0; i < 150; i++)
                     {
                         var sx = random.Next(size.Width);
-                        var sy = random.Next((int)(horizon * 0.86f));
-                        if (Math.Abs(sx - w * 0.86f) < w * 0.12f && sy < h * 0.26f) continue;
+                        var sy = random.Next((int)(h * 0.62f));
                         var big = random.Next(12) == 0;
                         g.FillRectangle(star, sx, sy, big ? 2 : 1, big ? 2 : 1);
                     }
-                }
-                // The sea.
-                using (var sea = new LinearGradientBrush(new RectangleF(0, horizon, w, h - horizon), ColorTranslator.FromHtml("#072734"), ColorTranslator.FromHtml("#010810"), LinearGradientMode.Vertical)) g.FillRectangle(sea, 0, horizon, w, h - horizon);
-                // Long swell lines, closer together towards the horizon.
-                for (var i = 0; i < 10; i++)
-                {
-                    var t = i / 10f;
-                    var y0 = horizon + (h - horizon) * (0.06f + t * 0.94f);
-                    var amp = 2f + 10f * t;
-                    using (var wave = new GraphicsPath())
-                    {
-                        wave.AddBezier(-w * 0.02f, y0, w * 0.28f, y0 - amp, w * 0.62f, y0 + amp * 0.8f, w * 1.02f, y0 - amp * 0.5f);
-                        wave.AddLine(w * 1.02f, h, -w * 0.02f, h);
-                        wave.CloseFigure();
-                        using (var brush = new SolidBrush(Color.FromArgb(7 + i * 2, 0x3F, 0xC8, 0xBE))) g.FillPath(brush, wave);
-                    }
-                }
-                // A faint compass rose off the port quarter.
-                using (var rose = new Pen(Color.FromArgb(30, 0xBF, 0xE9, 0xE4), 1.4f))
-                {
-                    var cx = w * 0.09f;
-                    var cy = h * 0.90f;
-                    var r = Math.Min(w, h) * 0.11f;
-                    g.DrawEllipse(rose, cx - r, cy - r, r * 2, r * 2);
-                    g.DrawEllipse(rose, cx - r * 0.5f, cy - r * 0.5f, r, r);
-                    g.DrawLine(rose, cx, cy - r, cx, cy + r);
-                    g.DrawLine(rose, cx - r, cy, cx + r, cy);
                 }
                 return full;
             }
