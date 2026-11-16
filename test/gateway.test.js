@@ -381,92 +381,44 @@ test("an image on a lane with no image-capable rung is refused before anything i
   assert.equal(backend.seen.length, 0);
 });
 
-test("a forced model is served by a sibling when it is out of quota", async (t) => {
-  const backend = await startBackend(t, (model) =>
-    model === "gemini-4-carbon-high"
-      ? { status: 200, body: { served: model } }
-      : { status: 429, body: { error: { message: "Resource has been exhausted (e.g. check quota)." } } });
-  const { url, logs } = await startGateway(t, backend.port, {
-    resolve: (id) => (id === "gemini-3.8-flash-high"
-      ? { lane: null, ladder: [id], fallbacks: ["gemini-4-carbon-high"] }
-      : { lane: null, ladder: [id] })
-  });
-  const response = await post(url, { model: "gemini-3.8-flash-high", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { served: "gemini-4-carbon-high" });
-  assert.equal(response.headers.get("x-dshproxy-model"), "gemini-4-carbon-high");
-  assert.equal(response.headers.get("x-dshproxy-fallback"), "gemini-3.8-flash-high");
-  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-3.8-flash-high", "gemini-4-carbon-high"]);
-  assert.match(logs.join("\n"), /gemini-3\.8-flash-high returned HTTP 429.*using gemini-4-carbon-high/);
-});
-
-test("a forced model keeps its own answer when it is healthy", async (t) => {
+test("a forced model runs exactly as picked", async (t) => {
   const backend = await startBackend(t, (model) => ({ status: 200, body: { served: model } }));
-  const { url } = await startGateway(t, backend.port, {
-    resolve: (id) => (id === "gemini-3.8-flash-high" ? { lane: null, ladder: [id], fallbacks: ["gemini-4-carbon-high"] } : { lane: null, ladder: [id] })
-  });
-  const response = await post(url, { model: "gemini-3.8-flash-high", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-dshproxy-model"), "gemini-3.8-flash-high");
-  assert.equal(response.headers.get("x-dshproxy-fallback"), null);
-  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-3.8-flash-high"]);
-});
-
-test("a bad request from a forced model is not retried on a sibling", async (t) => {
-  const backend = await startBackend(t, () => ({ status: 400, body: { error: { message: "invalid request" } } }));
-  const { url } = await startGateway(t, backend.port, {
-    resolve: (id) => (id === "gemini-3.8-flash-high" ? { lane: null, ladder: [id], fallbacks: ["gemini-4-carbon-high"] } : { lane: null, ladder: [id] })
-  });
-  const response = await post(url, { model: "gemini-3.8-flash-high", messages: [{ role: "user", content: "hi" }] });
-  assert.equal(response.status, 400);
-  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-3.8-flash-high"]);
-});
-test("a forced image request does not fall back to a text-only sibling", async (t) => {
-  const backend = await startBackend(t, (model) => (model === "gemini-4-carbon-high" ? { status: 200, body: { served: model } } : { status: 429, body: { error: { message: "Resource has been exhausted (e.g. check quota)." } } }));
-  const { url } = await startGateway(t, backend.port, {
-    supportsImages: (model) => model === "gemini-3.8-flash-high" || model === "gemini-4-carbon-high",
-    resolve: (id) => (id === "gemini-3.8-flash-high" ? { lane: null, ladder: [id], fallbacks: ["gemini-4-carbon-high", "gpt-6-astra"] } : { lane: null, ladder: [id] })
-  });
-  const image = { type: "image", source: { type: "base64", media_type: "image/png", data: "AAA" } };
-  const response = await post(url, { model: "gemini-3.8-flash-high", max_tokens: 5, messages: [{ role: "user", content: [image] }] });
+  const { url } = await startGateway(t, backend.port);
+  const response = await post(url, { model: "gemini-4-carbon-high", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-dshproxy-model"), "gemini-4-carbon-high");
-  // The forced model was tried first, then its vision-capable sibling; the
-  // text-only model was never sent an image.
-  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-3.8-flash-high", "gemini-4-carbon-high"]);
+  assert.equal(response.headers.get("x-dshproxy-fallback"), null);
+  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-4-carbon-high"]);
 });
 
-test("three models of one throttled account stop the walk and say why", async (t) => {
-  const backend = await startBackend(t, () => ({ status: 429, body: { error: { message: "Resource has been exhausted (e.g. check quota)." } } }));
-  const accounts = { "gemini-a": "google", "gemini-b": "google", "gemini-c": "google", "claude-x": "claude" };
-  const { url, logs } = await startGateway(t, backend.port, {
-    accountOf: (model) => accounts[model] || null,
-    resolve: (id) => (id === "gemini-a" ? { lane: null, ladder: [id], fallbacks: ["gemini-b", "gemini-c", "claude-x"] } : { lane: null, ladder: [id] })
-  });
-  const first = await post(url, { model: "gemini-a", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
-  const body = await first.json();
-  assert.equal(first.status, 429);
-  assert.equal(body.error.type, "dshproxy_account_rate_limited");
-  assert.match(body.error.message, /rate-limiting this account/);
-  // It stopped after the third Google model instead of trying the Claude one.
-  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-a", "gemini-b", "gemini-c"]);
-  assert.match(logs.join("\n"), /account google is rate-limiting/);
+test("a forced model that is out of quota returns its error and runs nothing else", async (t) => {
+  const backend = await startBackend(t, (model) => (model === "gemini-4-carbon-high" ? { status: 200, body: { served: model } } : { status: 429, body: { error: { code: 429, message: "Resource has been exhausted (e.g. check quota).", status: "RESOURCE_EXHAUSTED" } } }));
+  const { url } = await startGateway(t, backend.port);
+  const response = await post(url, { model: "gemini-3.8-flash-high", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(response.status, 429);
+  const body = await response.json();
+  assert.equal(body.error.code, 429);
+  assert.match(body.error.message, /Resource has been exhausted/);
+  // The pick was the only model tried, even though a sibling would have worked.
+  assert.deepEqual(backend.seen.map((request) => request.model), ["gemini-3.8-flash-high"]);
 });
 
-test("a cooling account is skipped without another upstream call", async (t) => {
+test("a lane still fails over, and skips an account that is rate-limiting", async (t) => {
+  const accounts = { "gpt-6-astra": "codex", "gemini-a": "google", "gemini-b": "google", "gemini-c": "google", "claude-x": "claude" };
   const backend = await startBackend(t, (model) => (model === "claude-x" ? { status: 200, body: { served: model } } : { status: 429, body: { error: { message: "Resource has been exhausted (e.g. check quota)." } } }));
-  const accounts = { "gemini-a": "google", "gemini-b": "google", "gemini-c": "google", "claude-x": "claude" };
-  const { url } = await startGateway(t, backend.port, {
-    accountOf: (model) => accounts[model] || null,
-    resolve: (id) => (id === "gemini-a" ? { lane: null, ladder: [id], fallbacks: ["gemini-b", "gemini-c", "claude-x"] } : { lane: null, ladder: [id] })
+  const ladder = ["gpt-6-astra", "gemini-a", "gemini-b", "gemini-c", "claude-x"];
+  const { url, logs } = await startGateway(t, backend.port, {
+    lanes: { mixed: ladder },
+    accountOf: (model) => accounts[model] || null
   });
-  await post(url, { model: "gemini-a", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  const first = await post(url, { model: "lane-mixed", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("x-dshproxy-model"), "claude-x");
+  assert.match(logs.join("\n"), /account google is rate-limiting/);
   const seenBefore = backend.seen.length;
-  // While Google cools, the pick is answered by the other provider without
-  // touching Google again.
-  const second = await post(url, { model: "gemini-a", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  const second = await post(url, { model: "lane-mixed", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
   assert.equal(second.status, 200);
-  assert.equal(second.headers.get("x-dshproxy-model"), "claude-x");
-  assert.equal(second.headers.get("x-dshproxy-fallback"), "gemini-a");
-  assert.deepEqual(backend.seen.slice(seenBefore).map((request) => request.model), ["claude-x"]);
+  // The cooling Google account was not touched again.
+  const touched = backend.seen.slice(seenBefore).filter((request) => request.model.startsWith("gemini-"));
+  assert.deepEqual(touched, []);
 });

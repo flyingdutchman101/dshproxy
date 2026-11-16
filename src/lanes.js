@@ -15,47 +15,14 @@ function availability({ accounts, providers }) {
 }
 
 // A lane resolves to the rungs that can serve right now, in ladder order. Any
-// other ID is a real model and is tried as it is — with siblings behind it as a
-// safety net, so a forced pick that runs out of quota is served by another model
-// of the same provider instead of failing the request.
-//
-// `siblings(id)` optionally returns other models served by the same account,
-// which covers models that are not part of any lane. `accountOf(id)` lets the
-// ordering prefer the picked model's own provider: a Claude pick should be
-// answered by another Claude model before a Gemini one.
-function createResolver({ lanes, isAvailable, siblings = () => [], accountOf = () => null, rank = () => Number.MAX_SAFE_INTEGER }) {
+// other ID is a real model and is tried exactly as it is: a forced pick never
+// runs a different model. If it is out of quota the caller gets that answer.
+function createResolver({ lanes, isAvailable }) {
   return (id) => {
     const name = laneName(id);
     const ladder = name ? lanes()[name] : null;
-    if (ladder) return { lane: name, ladder: ladder.filter((model) => isAvailable(model)) };
-    const available = (models) => models.filter((model) => model !== id && isAvailable(model));
-    const laneFallbacks = [];
-    for (const candidate of Object.values(lanes())) {
-      if (!Array.isArray(candidate) || !candidate.includes(id)) continue;
-      laneFallbacks.push(...available(candidate));
-      break;
-    }
-    const accountFallbacks = available(siblings(id));
-    // Prefer the picked model's own family (`ag-*` before `gemini-*`, `claude-*`
-    // before anything else on the same account) so a Claude-via-Google pick is
-    // answered by Claude-via-Google when possible.
-    const family = (model) => String(model).split("-")[0];
-    const sameFamily = accountFallbacks.filter((model) => family(model) === family(id));
-    const otherFamily = accountFallbacks.filter((model) => family(model) !== family(id));
-    // Within the family, the catalog order decides: a Claude pick falls back to
-    // the strongest Claude sibling rather than whichever comes first.
-    const byRank = (a, b) => rank(a) - rank(b);
-    const orderedAccount = [...sameFamily.sort(byRank), ...otherFamily.sort(byRank)];
-    const account = accountOf(id);
-    const sameProvider = account != null && laneFallbacks.length > 0 && laneFallbacks.every((model) => accountOf(model) === account);
-    const ordered = sameProvider ? [...laneFallbacks, ...orderedAccount] : [...orderedAccount, ...laneFallbacks];
-    const seen = new Set([id]);
-    const fallbacks = ordered.filter((model) => {
-      if (seen.has(model)) return false;
-      seen.add(model);
-      return true;
-    });
-    return fallbacks.length ? { lane: null, ladder: [id], fallbacks } : { lane: null, ladder: [id] };
+    if (!ladder) return { lane: null, ladder: [id] };
+    return { lane: name, ladder: ladder.filter((model) => isAvailable(model)) };
   };
 }
 

@@ -90,62 +90,11 @@ test("invalid settings fall back to the defaults", () => {
   assert.deepEqual(clean.lanes, { ok: ["gpt-6-astra"] });
 });
 
-test("a forced model gets its lane siblings, then its account siblings, as fallbacks", () => {
-  const lanes = { google: ["gemini-3.8-flash-high", "gemini-4-carbon-high"] };
-  const resolve = createResolver({ lanes: () => lanes, isAvailable: () => true, siblings: (id) => (id === "claude-opus-5" ? ["claude-sonnet-5-5", "claude-opus-5"] : []) });
-  assert.deepEqual(resolve("gemini-4-carbon-high"), { lane: null, ladder: ["gemini-4-carbon-high"], fallbacks: ["gemini-3.8-flash-high"] });
-  assert.deepEqual(resolve("claude-opus-5"), { lane: null, ladder: ["claude-opus-5"], fallbacks: ["claude-sonnet-5-5"] });
-  assert.deepEqual(resolve("gemini-3-flash"), { lane: null, ladder: ["gemini-3-flash"] });
-});
 
-test("a forced model's fallbacks skip models with no account", () => {
-  const lanes = { google: ["gemini-3.8-flash-high", "gemini-4-carbon-high", "gemini-4-hydrogen-xhigh"] };
-  const resolve = createResolver({ lanes: () => lanes, isAvailable: (id) => id !== "gemini-4-hydrogen-xhigh" });
-  assert.deepEqual(resolve("gemini-3.8-flash-high").fallbacks, ["gemini-4-carbon-high"]);
-});
 
-test("a Claude pick is answered by Claude before a Gemini lane sibling", () => {
-  const lanes = { main: ["gpt-6-astra", "claude-fable-5-2", "gemini-4-carbon-high"] };
-  const account = (id) => (id.startsWith("claude-") ? "claude" : id.startsWith("gemini-") ? "antigravity" : "codex");
-  const resolve = createResolver({
-    lanes: () => lanes,
-    isAvailable: () => true,
-    siblings: (id) => (id === "claude-fable-5-2" ? ["claude-fable-5-2", "claude-opus-5-5", "claude-sonnet-5-5"] : []),
-    accountOf: account
-  });
-  assert.deepEqual(resolve("claude-fable-5-2").fallbacks, ["claude-opus-5-5", "claude-sonnet-5-5", "gpt-6-astra", "gemini-4-carbon-high"]);
-});
 
-test("a Gemini pick keeps its Google lane order first", () => {
-  const lanes = { google: ["gemini-3.8-flash-high", "gemini-4-carbon-high", "gemini-4-hydrogen-xhigh"] };
-  const resolve = createResolver({
-    lanes: () => lanes,
-    isAvailable: () => true,
-    siblings: (id) => (id === "gemini-3.8-flash-high" ? ["gemini-3.8-flash-high", "gemini-4-carbon-high", "gemini-4-hydrogen-xhigh", "ag-c55o-high"] : []),
-    accountOf: () => "antigravity"
-  });
-  assert.deepEqual(resolve("gemini-3.8-flash-high").fallbacks, ["gemini-4-carbon-high", "gemini-4-hydrogen-xhigh", "ag-c55o-high"]);
-});
 
-test("a Claude-via-Google pick prefers its own family on that account", () => {
-  const resolve = createResolver({
-    lanes: () => ({}),
-    isAvailable: () => true,
-    siblings: (id) => (id === "ag-c55o-high" ? ["ag-c55o-high", "gemini-4-carbon-high", "ag-c55s-high"] : []),
-    accountOf: () => "antigravity"
-  });
-  assert.deepEqual(resolve("ag-c55o-high").fallbacks, ["ag-c55s-high", "gemini-4-carbon-high"]);
-});
-
-test("a throttled Claude pick falls back to the strongest Claude sibling", () => {
-  const catalog = ["claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
-  const rank = (id) => catalog.indexOf(id);
-  const resolve = createResolver({
-    lanes: () => ({}),
-    isAvailable: () => true,
-    siblings: (id) => (id === "claude-fable-5-2" ? catalog : []),
-    accountOf: () => "claude",
-    rank
-  });
-  assert.deepEqual(resolve("claude-fable-5-2").fallbacks, ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
+test("a forced model resolves to itself only", () => {
+  const resolve = createResolver({ lanes: () => ({ main: ["gpt-6-astra", "claude-opus-5-5"] }), isAvailable: () => true });
+  assert.deepEqual(resolve("claude-opus-5-5"), { lane: null, ladder: ["claude-opus-5-5"] });
 });

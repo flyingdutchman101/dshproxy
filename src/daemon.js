@@ -86,31 +86,20 @@ async function start({ home, print = console.log, restart = null } = {}) {
     return offered.isAvailable(model) || availability({ accounts: activeAccounts(), providers: state.readable })(model);
   };
 
-  // Catalog order, so a fallback prefers the stronger model of the family.
-  const catalogRank = (() => {
-    const order = new Map(catalog.SUBSCRIPTION_MODELS.map((model, index) => [model.id, index]));
-    return (id) => order.get(id) ?? Number.MAX_SAFE_INTEGER;
-  })();
 
-  // The other models a subscription account serves, so a forced pick that is out
-  // of quota can be answered by a sibling from the same provider.
-  let siblingCache = { at: 0, lists: [], accounts: new Map() };
-  const siblings = (id) => {
-    if (Date.now() - siblingCache.at > ACCOUNT_CACHE_MS) {
+  // Which account serves which model, so a lane can skip an account that is
+  // rate-limiting instead of walking all of its models.
+  let accountCache = { at: 0, accounts: new Map() };
+  const accountOf = (model) => {
+    if (Date.now() - accountCache.at > ACCOUNT_CACHE_MS) {
       try {
         const list = app.offeredModels(settings, activeAccounts(), state.readable, app.readDiscovery(state.home)).models;
-        const byAccount = new Map();
-        for (const model of list) {
-          if (!model.account) continue;
-          if (!byAccount.has(model.account)) byAccount.set(model.account, []);
-          byAccount.get(model.account).push(model.id);
-        }
-        siblingCache = { at: Date.now(), lists: [...byAccount.values()], accounts: new Map(list.filter((model) => model.account).map((model) => [model.id, model.account])) };
+        accountCache = { at: Date.now(), accounts: new Map(list.filter((item) => item.account).map((item) => [item.id, item.account])) };
       } catch {
-        siblingCache = { at: Date.now(), lists: [], accounts: new Map() };
+        accountCache = { at: Date.now(), accounts: new Map() };
       }
     }
-    return siblingCache.lists.find((ids) => ids.includes(id)) || [];
+    return accountCache.accounts.get(model) || null;
   };
 
   // ---- Model discovery: the catalog plus what the backend serves ----
@@ -336,11 +325,11 @@ async function start({ home, print = console.log, restart = null } = {}) {
 
   const gateway = createGateway({
     upstream: { host: settings.host, port: settings.backendPort },
-    resolve: createResolver({ lanes: () => settings.lanes, isAvailable, siblings, accountOf: (model) => siblingCache.accounts.get(model) || null, rank: catalogRank }),
+    resolve: createResolver({ lanes: () => settings.lanes, isAvailable }),
     describe,
     // Which models can take an image. Read from the offered models (their
     // input lists) and refreshed on the same cache as the accounts.
-    accountOf: (model) => siblingCache.accounts.get(model) || null,
+    accountOf,
     supportsImages: (id) => {
       const model = imageModels().get(id);
       return model === undefined ? true : model;

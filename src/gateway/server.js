@@ -96,11 +96,6 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
     return true;
   };
 
-  const accountWaitSeconds = (model) => {
-    const until = accountCoolingUntil.get(accountOf(model));
-    return until ? Math.max(1, Math.ceil((until - Date.now()) / 1000)) : 0;
-  };
-
   const noteAccountStrike = (model) => {
     const account = accountOf(model);
     if (!account || accountCooling(model)) return;
@@ -202,21 +197,17 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
         return;
       }
       route.ladder = capable;
-      // A fallback rung has to accept the image too.
-      if (route.fallbacks) route.fallbacks = route.fallbacks.filter((model) => supportsImages(model));
     }
 
     // A conversation stays on the rung that last served it, while that rung is
-    // still serving. A forced model keeps its own provider's siblings behind it
-    // as a safety net, so a transient 429 does not fail the request.
+    // still serving. A forced model is the only rung: what the caller selected is
+    // what runs, and its failure is returned as it is.
     const forced = route.lane ? null : route.ladder[0];
-    // A forced pick tries itself plus at most five siblings: enough to ride out a throttle, not enough to hammer the provider.
-    const candidates = route.lane ? route.ladder : [...route.ladder, ...(route.fallbacks || []).slice(0, 5)];
-    // An account that is being rate-limited answers 429 for every one of its
-    // models. Trying them all (and letting the client retry) is what turns a
-    // short throttle into a long one, so the account sits out as a whole.
-    const openRungs = candidates.filter((model) => !accountCooling(model));
-    let rungs = failover.order(openRungs.length ? openRungs : candidates);
+    // Inside a lane, an account that is being rate-limited is skipped as a whole
+    // instead of being walked model by model.
+    const laneRungs = route.lane ? route.ladder.filter((model) => !accountCooling(model)) : route.ladder;
+    const candidates = route.lane && laneRungs.length ? laneRungs : route.ladder;
+    let rungs = failover.order(candidates);
     const sessionKey = route.lane && sessions ? sessions.keyFor(route.lane, headers, parsed) : null;
     const pinned = sessionKey ? sessions.get(sessionKey) : null;
     if (pinned && rungs.includes(pinned) && failover.coolingUntil(pinned) === null) rungs = [pinned, ...rungs.filter((model) => model !== pinned)];
@@ -258,20 +249,7 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       }
 
       const verdict = failover.report(model, code, upstreamRes.headers["retry-after"], text);
-      if (verdict.failover) {
-        noteAccountStrike(model);
-        // The whole account is throttled: stop walking it and say so plainly.
-        if (accountCooling(model) && !res.destroyed) {
-          if (read) { /* body already consumed */ } else upstreamRes.resume();
-          sendJson(res, 429, {
-            error: {
-              type: "dshproxy_account_rate_limited",
-              message: `${accountOf(model) || "The provider"} is rate-limiting this account right now. Pick a model from another provider, or retry in about ${accountWaitSeconds(model)} seconds.`
-            }
-          });
-          return;
-        }
-      }
+      if (verdict.failover && route.lane) noteAccountStrike(model);
       if (verdict.failover && next && !res.destroyed) {
         if (!read) upstreamRes.resume();
         log(`${label}: ${model} ${verdict.reason}${verdict.until ? `, skipped until about ${verdict.until.toLocaleTimeString()}` : ""}; using ${next}`);
@@ -280,7 +258,6 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
 
       if (sessionKey && code < 400) sessions.set(sessionKey, model);
       const extra = { "x-dshproxy-model": model };
-      if (forced && model !== forced) extra["x-dshproxy-fallback"] = forced;
       if (route.lane) extra["x-dshproxy-lane"] = route.lane;
       relay(upstreamRes, extra, read);
       return;
