@@ -27,6 +27,15 @@ namespace DSHProxy
         [STAThread]
         private static void Main(string[] args)
         {
+            // The interface is in English, so dates and numbers are formatted in
+            // English too. Without this they follow the Windows regional setting
+            // and come out mixed ("Thu" next to "čet"), which reads like a bug.
+            // Times are still converted to the machine's own time zone.
+            var display = CultureInfo.GetCultureInfo("en-US");
+            CultureInfo.DefaultThreadCurrentCulture = display;
+            CultureInfo.DefaultThreadCurrentUICulture = display;
+            Application.CurrentCulture = display;
+
             bool created;
             // --preview: a second window that only reads the status of the
             // running gateway; it starts, stops and changes nothing, and has
