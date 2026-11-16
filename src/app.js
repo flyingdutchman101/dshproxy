@@ -80,6 +80,48 @@ async function readProviders(settings, home) {
   return { readable, unreadable };
 }
 
+// ------------------------------- custom endpoints -------------------------------
+// A custom OpenAI-compatible endpoint (LiteLLM, One API, any OpenAI-shaped
+// service) is stored by name with its key encrypted like any provider key.
+
+async function readCustom(settings, home) {
+  const saved = settings.custom || [];
+  if (!saved.length) return { entries: [], unreadable: [] };
+  let key = null;
+  try { key = await secrets.loadMasterKey(masterKeyFile(home)); } catch { key = null; }
+  const entries = [];
+  const unreadable = [];
+  for (const entry of saved) {
+    const apiKey = key && entry.keyEnc ? secrets.decryptWithKey(key, entry.keyEnc) : null;
+    if (!apiKey) { unreadable.push(entry.name); continue; }
+    entries.push({ name: entry.name, baseUrl: entry.baseUrl, models: entry.models, apiKey });
+  }
+  return { entries, unreadable };
+}
+
+async function saveCustom({ name, baseUrl, models, apiKey }, home) {
+  const clean = settingsFile.sanitizeCustom([{ name, baseUrl, models, keyEnc: "pending" }])[0];
+  if (!clean) throw new Error("A custom endpoint needs a lowercase name (2-32 letters, digits or dashes), an http(s) base URL and at least one model ID.");
+  const value = String(apiKey || "").trim();
+  if (!value) throw new Error("No API key was given.");
+  const key = await secrets.loadMasterKey(masterKeyFile(home), { create: true });
+  const settings = settingsFile.load(home);
+  const others = (settings.custom || []).filter((entry) => entry.name !== clean.name);
+  settings.custom = [...others, { name: clean.name, baseUrl: clean.baseUrl, models: clean.models, keyEnc: secrets.encryptWithKey(key, value) }];
+  settingsFile.save(settings, home);
+  return clean.name;
+}
+
+function removeCustom(name, home) {
+  const settings = settingsFile.load(home);
+  const wanted = String(name || "").toLowerCase();
+  const before = (settings.custom || []).length;
+  settings.custom = (settings.custom || []).filter((entry) => entry.name !== wanted);
+  if (settings.custom.length === before) return false;
+  settingsFile.save(settings, home);
+  return true;
+}
+
 async function saveProviderKey(provider, apiKey, region, home) {
   if (!catalog.API_PROVIDERS[provider]) throw new Error(`Unknown provider "${provider}". Use one of: ${Object.keys(catalog.API_PROVIDERS).join(", ")}.`);
   const value = String(apiKey || "").trim();
@@ -126,7 +168,7 @@ function saveDiscovery(home, value) {
 // The models that can serve right now, with the lanes that have at least one
 // such model on their ladder. Subscription models come from what the backend
 // serves and the model catalog, so new models need no DSHProxy update.
-function offeredModels(settings, activeAccounts, readable, discovery = { catalog: null, served: [] }) {
+function offeredModels(settings, activeAccounts, readable, discovery = { catalog: null, served: [] }, custom = []) {
   const options = {
     catalog: parseCatalog(discovery.catalog),
     served: discovery.served,
@@ -137,12 +179,27 @@ function offeredModels(settings, activeAccounts, readable, discovery = { catalog
   const subscription = buildModels(options);
   const offeredIds = new Set(subscription.map((model) => model.id));
   const baseAvailable = availability({ accounts: activeAccounts, providers: readable });
-  // A subscription model is available when it is offered; API-key models as before.
-  const isAvailable = (id) => offeredIds.has(id) || (!catalog.findModel(id)?.account && baseAvailable(id));
   const real = [
     ...subscription,
-    ...Object.entries(readable).flatMap(([provider, entry]) => catalog.providerModels(provider, entry.region))
+    ...Object.entries(readable).flatMap(([provider, entry]) => catalog.providerModels(provider, entry.region)),
+    // A custom OpenAI-compatible endpoint's models are addressed as
+    // `<endpoint>/<model>`, so they cannot collide with anything else.
+    ...custom.flatMap((endpoint) => endpoint.models.map((model) => ({
+      id: `${endpoint.name}/${model}`,
+      name: `${endpoint.name} · ${model}`,
+      account: null,
+      api: "compat",
+      contextWindow: 200000,
+      maxTokens: 65536,
+      efforts: [],
+      provider: endpoint.name,
+      custom: true
+    })))
   ];
+  const customIds = new Set(real.filter((model) => model.custom).map((model) => model.id));
+  // A subscription model is available when it is offered; API-key and custom
+  // models when their key can be read.
+  const isAvailable = (id) => customIds.has(id) || offeredIds.has(id) || (!catalog.findModel(id)?.account && baseAvailable(id));
   const sizes = new Map(real.map((model) => [model.id, model]));
   const lanes = catalog.laneModels(Object.fromEntries(Object.entries(settings.lanes)
     .map(([name, ladder]) => [name, ladder.filter(isAvailable)])
@@ -154,6 +211,7 @@ async function snapshot(home = settingsFile.homeDir()) {
   const settings = settingsFile.load(home);
   const authDir = settingsFile.authDirFor(settings, home);
   const { readable, unreadable } = await readProviders(settings, home);
+  const customEndpoints = await readCustom(settings, home);
   const activeAccounts = accounts.activeProviders(authDir);
   const discovery = readDiscovery(home);
   return {
@@ -166,8 +224,10 @@ async function snapshot(home = settingsFile.homeDir()) {
     activeAccounts,
     readable,
     unreadable,
+    custom: customEndpoints.entries,
+    customUnreadable: customEndpoints.unreadable,
     discovery: { fetchedAt: discovery.fetchedAt, catalogError: discovery.catalogError, hasCatalog: Boolean(discovery.catalog) },
-    ...offeredModels(settings, activeAccounts, readable, discovery)
+    ...offeredModels(settings, activeAccounts, readable, discovery, customEndpoints.entries)
   };
 }
 
@@ -181,4 +241,4 @@ function appendLog(file, line) {
   }
 }
 
-module.exports = { version, shippedLock, currentLock, writableLockFile, readDiscovery, saveDiscovery, snapshot, readProviders, saveProviderKey, removeProviderKey, offeredModels, appendLog };
+module.exports = { version, shippedLock, currentLock, writableLockFile, readDiscovery, saveDiscovery, snapshot, readProviders, saveProviderKey, removeProviderKey, readCustom, saveCustom, removeCustom, offeredModels, appendLog };

@@ -70,3 +70,21 @@ test("an existing new data folder is never replaced by the old one", (t) => {
   assert.equal(settings.load(home).port, 9200);
   assert.ok(fs.existsSync(path.join(old, "settings.json")));
 });
+
+test("custom endpoints are sanitised: name, base URL and models are required", () => {
+  const clean = settings.sanitize({
+    custom: [
+      { name: "LiteLLM", baseUrl: "http://127.0.0.1:4000/v1", models: ["gemini-2.5-pro"], keyEnc: "a" },
+      { name: "no-models", baseUrl: "http://127.0.0.1:4000/v1", models: [], keyEnc: "a" },
+      { name: "bad url", baseUrl: "ftp://x", models: ["m"], keyEnc: "a" },
+      { name: "litellm", baseUrl: "http://127.0.0.1:4001/v1", models: ["m2"], keyEnc: "b" }
+    ]
+  });
+  assert.deepEqual(clean.custom.map((entry) => entry.name), ["litellm"]);
+  assert.deepEqual(clean.custom[0].models, ["gemini-2.5-pro"]);
+});
+
+test("settings without custom endpoints default to an empty list", (t) => {
+  const home = tempHome(t);
+  assert.deepEqual(settings.load(home).custom, []);
+});

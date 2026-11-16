@@ -264,3 +264,25 @@ test("accounts are listed from the credential files without their tokens", (t) =
 test("a missing credential folder lists no accounts", (t) => {
   assert.deepEqual(accounts.list(path.join(tempDir(t), "absent")), []);
 });
+
+test("a custom OpenAI-compatible endpoint becomes an openai-compatibility group", () => {
+  const config = YAML.parse(render({
+    ...BASE,
+    custom: [{ name: "litellm", baseUrl: "http://127.0.0.1:4000/v1", apiKey: "sk-fake", models: ["gemini-2.5-pro", "claude-opus-5-5"] }]
+  }));
+  const groups = config["api-keys"]["openai-compatibility"];
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0]["base-url"], "http://127.0.0.1:4000/v1");
+  assert.deepEqual(groups[0].keys, [{ "api-key": "sk-fake" }]);
+  assert.deepEqual(groups[0].models.map((model) => model.alias), ["litellm/gemini-2.5-pro", "litellm/claude-opus-5-5"]);
+  assert.deepEqual(groups[0].models.map((model) => model.name), ["gemini-2.5-pro", "claude-opus-5-5"]);
+});
+
+test("a custom endpoint and a catalog provider can both be present", () => {
+  const config = YAML.parse(render({
+    ...BASE,
+    providers: { deepseek: { region: "international", apiKey: "sk-test-1" } },
+    custom: [{ name: "oneapi", baseUrl: "http://127.0.0.1:3000/v1", apiKey: "sk-fake", models: ["m1"] }]
+  }));
+  assert.deepEqual(config["api-keys"]["openai-compatibility"].map((group) => group.name), ["deepseek", "oneapi"]);
+});

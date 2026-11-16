@@ -50,7 +50,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
   // A new Management API key every start. Only this process knows it; the
   // backend stores a hash of it.
   const managementKey = crypto.randomBytes(32).toString("hex");
-  fs.writeFileSync(paths.config, render({ host: settings.host, port: settings.backendPort, authDir: state.authDir, requestRetry: settings.requestRetry, providers: state.readable, managementKey }));
+  fs.writeFileSync(paths.config, render({ host: settings.host, port: settings.backendPort, authDir: state.authDir, requestRetry: settings.requestRetry, providers: state.readable, custom: state.custom, managementKey }));
   if (state.unreadable.length) log(`Saved API key cannot be read for: ${state.unreadable.join(", ")}. Enter it again with \`dshproxy key set\`.`);
 
   const supervisor = createSupervisor({ binary: backend.path, configPath: paths.config, host: settings.host, port: settings.backendPort, pidFile: paths.backendPid, log });

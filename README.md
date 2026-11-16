@@ -36,6 +36,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File app\build.ps1
 
 `DSHProxy.exe` must stay in this folder, next to `bin\dshproxy.js`. It needs Node.js on the PATH.
 
+## Custom OpenAI-compatible endpoints
+
+Anything that speaks the OpenAI API can be added as a keyed provider: a self-hosted [LiteLLM](https://github.com/berriai/litellm) or [One API](https://github.com/songquanpeng/one-api) gateway, OpenRouter, or your own service. Its models are offered to DeepSeek Harness as `<name>/<model>`, so they never collide with the subscription and catalog models.
+
+```powershell
+node bin/dshproxy.js key custom add litellm http://127.0.0.1:4000/v1 "gemini-2.5-pro,claude-opus-5-5"   # the key is read from standard input
+node bin/dshproxy.js key custom list
+node bin/dshproxy.js key custom remove litellm
+```
+
+Restart the gateway and run `dsh apply` afterwards, then restart DeepSeek Harness. The endpoint authenticates with its **API key** (sent as `Authorization: Bearer …`); an account sign-in is not used, so nothing here depends on a provider's IDE entitlements. That is also why the Google Gemini API (an AI Studio key) is offered as a normal API-key provider: it is the sanctioned route to Gemini models.
+
 ## Set up from the command line
 
 ```powershell

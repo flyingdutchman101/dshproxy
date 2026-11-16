@@ -8,7 +8,7 @@ const { API_PROVIDERS, providerRegion, providerModels } = require("../catalog");
 // `managementKey` switches the Management API on for loopback callers that
 // send it; the backend replaces it with a hash when it starts. Without one the
 // Management API is off.
-function render({ host, port, authDir, requestRetry = 3, providers = {}, managementKey = "" }) {
+function render({ host, port, authDir, requestRetry = 3, providers = {}, custom = [], managementKey = "" }) {
   const config = {
     "config-version": 8,
     server: { host, port },
@@ -44,6 +44,18 @@ function render({ host, port, authDir, requestRetry = 3, providers = {}, managem
         ...(model.efforts.length ? { thinking: { levels: model.efforts } } : {})
       }))
     }));
+  // A custom OpenAI-compatible endpoint (LiteLLM, One API, anything OpenAI-shaped):
+  // its models are exposed as `<name>/<model>` so they never collide with the
+  // subscription and catalog models.
+  for (const endpoint of custom) {
+    groups.push({
+      name: endpoint.name,
+      prefix: endpoint.name,
+      "base-url": endpoint.baseUrl,
+      keys: [{ "api-key": endpoint.apiKey }],
+      models: endpoint.models.map((model) => ({ name: model, alias: `${endpoint.name}/${model}`, "display-name": `${endpoint.name} · ${model}` }))
+    });
+  }
   if (groups.length) config["api-keys"] = { "openai-compatibility": groups };
 
   return `# Written by DSHProxy on every start. Edit ~/.dshproxy/settings.json instead.\n${YAML.stringify(config, { lineWidth: 0 })}`;

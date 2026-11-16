@@ -21,6 +21,7 @@ Usage:
   dshproxy key set <provider> [region] Save an API key (read from standard input, never from the command line)
   dshproxy key remove <provider>       Remove a saved API key
   dshproxy key list                    List API-key providers and their regions
+  dshproxy key custom add|list|remove   Add a custom OpenAI-compatible endpoint (LiteLLM, One API, ...)
   dshproxy models                      List the models that can be offered right now
   dshproxy dsh apply [--dry-run]       Write the models into every DeepSeek Harness profile
   dshproxy dsh verify                  Check that DeepSeek Harness has every route it needs
@@ -289,7 +290,29 @@ async function main(argv, out = console.log) {
         out(app.removeProviderKey(provider, settingsFile.homeDir()) ? `Removed the ${provider} key. Restart the gateway, then run \`dshproxy dsh apply\`.` : `No ${provider} key was saved.`);
         return undefined;
       }
-      throw new Error("Usage: dshproxy key set|remove|list");
+      if (action === "custom") {
+        const [sub, name, baseUrl, modelsArg] = args.slice(1);
+        if (sub === "list" || sub === undefined) {
+          const state = await app.snapshot();
+          if (!state.custom.length) out("No custom endpoints. Add one: dshproxy key custom add <name> <base-url> <model[,model...]>");
+          for (const endpoint of state.custom) out(`${endpoint.name}: ${endpoint.baseUrl} - models: ${endpoint.models.join(", ")}`);
+          for (const missing of state.customUnreadable) out(`${missing}: saved, cannot be read`);
+          return undefined;
+        }
+        if (sub === "add") {
+          if (!name || !baseUrl || !modelsArg) throw new Error("Usage: dshproxy key custom add <name> <base-url> <model[,model...]>  (the key is read from standard input)");
+          const models = String(modelsArg).split(",").map((item) => item.trim()).filter(Boolean);
+          const saved = await app.saveCustom({ name, baseUrl, models, apiKey: await readSecret(`API key for ${name}: `) }, settingsFile.homeDir());
+          out(`Saved the ${saved} endpoint (${models.length} model${models.length === 1 ? "" : "s"}). Restart the gateway, then run \`dshproxy dsh apply\`.`);
+          return undefined;
+        }
+        if (sub === "remove") {
+          out(app.removeCustom(name, settingsFile.homeDir()) ? `Removed the ${name} endpoint. Restart the gateway, then run \`dshproxy dsh apply\`.` : `No ${name} endpoint was saved.`);
+          return undefined;
+        }
+        throw new Error("Usage: dshproxy key custom add|list|remove");
+      }
+      throw new Error("Usage: dshproxy key set|remove|list|custom");
     }
     case "models": {
       const state = await app.snapshot();

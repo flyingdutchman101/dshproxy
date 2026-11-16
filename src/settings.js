@@ -29,7 +29,8 @@ const DEFAULTS = {
   authDir: "",
   requestRetry: 3,
   cooldownMinutes: 10,
-  failureThreshold: 3
+  failureThreshold: 3,
+  custom: []
 };
 
 function homeDir() {
@@ -84,6 +85,29 @@ function sanitizeProviders(value) {
     .map(([key, entry]) => [key, { region: providerRegionKey(key, entry.region), keyEnc: entry.keyEnc }]));
 }
 
+// A custom OpenAI-compatible endpoint: a self-hosted gateway such as LiteLLM or
+// One API, or any other service that speaks the OpenAI API. It is addressed by
+// key like any other provider, not by an account sign-in.
+function sanitizeCustom(value) {
+  const entries = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  return entries
+    .map((entry) => ({
+      name: String(entry?.name || "").trim().toLowerCase(),
+      baseUrl: String(entry?.baseUrl || "").trim(),
+      models: [...new Set((Array.isArray(entry?.models) ? entry.models : []).map((model) => String(model).trim()).filter((model) => /^[A-Za-z0-9._:/-]{1,80}$/.test(model)))].slice(0, 100),
+      keyEnc: typeof entry?.keyEnc === "string" ? entry.keyEnc : ""
+    }))
+    .filter((entry) => {
+      if (!/^[a-z0-9][a-z0-9-]{1,31}$/.test(entry.name) || seen.has(entry.name)) return false;
+      if (!/^https?:\/\/\S+$/.test(entry.baseUrl)) return false;
+      if (!entry.models.length) return false;
+      seen.add(entry.name);
+      return true;
+    })
+    .slice(0, 20);
+}
+
 function sanitize(value = {}) {
   const port = intIn(value.port, 1024, 65535, DEFAULTS.port);
   let backendPort = intIn(value.backendPort, 1024, 65535, DEFAULTS.backendPort);
@@ -100,6 +124,7 @@ function sanitize(value = {}) {
     failureThreshold: intIn(value.failureThreshold, 1, 10, DEFAULTS.failureThreshold),
     lanes: sanitizeLanes(value.lanes),
     providers: sanitizeProviders(value.providers),
+    custom: sanitizeCustom(value.custom),
     models: sanitizeModels(value.models)
   };
 }
@@ -154,4 +179,4 @@ function origin(settings) {
   return `http://${host}:${settings.port}`;
 }
 
-module.exports = { DEFAULT_LANES, DEFAULTS, homeDir, migrateHome, paths, sanitize, load, save, authDirFor, origin };
+module.exports = { DEFAULT_LANES, DEFAULTS, homeDir, migrateHome, paths, sanitize, load, save, authDirFor, origin, sanitizeCustom };
