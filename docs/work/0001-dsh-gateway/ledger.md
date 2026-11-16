@@ -46,6 +46,18 @@ Not changed:
 - Profile sync: applied to a copy of the real `desktop` and `web` profiles. Every entry other than the `dshgate-*` routes was identical, and the comment count was unchanged.
 - API key commands: a made-up key was saved, listed, offered as models and removed. It did not appear in `settings.json` or `master.key`.
 
+## Real-account test (2026-11-16)
+
+Signed in through the app: ChatGPT (weekly limit at 0%), Claude (weekly 22%), Gemini/Antigravity. No API key.
+
+- Every model answered a one-word request in its own protocol (Claude 1 s, Gemini Flash 2 s, Gemini Argon 7 s, Gemini Carbon 13 s). GPT returned 429 "usage limit reached", matching its 0% limit.
+- Every lane answered. `lane-main` moved past GPT and past `claude-fable-5-2` (429 "would exceed your account's rate limit") to Gemini Carbon; `lane-architect` moved past GPT 6.1 Terra to Gemini Argon. Each skip was logged with its reason.
+- Streaming worked through a lane that failed over.
+- 20 requests at once on `lane-scout`: all answered, median 0.9 s. 10 at once on `lane-main` (with failover): all answered, median 9.7 s. Gateway memory 115 → 117 MB.
+- Two-turn tool call with thinking enabled: worked on Claude Sonnet, Gemini Carbon and Claude via Google; each conversation stayed on one model. Gemini returned thinking blocks; Claude returned none.
+- Limits before and after differed by at most 0.2 points.
+- `dsh apply` on the real `desktop` and `web` profiles: only the `dshgate-*` routes changed; backups written.
+
 ## Not checked
 
 - Any request served by a real model through the gateway. Failover was tested against a stand-in backend only.
