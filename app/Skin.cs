@@ -268,6 +268,7 @@ namespace DSHProxy
         {
             public int Radius;
             public bool Strong;
+            public Color? Tint;
         }
 
         private static readonly Dictionary<Control, Surface> Surfaces = new Dictionary<Control, Surface>();
@@ -278,10 +279,10 @@ namespace DSHProxy
         }
 
         // Makes a panel a glass surface.
-        public static T Make<T>(T control, int radius = 20, bool strong = false) where T : Control
+        public static T Make<T>(T control, int radius = 20, bool strong = false, Color? tint = null) where T : Control
         {
             if (Surfaces.ContainsKey(control)) return control;
-            Surfaces[control] = new Surface { Radius = radius, Strong = strong };
+            Surfaces[control] = new Surface { Radius = radius, Strong = strong, Tint = tint };
             control.Styles(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
             control.BackColor = Theme.Page;
             Skin.PaintsBehind(control);
@@ -309,11 +310,13 @@ namespace DSHProxy
         }
 
         // The body of a glass surface: a translucent fill and a sheen at the top.
-        public static void Body(Graphics g, Rectangle r, int radius, bool strong)
+        public static void Body(Graphics g, Rectangle r, int radius, bool strong, Color? tint = null)
         {
             using (var path = Rounded(r, radius))
             {
-                using (var fill = new SolidBrush(Color.FromArgb(strong ? 46 : 28, 255, 255, 255))) g.FillPath(fill, path);
+                var baseColor = tint.HasValue ? tint.Value : Color.White;
+                var alpha = tint.HasValue ? (strong ? 90 : 55) : (strong ? 46 : 28);
+                using (var fill = new SolidBrush(Color.FromArgb(alpha, baseColor))) g.FillPath(fill, path);
                 var sheenHeight = Math.Max(2, Math.Min(r.Height, 80));
                 var sheen = new Rectangle(r.X, r.Y, r.Width, sheenHeight);
                 using (var brush = new LinearGradientBrush(new Rectangle(sheen.X, sheen.Y - 1, sheen.Width, sheen.Height + 2), Color.FromArgb(strong ? 30 : 20, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f))
@@ -368,7 +371,7 @@ namespace DSHProxy
                 var bounds = control.RectangleToClient(glass.RectangleToScreen(new Rectangle(0, 0, glass.Width - 1, glass.Height - 1)));
                 var clip = g.Save();
                 g.SetClip(rect, CombineMode.Intersect);
-                Body(g, bounds, surface.Radius, surface.Strong);
+                Body(g, bounds, surface.Radius, surface.Strong, surface.Tint);
                 g.Restore(clip);
             }
             g.SmoothingMode = mode;

@@ -1425,7 +1425,7 @@ namespace DSHProxy
             title.Controls.Add(new GlassLabel { Text = email, AutoSize = true, Font = Theme.Ui(10f), ForeColor = Theme.Muted, Margin = new Padding(0, 4, 10, 0) });
             // Plan names such as "self_serve_business_prolite" are made readable and kept short.
             var planText = plan.Replace("_", " ");
-            if (planText.Length > 22) planText = planText.Substring(0, 21) + "\u2026";
+            if (planText.Length > 16) planText = planText.Substring(0, 15) + "\u2026";
             if (plan.Length > 0) title.Controls.Add(new Chip { Text = planText, Tint = Theme.Teal, Margin = new Padding(0, 3, 8, 0) });
             title.Controls.Add(new GlassLabel { Text = disabled ? "\u25CF Paused" : "\u25CF Active", AutoSize = true, ForeColor = disabled ? Theme.Muted : Theme.Ok, Margin = new Padding(0, 5, 0, 0) });
             card.Controls.Add(title, 0, 0);
@@ -1440,12 +1440,6 @@ namespace DSHProxy
             actions.Controls.Add(pause);
             var resets = Json.Obj(Json.Get(account, "resets"));
             var resetCount = (int)Json.Num(resets, "available", 0);
-            if (resetCount > 0 && !disabled)
-            {
-                var useReset = Skin.Outline(new PillButton { Text = string.Format("Use a reset ({0})", resetCount), AutoSize = true, Margin = new Padding(6, 0, 0, 0) });
-                useReset.Click += (s, e) => UseReset(file, label, email, windows);
-                actions.Controls.Add(useReset);
-            }
             card.Controls.Add(actions, 2, 0);
 
             var row = 1;
@@ -1466,6 +1460,20 @@ namespace DSHProxy
                     card.Controls.Add(none, 1, row);
                     card.SetColumnSpan(none, 2);
                 }
+                row += 1;
+            }
+            // The resets get their own warning strip: the count, the risk, and
+            // the only way in, which is the danger-zone dialog.
+            if (resetCount > 0 && !disabled)
+            {
+                var strip = Glass.Make(new FlowLayoutPanel { AutoSize = false, Height = 56, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 12, 0, 0), Padding = new Padding(14, 10, 14, 10) }, 14, false, Theme.Bad);
+                strip.Controls.Add(new Chip { Text = resetCount == 1 ? "\u26A0 1 limit reset" : string.Format("\u26A0 {0} limit resets", resetCount), Tint = Theme.Warn, Margin = new Padding(0, 2, 12, 0) });
+                strip.Controls.Add(new GlassLabel { Text = "Danger zone: spending one cannot be undone.", AutoSize = true, ForeColor = Theme.Bad, Margin = new Padding(0, 8, 14, 0) });
+                var useReset = Skin.Danger(new PillButton { Text = "Use a reset\u2026", AutoSize = true });
+                useReset.Click += (s, e) => UseReset(file, label, email, windows, resetCount);
+                strip.Controls.Add(useReset);
+                card.Controls.Add(strip, 0, row);
+                card.SetColumnSpan(strip, 3);
                 row += 1;
             }
             string note = null;
@@ -1511,10 +1519,10 @@ namespace DSHProxy
             }
         }
 
-        // Lists the resets ChatGPT offers, asks which one to use, confirms, and
-        // uses it. Each attempt carries its own request ID, so a retried
-        // request cannot use a second reset.
-        private void UseReset(string file, string label, string email, ArrayList windows)
+        // Lists the resets ChatGPT offers, then hands over to the danger-zone
+        // dialog, where using one has to be typed out. Each attempt carries its
+        // own request ID, so a retried request cannot use a second reset.
+        private void UseReset(string file, string label, string email, ArrayList windows, int available)
         {
             UseWaitCursor = true;
             ThreadPool.QueueUserWorkItem(_ =>
@@ -1533,30 +1541,17 @@ namespace DSHProxy
                         return;
                     }
                     var credits = Json.Arr(Json.Get(listed, "credits"));
-                    string creditId;
-                    string title;
-                    if (credits.Count == 0)
+                    var count = (int)Json.Num(listed, "available", 0);
+                    if (count <= 0 && credits.Count == 0)
                     {
-                        if (Json.Num(listed, "available", 0) <= 0)
-                        {
-                            Msg.Show(this, "No limit reset is available on this account right now.", "Limit reset", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                            return;
-                        }
-                        creditId = null;
-                        title = "Limit reset";
+                        Msg.Show(this, "No limit reset is available on this account right now.", "Limit reset", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
                     }
-                    else
-                    {
-                        var chosen = ResetDialog.Choose(this, label, email, credits, windows);
-                        if (chosen == null) return;
-                        creditId = Json.Str(Json.Get(chosen, "id"));
-                        title = Json.Str(Json.Get(chosen, "title"));
-                    }
-                    var confirm = Msg.Show(this,
-                        string.Format("Use \"{0}\" on {1} ({2})?\n\nThis spends one reset. It cannot be undone, and ChatGPT keeps it only if there is nothing to reset.", title, label, email),
-                        "Use this reset?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
-                    if (confirm != DialogResult.Yes) return;
-                    ConsumeReset(file, creditId, Guid.NewGuid().ToString());
+                    // Every use goes through the danger zone, even when ChatGPT
+                    // did not name the credit it would spend.
+                    var chosen = ResetDialog.Choose(this, label, email, credits, windows, Math.Max(count, credits.Count));
+                    if (chosen == null) return;
+                    ConsumeReset(file, Json.Str(Json.Get(chosen, "id")), Guid.NewGuid().ToString());
                 }));
             });
         }
@@ -2020,29 +2015,43 @@ namespace DSHProxy
         }
     }
 
-    // Shows the account's current limits and the resets on offer, and returns
-    // the reset the user picks, or null.
+    // The danger zone for limit resets: shows how many are left, what they would
+    // do, and refuses to return a choice until the user types CONFIRM.
     internal static class ResetDialog
     {
-        public static Dictionary<string, object> Choose(IWin32Window owner, string label, string email, ArrayList credits, ArrayList windows)
+        private const string Phrase = "RESET";
+
+        public static Dictionary<string, object> Choose(IWin32Window owner, string label, string email, ArrayList credits, ArrayList windows, int available)
         {
             using (var form = new Form())
             {
-                form.Text = "Use a limit reset";
+                form.Text = "Danger zone: use a limit reset";
                 form.FormBorderStyle = FormBorderStyle.FixedDialog;
                 form.StartPosition = FormStartPosition.CenterParent;
                 form.MinimizeBox = false;
                 form.MaximizeBox = false;
                 form.ShowInTaskbar = false;
-                form.ClientSize = new Size(480, 360);
                 form.Font = Theme.Ui(9.5f);
-                form.ClientSize = new Size(500, 390);
+                form.ClientSize = new Size(560, 560);
 
-                var body = Glass.Make(new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = false, Padding = new Padding(20, 16, 20, 8), Margin = new Padding(0) }, 22, true);
+                var body = Glass.Make(new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(22, 18, 22, 10), Margin = new Padding(0) }, 22, true);
                 var holder = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 14, 14, 0) };
                 holder.Controls.Add(body);
+
+                // The banner that makes the risk unmistakable.
+                var banner = new Panel { AutoSize = true, BackColor = Theme.BadDim, Padding = new Padding(12, 10, 12, 10), Margin = new Padding(0, 0, 0, 12) };
+                var bannerText = new GlassLabel
+                {
+                    Text = string.Format("\u26A0  DANGER ZONE\r\nUsing a reset spends it for good. There is no undo, and it cannot be moved to another account.\r\n{0} {1} left on this account.", available, available == 1 ? "reset" : "resets"),
+                    AutoSize = true,
+                    MaximumSize = new Size(470, 0),
+                    ForeColor = Theme.Bad,
+                    Font = Theme.Ui(9.5f)
+                };
+                banner.Controls.Add(bannerText);
+                body.Controls.Add(banner);
                 body.Controls.Add(new GlassLabel { Text = label + " \u00B7 " + email, AutoSize = true, Font = Theme.Ui(12f, FontStyle.Bold), Margin = new Padding(0, 0, 0, 6) });
-                body.Controls.Add(new GlassLabel { Text = "A reset makes your used-up limits full again straight away.", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 10) });
+                body.Controls.Add(new GlassLabel { Text = "A reset makes your used-up limits full again straight away. ChatGPT keeps it only if you have nothing used up.", AutoSize = true, MaximumSize = new Size(470, 0), ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 10) });
                 foreach (var item in windows)
                 {
                     var w = Json.Obj(item);
@@ -2062,21 +2071,29 @@ namespace DSHProxy
                     var choice = new GlassRadio { Text = Json.Str(Json.Get(credit, "title")), AutoSize = true, Tag = credit, Margin = new Padding(0, 2, 0, 0), Font = Theme.Ui(9.5f, FontStyle.Bold) };
                     choice.CheckedChanged += (s, e) => { if (choice.Checked) picked = (Dictionary<string, object>)choice.Tag; };
                     body.Controls.Add(choice);
-                    if (detail.Length > 0) body.Controls.Add(new GlassLabel { Text = detail, AutoSize = true, MaximumSize = new Size(420, 0), ForeColor = Theme.Muted, Margin = new Padding(18, 0, 0, 6) });
+                    if (detail.Length > 0) body.Controls.Add(new GlassLabel { Text = detail, AutoSize = true, MaximumSize = new Size(450, 0), ForeColor = Theme.Muted, Margin = new Padding(18, 0, 0, 6) });
                     if (picked == null) choice.Checked = true;
                 }
 
+                if (credits.Count == 0) body.Controls.Add(new GlassLabel { Text = "ChatGPT did not name the reset; the next one available would be used.", AutoSize = true, MaximumSize = new Size(450, 0), ForeColor = Theme.Muted, Margin = new Padding(0, 6, 0, 0) });
+                body.Controls.Add(new GlassLabel { Text = string.Format("Type {0} to confirm:", Phrase), AutoSize = true, Font = Theme.Ui(9.5f, FontStyle.Bold), ForeColor = Theme.Bad, Margin = new Padding(0, 14, 0, 4) });
+                var typing = new TextBox { Width = 180, Font = Theme.Mono(12f), Margin = new Padding(0, 0, 0, 2) };
+                body.Controls.Add(typing);
+
                 var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 60, Padding = new Padding(14, 10, 14, 10) };
                 var cancel = new PillButton { Text = "Cancel", Width = 104, Height = 38, DialogResult = DialogResult.Cancel };
-                var next = Skin.Primary(new PillButton { Text = "Continue...", Width = 124, Height = 38, DialogResult = DialogResult.OK });
+                var spend = Skin.Danger(new PillButton { Text = "Use this reset", Width = 150, Height = 38, DialogResult = DialogResult.OK, Enabled = false });
                 buttons.Controls.Add(cancel);
-                buttons.Controls.Add(next);
+                buttons.Controls.Add(spend);
+                typing.TextChanged += (s, e) => spend.Enabled = string.Equals(typing.Text.Trim(), Phrase, StringComparison.Ordinal);
                 form.Controls.Add(holder);
                 form.Controls.Add(buttons);
-                form.AcceptButton = next;
+                form.AcceptButton = spend;
                 form.CancelButton = cancel;
+                form.Shown += (s, e) => typing.Focus();
                 Skin.Apply(form);
-                return form.ShowDialog(owner) == DialogResult.OK ? picked : null;
+                // An empty object means "confirmed, ChatGPT picks the reset".
+                return form.ShowDialog(owner) == DialogResult.OK ? (picked ?? new Dictionary<string, object>()) : null;
             }
         }
     }

@@ -180,7 +180,7 @@ Sign-in and limits run through CLIProxyAPI's Management API, which the gateway s
   - Claude: 5-hour and weekly, plus each per-model weekly limit the plan sets (for example "Weekly (Fable)" on team plans), read from the `limits` list in Claude's reply.
   - ChatGPT: the 5-hour window is always listed; plans that report none show "Not reported for this plan". Per-model limits are added when ChatGPT reports them.
   - Gemini: 5-hour and weekly for Gemini models and for Claude/GPT models served through Google.
-- **Limit resets (ChatGPT)**: when ChatGPT offers free limit resets, the account card shows **Use a reset (n)**. The app lists the resets with their expiry, asks which one to use, and asks again before spending it. Each attempt carries its own request ID, so a retried request cannot spend a second reset. ChatGPT keeps the reset if nothing is used up. These are the same resets the Codex CLI offers; Claude and Gemini do not offer resets.
+- **Limit resets (ChatGPT)**: when ChatGPT offers free limit resets, the account card carries a red danger strip showing how many are left ("1 limit reset"), with **Use a reset…**. Using one is a danger-zone action: the dialog repeats the count, says it cannot be undone, and the **Use this reset** button stays disabled until you type `RESET`. ChatGPT keeps the reset if nothing is used up. These are the same resets the Codex CLI offers; Claude and Gemini do not offer resets.
 
 The Windows app reaches these through a control API on the gateway (`/dshproxy/control/`). Each call needs the token in `~/.dshproxy/control.token`, which is new every start, and calls that come from a web page are refused.
 
