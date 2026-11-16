@@ -34,10 +34,17 @@ if (-not (Test-Path $icon)) {
     $stream.Close()
 }
 
+# Provider logos are embedded in the program as resources named logo.<name>.png.
+$resources = @()
+foreach ($logo in Get-ChildItem (Join-Path $app 'logos') -Filter '*.png') {
+    $resources += "/resource:$($logo.FullName),logo.$($logo.Name)"
+}
+
 $out = Join-Path $root 'dshgate.exe'
 & $csc /nologo /target:winexe /optimize+ /platform:anycpu `
     "/out:$out" "/win32icon:$icon" `
     /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll /reference:System.Net.dll `
+    @resources `
     (Join-Path $app 'DshgateApp.cs')
 if ($LASTEXITCODE -ne 0) { throw "Build failed." }
 Write-Host "Built $out"

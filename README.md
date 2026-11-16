@@ -24,6 +24,8 @@ It is a standalone project. It shares no code or git history with DroidProxy or 
 - **DeepSeek Harness**: preview, apply or remove the routes.
 - **Log**: live gateway output.
 
+Provider logos are from [LobeHub Icons](https://github.com/lobehub/lobe-icons) (MIT) and are trademarks of their owners; see [app/logos/SOURCE.md](app/logos/SOURCE.md). They are built into the program, so it works offline.
+
 Closing the window keeps the gateway running in the tray; quit from the tray menu. "Start with Windows" starts it hidden in the tray at sign-in.
 
 Build it once with the C# compiler that ships with Windows (nothing to install):

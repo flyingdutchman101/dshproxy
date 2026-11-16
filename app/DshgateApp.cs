@@ -70,6 +70,42 @@ namespace Dshgate
         }
     }
 
+    // Provider logos embedded in the program (see app/logos). Unknown names
+    // get null, and callers leave the space empty.
+    internal static class Logos
+    {
+        private static readonly Dictionary<string, Image> Cache = new Dictionary<string, Image>();
+
+        public static Image Get(string provider)
+        {
+            if (string.IsNullOrEmpty(provider)) return null;
+            Image image;
+            if (Cache.TryGetValue(provider, out image)) return image;
+            using (var stream = typeof(Logos).Assembly.GetManifestResourceStream("logo." + provider + ".png"))
+            {
+                image = stream == null ? null : new Bitmap(Image.FromStream(stream));
+            }
+            Cache[provider] = image;
+            return image;
+        }
+
+        // A copy drawn at `size` pixels, for list views and buttons.
+        public static Image Sized(string provider, int size)
+        {
+            var source = Get(provider);
+            if (source == null) return null;
+            var bitmap = new Bitmap(size, size);
+            using (var g = Graphics.FromImage(bitmap))
+            {
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.DrawImage(source, 0, 0, size, size);
+            }
+            return bitmap;
+        }
+    }
+
     internal static class Json
     {
         public static readonly JavaScriptSerializer Serializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
@@ -463,7 +499,10 @@ namespace Dshgate
                     Margin = new Padding(0, 0, 0, 8),
                     FlatStyle = FlatStyle.Flat,
                     BackColor = Theme.Page,
-                    Padding = new Padding(10, 0, 0, 0)
+                    Padding = new Padding(10, 0, 0, 0),
+                    Image = Logos.Sized(key, 32),
+                    ImageAlign = ContentAlignment.MiddleLeft,
+                    TextImageRelation = TextImageRelation.ImageBeforeText
                 };
                 choice.FlatAppearance.BorderColor = Theme.Track;
                 choice.Click += (s, e) => Begin(key, label);
@@ -474,14 +513,27 @@ namespace Dshgate
             body.Controls.Add(Heading("Add an account"));
         }
 
+        private string sessionKey;
+
+        // The service's logo, shown above the heading while signing in.
+        private System.Windows.Forms.Control LogoBox(string key)
+        {
+            var image = Logos.Sized(key, 44);
+            var row = new Panel { Dock = DockStyle.Top, Height = image == null ? 0 : 52 };
+            if (image != null) row.Controls.Add(new PictureBox { Image = image, Size = new Size(44, 44), Location = new Point(0, 0) });
+            return row;
+        }
+
         private void Begin(string key, string label)
         {
             if (busy) return;
             busy = true;
             sessionLabel = label;
+            sessionKey = key;
             Reset(Close2("Cancel"));
             body.Controls.Add(Text2("Asking the provider for a sign-in link...", Theme.Muted));
             body.Controls.Add(Heading("Signing in to " + label));
+            body.Controls.Add(LogoBox(key));
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 Dictionary<string, object> started = null;
@@ -535,6 +587,7 @@ namespace Dshgate
                 body.Controls.Add(Text2("Sign in on the " + label + " page that opened and approve access. When it says you are signed in, come back here.", Color.Black));
             }
             body.Controls.Add(Heading("Signing in to " + label));
+            body.Controls.Add(LogoBox(key));
             OpenBrowser(url);
             poll.Start();
         }
@@ -607,6 +660,7 @@ namespace Dshgate
             body.Controls.Add(Text2("dshgate can now use this subscription. Its limits appear on the Accounts tab within a minute.", Theme.Muted));
             body.Controls.Add(new Label { Text = account.Length > 0 ? account : "", Dock = DockStyle.Top, Height = 28, Font = new Font("Segoe UI", 11f) });
             body.Controls.Add(new Label { Text = "\u2713  Signed in to " + sessionLabel, Dock = DockStyle.Top, Height = 40, Font = new Font("Segoe UI", 14f, FontStyle.Bold), ForeColor = Theme.Ok });
+            body.Controls.Add(LogoBox(sessionKey));
         }
 
         private void ShowFailure(string message, string key, string label)
@@ -622,6 +676,7 @@ namespace Dshgate
             }
             body.Controls.Add(Text2(message, Color.Black));
             body.Controls.Add(new Label { Text = "Sign-in to " + label + " did not finish", Dock = DockStyle.Top, Height = 40, Font = new Font("Segoe UI", 13f, FontStyle.Bold), ForeColor = Theme.Bad });
+            body.Controls.Add(LogoBox(key ?? sessionKey));
         }
     }
 
@@ -794,6 +849,14 @@ namespace Dshgate
             foreach (var c in new[] { "Provider", "Region", "State" }) keysList.Columns.Add(c, 220);
             keysList.FullRowSelect = true;
             keysList.Dock = DockStyle.Fill;
+            // Logos for the API-key rows, at a height that also spaces the rows out.
+            var keyLogos = new ImageList { ImageSize = new Size(22, 22), ColorDepth = ColorDepth.Depth32Bit };
+            foreach (var name in new[] { "deepseek", "moonshot", "zai", "qwen", "minimax", "mistral", "openrouter" })
+            {
+                var image = Logos.Sized(name, 22);
+                if (image != null) keyLogos.Images.Add(name, image);
+            }
+            keysList.SmallImageList = keyLogos;
             var addKey = new Button { Text = "Add or replace key", AutoSize = true };
             addKey.Click += (s, e) => AddKey();
             var removeKey = new Button { Text = "Remove selected", AutoSize = true };
@@ -1040,7 +1103,7 @@ namespace Dshgate
                 else if (unreadable.Contains(key)) { state = "Saved, cannot be read: add it again"; color = Theme.Bad; }
                 else { state = "Not set"; color = Theme.Muted; }
                 var region = readable.ContainsKey(key) ? RegionLabel(provider, readable[key]) : "";
-                keysList.Items.Add(new ListViewItem(new[] { Json.Str(Json.Get(provider, "label")), region, state }) { ForeColor = color, Tag = key });
+                keysList.Items.Add(new ListViewItem(new[] { Json.Str(Json.Get(provider, "label")), region, state }) { ForeColor = color, Tag = key, ImageKey = key });
             }
             keysList.EndUpdate();
             if (keyProviderCombo.Items.Count == 0)
@@ -1221,6 +1284,8 @@ namespace Dshgate
             card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 340));
 
             var title = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
+            var logo = Logos.Sized(Json.Str(Json.Get(account, "provider")), 24);
+            if (logo != null) title.Controls.Add(new PictureBox { Image = logo, Size = new Size(24, 24), Margin = new Padding(0, 1, 8, 0) });
             title.Controls.Add(new Label { Text = label, AutoSize = true, Font = new Font("Segoe UI", 11f, FontStyle.Bold), Margin = new Padding(0, 2, 8, 0) });
             title.Controls.Add(new Label { Text = email, AutoSize = true, Font = new Font("Segoe UI", 10f), Margin = new Padding(0, 4, 8, 0) });
             if (plan.Length > 0) title.Controls.Add(new Label { Text = plan, AutoSize = true, BackColor = Color.FromArgb(219, 234, 254), ForeColor = Theme.Accent, Padding = new Padding(6, 2, 6, 2), Margin = new Padding(0, 4, 8, 0) });
