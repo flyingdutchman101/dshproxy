@@ -9,6 +9,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const YAML = require("yaml");
+const { laneId } = require("../catalog");
 
 const PLUGIN_NAME = "@deepseek-ai/dsh-llm-pi-ai";
 const ENTRY_ID = "llm-pi-ai";
@@ -211,11 +212,30 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
   }
   const written = Object.values(routes).flatMap((route) => route.models.map((model) => model.id));
   const requested = new Set(models.map((model) => model.id));
+
+  // A profile needs a default model that exists. If none is set (or it names
+  // something this gateway does not serve), point it at a lane so a new session
+  // never starts on a model that is gone.
+  let repairedDefault = false;
+  const laneNames = Object.keys(options.lanes || {});
+  const preferredLane = laneNames.includes("google") ? "google" : laneNames[0];
+  const defaultEntry = doc.contents.items.find((item) => YAML.isMap(item) && String(item.get("id") || "") === "agent-default-model");
+  const defaultProvider = defaultEntry ? String(defaultEntry.getIn(["config", "provider"]) || "") : "";
+  const defaultModel = defaultEntry ? String(defaultEntry.getIn(["config", "model"]) || "") : "";
+  const defaultOk = defaultEntry && ROUTES[defaultProvider] && (written.includes(defaultModel) || defaultModel.startsWith("lane-"));
+  if (!defaultOk && preferredLane && routes["dshproxy-lanes"]) {
+    const block = doc.createNode({ id: "agent-default-model", name: "@deepseek-ai/dsh-agent-default-model", config: { provider: "dshproxy-lanes", model: laneId(preferredLane) } });
+    if (defaultEntry) doc.contents.items[doc.contents.items.indexOf(defaultEntry)] = block;
+    else doc.contents.add(block);
+    repairedDefault = true;
+  }
+
   const { changed, text } = writePatch(patch, options.dryRun);
   return {
     profile,
     file: patch.file,
-    changed,
+    changed: changed || repairedDefault,
+    repairedDefault,
     routes: Object.fromEntries(Object.entries(routes).map(([key, route]) => [key, route.models.length])),
     kept: written.filter((id) => !requested.has(id)),
     text
@@ -267,6 +287,91 @@ function remove(home = dshHome(), options = {}) {
   });
 }
 
+
+// Reads the profiles back and reports what would stop DeepSeek Harness from
+// using DSHProxy: wrong or missing routes, stale or unrouted models, a missing
+// default model, missing image caps, a leftover DroidProxy provider or a missing
+// credential reference. Returns problems per profile; an empty list means the
+// profile is ready.
+function verify({ origin, lanes, models, home = dshHome() }) {
+  const offered = new Set(models || []);
+  const laneIds = Object.keys(lanes || {}).map((name) => laneId(name));
+  const result = { ok: true, profiles: [], credential: [] };
+
+  const credentials = path.join(home, ".credentials.yaml");
+  try {
+    const text = fs.existsSync(credentials) ? fs.readFileSync(credentials, "utf8") : "";
+    const doc = text.trim() ? YAML.parseDocument(text) : null;
+    if (!doc || doc.getIn(["refs", KEY_REF]) === undefined) result.credential.push(`${path.basename(credentials)} has no ${KEY_REF} reference`);
+  } catch (error) {
+    result.credential.push(`.credentials.yaml cannot be read: ${error.message}`);
+  }
+
+  for (const profile of profiles(home)) {
+    const problems = [];
+    let providersNode = null;
+    try {
+      providersNode = findEntry(readPatch(profile, home).doc)?.getIn(["config", "providers"], true);
+    } catch (error) {
+      problems.push(error.message);
+    }
+    if (providersNode && YAML.isMap(providersNode)) {
+      for (const key of Object.keys(ROUTES)) {
+        const route = providersNode.get(key, true);
+        if (!YAML.isMap(route)) {
+          problems.push(`route ${key} is missing`);
+          continue;
+        }
+        const routeDef = ROUTES[key];
+        const expected = `${origin}${routeDef.suffix}`;
+        const baseURL = String(route.get("baseURL") || "");
+        if (baseURL !== expected) problems.push(`${key}.baseURL is ${baseURL || "empty"}, expected ${expected}`);
+        if (String(route.get("apiKeyEnv") || "") !== KEY_REF) problems.push(`${key}.apiKeyEnv is not ${KEY_REF}`);
+        if (Number(route.get("maxRequestImages")) !== MAX_REQUEST_IMAGES) problems.push(`${key}.maxRequestImages is not ${MAX_REQUEST_IMAGES}`);
+        if (Number(route.get("maxRequestImageBytes")) !== MAX_REQUEST_IMAGE_BYTES) problems.push(`${key}.maxRequestImageBytes is not ${MAX_REQUEST_IMAGE_BYTES}`);
+        const ids = (route.get("models", true)?.items || []).map((item) => (YAML.isMap(item) ? String(item.get("id") || "") : "")).filter(Boolean);
+        if (!ids.length) {
+          problems.push(`${key} lists no models`);
+          continue;
+        }
+        if (key === "dshproxy-lanes") {
+          const missing = laneIds.filter((id) => !ids.includes(id));
+          if (missing.length) problems.push(`${key} is missing ${missing.join(", ")}`);
+        } else {
+          const stale = ids.filter((id) => !offered.has(id));
+          if (stale.length) problems.push(`${key} lists models that are no longer offered: ${stale.join(", ")}`);
+        }
+      }
+      for (const item of providersNode.items || []) {
+        const key = String(item?.key || "");
+        if (key.startsWith("droidproxy-")) problems.push(`a DroidProxy provider (${key}) is still in this profile`);
+      }
+    } else if (!problems.length) {
+      problems.push("the llm-pi-ai entry has no providers");
+    }
+
+    // The default model has to point at something that exists.
+    try {
+      const doc = readPatch(profile, home).doc;
+      const entry = doc.contents.items.find((item) => YAML.isMap(item) && String(item.get("id") || "") === "agent-default-model");
+      if (!entry) problems.push("no agent-default-model entry (a new session may start on a model that is gone)");
+      else {
+        const provider = String(entry.getIn(["config", "provider"]) || "");
+        const model = String(entry.getIn(["config", "model"]) || "");
+        if (!ROUTES[provider]) problems.push(`agent-default-model names provider ${provider || "(none)"}, which is not a DSHProxy route`);
+        if (!laneIds.includes(model) && !offered.has(model)) problems.push(`agent-default-model names model ${model || "(none)"}, which is not offered`);
+      }
+    } catch (error) {
+      problems.push(error.message);
+    }
+
+    if (problems.length) result.ok = false;
+    result.profiles.push({ profile, problems });
+  }
+  if (result.credential.length) result.ok = false;
+  return result;
+}
+
 function state(origin, home = dshHome()) {
   const result = { home, profiles: [] };
   for (const profile of profiles(home)) {
@@ -291,4 +396,4 @@ function state(origin, home = dshHome()) {
   return result;
 }
 
-module.exports = { ROUTES, KEY_REF, MAX_REQUEST_IMAGES, MAX_REQUEST_IMAGE_BYTES, dshHome, apply, remove, state, buildRoutes };
+module.exports = { ROUTES, KEY_REF, MAX_REQUEST_IMAGES, MAX_REQUEST_IMAGE_BYTES, dshHome, apply, remove, state, verify, buildRoutes };

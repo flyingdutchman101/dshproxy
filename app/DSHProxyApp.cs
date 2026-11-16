@@ -1086,11 +1086,13 @@ namespace DSHProxy
             preview.Click += (s, e) => RunAndShow(new[] { "dsh", "apply", "--dry-run" }, "Preview", false);
             var apply = Skin.Primary(new PillButton { Text = "Apply to DeepSeek Harness", AutoSize = true });
             apply.Click += (s, e) => ApplyToHarness();
+            var verify = Skin.Outline(new PillButton { Text = "Verify", AutoSize = true });
+            verify.Click += (s, e) => VerifyHarness();
             var remove = Skin.Danger(new PillButton { Text = "Remove from DeepSeek Harness", AutoSize = true });
             remove.Click += (s, e) => RemoveFromHarness();
             tabs.TabPages.Add(Page("DeepSeek Harness", profilesList,
-                Note("Apply writes the DSHProxy routes into every DeepSeek Harness profile and keeps everything else. Restart DeepSeek Harness afterwards."),
-                Row(preview, apply, remove)));
+                Note("Apply writes the DSHProxy routes into every DeepSeek Harness profile and keeps everything else. Verify checks the profiles back: routes, models, default model and credential. Restart DeepSeek Harness after a change."),
+                Row(preview, apply, verify, remove)));
 
             // Log
             var logPage = new Panel { Text = "Log", Padding = new Padding(22, 8, 22, 14) };
@@ -2123,6 +2125,27 @@ namespace DSHProxy
         {
             if (Msg.Show(this, "Write the DSHProxy routes into every DeepSeek Harness profile?\n\nEach profile is backed up first, and nothing else in it is changed. Restart DeepSeek Harness afterwards.", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             RunAndShow(new[] { "dsh", "apply" }, "DeepSeek Harness", false);
+        }
+
+        // Reads the profiles back and shows whether DeepSeek Harness has every
+        // route it needs: routes, models, image caps, default model, credential.
+        private void VerifyHarness()
+        {
+            UseWaitCursor = true;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                Cli.Result result;
+                try { result = cli.Run(new[] { "dsh", "verify" }, null, 120000); }
+                catch (Exception error) { result = new Cli.Result { Code = -1, Out = "", Err = error.Message }; }
+                BeginInvoke(new Action(() =>
+                {
+                    UseWaitCursor = false;
+                    var text = (result.Out + Environment.NewLine + result.Err).Trim();
+                    AppendLog(text);
+                    RefreshStatus();
+                    Msg.Show(this, text, "Verify DeepSeek Harness", MessageBoxButtons.OK, result.Code == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                }));
+            });
         }
 
         private void RemoveFromHarness()

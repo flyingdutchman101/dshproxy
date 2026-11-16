@@ -379,3 +379,57 @@ test("every route keeps the retained image count under the many-image limit", (t
   }
   assert.ok(profile.MAX_REQUEST_IMAGES < 20, "the cap must stay under the many-image threshold");
 });
+
+test("verify says a freshly applied profile is ready", (t) => {
+  const home = tempHome(t);
+  profile.apply(MODELS, ORIGIN, home, { lanes: { main: ["gemini-4-carbon-high"] } });
+  const report = profile.verify({ origin: ORIGIN, lanes: { main: ["gemini-4-carbon-high"] }, models: MODELS.map((entry) => entry.id), home });
+  assert.deepEqual(report.profiles[0].problems, []);
+  assert.equal(report.ok, true);
+  assert.equal(report.profiles[0].profile, "desktop");
+  assert.deepEqual(report.credential, []);
+});
+
+test("verify reports a profile that would break the harness", (t) => {
+  const home = tempHome(t);
+  profile.apply(MODELS, ORIGIN, home, { lanes: { main: ["gemini-4-carbon-high"] } });
+  // Simulate drift: a route moved to another port, a model no longer offered,
+  // and the default model removed.
+  const file = patchPath(home);
+  let text = fs.readFileSync(file, "utf8");
+  text = text.replace(`baseURL: ${ORIGIN}`, "baseURL: http://127.0.0.1:9999");
+  text = text.replace("- id: agent-default-model", "- id: something-else");
+  fs.writeFileSync(file, text);
+  const report = profile.verify({ origin: ORIGIN, lanes: { main: ["gemini-4-carbon-high"] }, models: MODELS.map((entry) => entry.id), home });
+  assert.equal(report.ok, false);
+  const problems = report.profiles[0].problems.join("\n");
+  assert.match(problems, /baseURL is http:\/\/127\.0\.0\.1:9999/);
+  assert.match(problems, /no agent-default-model entry/);
+});
+
+test("apply repairs a missing default model", (t) => {
+  const home = tempHome(t);
+  profile.apply(MODELS, ORIGIN, home, { lanes: { main: ["gemini-4-carbon-high"] } });
+  const file = patchPath(home);
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/- id: agent-default-model[\s\S]*?model: lane-[a-z-]+\n/, ""));
+  const repaired = profile.apply(MODELS, ORIGIN, home, { lanes: { main: ["gemini-4-carbon-high"] } });
+  assert.equal(repaired.profiles[0].repairedDefault, true);
+  const report = profile.verify({ origin: ORIGIN, lanes: { main: ["gemini-4-carbon-high"] }, models: MODELS.map((entry) => entry.id), home });
+  assert.deepEqual(report.profiles[0].problems, []);
+});
+
+test("verify reports a DroidProxy provider left behind", (t) => {
+  const home = tempHome(t);
+  fs.writeFileSync(patchPath(home), [
+    "- id: llm-pi-ai",
+    "  name: \"@deepseek-ai/dsh-llm-pi-ai\"",
+    "  config:",
+    "    providers:",
+    "      droidproxy-claude:",
+    "        baseURL: http://127.0.0.1:8317",
+    ""
+  ].join("\n"));
+  const report = profile.verify({ origin: ORIGIN, lanes: {}, models: [], home });
+  assert.equal(report.ok, false);
+  assert.match(report.profiles[0].problems.join("\n"), /DroidProxy provider \(droidproxy-claude\)/);
+});

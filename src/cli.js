@@ -23,6 +23,7 @@ Usage:
   dshproxy key list                    List API-key providers and their regions
   dshproxy models                      List the models that can be offered right now
   dshproxy dsh apply [--dry-run]       Write the models into every DeepSeek Harness profile
+  dshproxy dsh verify                  Check that DeepSeek Harness has every route it needs
   dshproxy dsh status                  Show what DeepSeek Harness currently has
   dshproxy dsh remove [--dry-run]      Remove DSHProxy's routes from DeepSeek Harness
   dshproxy backend version             Show the CLIProxyAPI version in use
@@ -299,16 +300,27 @@ async function main(argv, out = console.log) {
     case "dsh": {
       const [action] = args;
       const state = await app.snapshot();
-      if (action === "apply") return reportApply(profile.apply(state.models, state.origin, profile.dshHome(), { dryRun, keepModelPrefixes: state.unreadable }), dryRun, out);
+      if (action === "apply") return reportApply(profile.apply(state.models, state.origin, profile.dshHome(), { dryRun, keepModelPrefixes: state.unreadable, lanes: state.settings.lanes }), dryRun, out);
       if (action === "remove") {
         for (const item of profile.remove(profile.dshHome(), { dryRun })) out(`${item.profile}: ${item.removed.length ? `${dryRun ? "would remove" : "removed"} ${item.removed.join(", ")}` : "nothing to remove"}`);
+        return undefined;
+      }
+      if (action === "verify") {
+        const report = profile.verify({ origin: state.origin, lanes: state.settings.lanes, models: state.models.map((model) => model.id), home: profile.dshHome() });
+        for (const item of report.profiles) {
+          out(`${item.profile}: ${item.problems.length ? "NOT READY" : "ready"}`);
+          for (const problem of item.problems) out(`  - ${problem}`);
+        }
+        for (const problem of report.credential) out(`credentials: ${problem}`);
+        if (report.ok) out("DeepSeek Harness has every DSHProxy route it needs; restart it if the model list is stale.");
+        else process.exitCode = 1;
         return undefined;
       }
       if (action === "status") {
         for (const item of profile.state(state.origin).profiles) out(`${item.profile}: ${item.error || (item.routes.length ? item.routes.map((route) => `${route.key} ${route.models} models at ${route.baseURL}`).join("; ") : "not applied")}`);
         return undefined;
       }
-      throw new Error("Usage: dshproxy dsh apply|status|remove [--dry-run]");
+      throw new Error("Usage: dshproxy dsh apply|verify|status|remove [--dry-run]");
     }
     case "backend": {
       // Works without a running gateway, so a version that will not start

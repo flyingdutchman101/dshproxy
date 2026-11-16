@@ -68,7 +68,8 @@ The first `start` or `login` downloads the CLIProxyAPI release named in [backend
 | `key remove <provider>` | Removes a saved API key |
 | `key list` | Lists API-key providers and their regions |
 | `models` | Lists the models that can be offered right now |
-| `dsh apply [--dry-run]` | Writes the models into every DeepSeek Harness profile |
+| `dsh apply [--dry-run]` | Writes the models into every DeepSeek Harness profile; repairs a missing default model |
+| `dsh verify` | Checks the profiles back: routes, base URLs, offered models, image caps, default model, credential, leftover DroidProxy providers |
 | `dsh status` | Shows which DSHProxy routes each profile has |
 | `dsh remove [--dry-run]` | Removes DSHProxy's routes from every profile |
 
