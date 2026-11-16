@@ -77,6 +77,20 @@ test("a browser sign-in finishes when the provider sends the browser back, and n
   assert.deepEqual(await logins.status(started.id), { status: "ok", error: null, account: "new@example.com" });
 });
 
+test("the confirmation page shows the app icon in the browser tab", async (t) => {
+  const management = fakeManagement();
+  const ports = [];
+  const logins = createLogins({ management, listen: freePortListen(ports) });
+  t.after(() => logins.closeAll());
+  const started = await logins.start("claude");
+  const html = await (await fetch(`http://127.0.0.1:${ports[0]}/callback?code=abc&state=${started.id}`)).text();
+  const match = /<link rel="icon" type="image\/png" sizes="32x32" href="data:image\/png;base64,([A-Za-z0-9+/=]+)">/.exec(html);
+  assert.ok(match, "no icon link in the page");
+  const png = Buffer.from(match[1], "base64");
+  assert.equal(png.subarray(1, 4).toString(), "PNG");
+  assert.equal(png.readUInt32BE(16), 32);
+});
+
 test("the browser page says so when the user declines", async (t) => {
   const management = fakeManagement();
   const ports = [];

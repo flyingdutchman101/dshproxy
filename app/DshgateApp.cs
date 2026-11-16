@@ -70,6 +70,22 @@ namespace Dshgate
         }
     }
 
+    // The app icon embedded in the program (app/icon/dshgate.ico). Loading it
+    // at the size wanted picks the matching frame, so the tray and title bar
+    // icons are sharp instead of a scaled 32 px frame.
+    internal static class AppIcon
+    {
+        public static Icon Load(Size size)
+        {
+            using (var stream = typeof(AppIcon).Assembly.GetManifestResourceStream("app.ico"))
+            {
+                if (stream == null) return null;
+                try { return new Icon(stream, size); }
+                catch (ArgumentException) { return null; }
+            }
+        }
+    }
+
     // Provider logos embedded in the program (see app/logos). Unknown names
     // get null, and callers leave the space empty.
     internal static class Logos
@@ -754,7 +770,7 @@ namespace Dshgate
             MinimumSize = new Size(860, 600);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9f);
-            try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (ArgumentException) { }
+            Icon = AppIcon.Load(SystemInformation.IconSize);
 
             BuildLayout();
             BuildTray();
@@ -965,7 +981,7 @@ namespace Dshgate
 
         private void BuildTray()
         {
-            tray.Icon = Icon ?? SystemIcons.Application;
+            tray.Icon = AppIcon.Load(SystemInformation.SmallIconSize) ?? SystemIcons.Application;
             tray.Text = "dshgate";
             tray.Visible = true;
             var menu = new ContextMenuStrip();

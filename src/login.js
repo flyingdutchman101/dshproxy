@@ -6,8 +6,19 @@
 // the user a confirmation page. Kimi uses a device code instead: the user
 // enters a short code on Kimi's page and no address is needed.
 
+const fs = require("fs");
 const http = require("http");
+const path = require("path");
 const { URL } = require("url");
+
+// The app icon for the browser tab, inlined so the page needs no second request.
+let faviconTag = "";
+try {
+  const png = fs.readFileSync(path.join(__dirname, "..", "app", "icon", "favicon-32.png"));
+  faviconTag = `<link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,${png.toString("base64")}">`;
+} catch {
+  // no icon: the browser shows its default
+}
 
 const PROVIDERS = {
   claude: { label: "Claude", route: "anthropic-auth-url", backendName: "anthropic", callback: { port: 54545, path: "/callback" } },
@@ -23,7 +34,7 @@ const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ "&": 
 function page(title, message, ok) {
   const color = ok ? "#16803d" : "#b91c1c";
   const mark = ok ? "&#10003;" : "!";
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>${faviconTag}
 <style>body{font-family:"Segoe UI",system-ui,sans-serif;background:#f4f5f7;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}
 .card{background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.08);padding:40px 48px;max-width:440px;text-align:center}
 .mark{width:56px;height:56px;border-radius:50%;background:${color};color:#fff;font-size:30px;line-height:56px;margin:0 auto 16px}

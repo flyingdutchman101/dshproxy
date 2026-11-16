@@ -3,4 +3,3 @@ node_modules/
 *.bak
 .tmp/
 dshgate.exe
-app/dshgate.ico
