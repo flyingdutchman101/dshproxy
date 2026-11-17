@@ -1,5 +1,16 @@
-# App icon: personal use only
+# App icon
 
-`DSHProxy.ico` (Windows, 16–256 px) and `favicon-32.png` are copies of the owner's icon set (`icons/v5/out/windows/app.ico` and `web/favicon-32.png`).
+`DSHProxy.ico` (Windows, 16–256 px) and `favicon-32.png` are original artwork drawn
+programmatically for this project: a brass compass needle over a dark night sea.
+There is no third-party art in them, so they can be published with the source.
 
-The artwork shows Disney's Davy Jones character. It is for personal and prototype use only: do not publish it, push it to a public repository, add it to a store listing, or ship it in a release build without the owner's explicit approval. Replace it before any public release.
+Regenerate them at any time with `app/icon/generate.md`'s recipe or by rebuilding
+from the drawing code — the shapes are simple vector primitives (rounded plate,
+compass ring, two needle triangles, swell path), so they stay legible from 16 px up.
+
+## Personal variant (not in this repository)
+
+Earlier local builds used a personal icon taken from the owner's own icon set.
+That file (`DSHProxy-personal.ico`) and its notice are deliberately excluded from
+the git repository and are not published: the artwork belongs to a third party and
+is licensed only for personal, non-distributed use.
