@@ -141,8 +141,39 @@ function writePatch({ file, existing, doc }, dryRun) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     if (existing) fs.copyFileSync(file, backupPath(file));
     writeWhole(file, text);
+    tidy(file);
   }
   return { changed: true, text };
+}
+
+const KEPT_BACKUPS = 10;
+const STALE_TEMPORARY_MS = 60 * 60 * 1000;
+
+// Keeps the newest backups this program made of `file` and removes the older
+// ones, with any temporary file it left behind more than an hour ago. The
+// stamp in a backup's name orders it. Files other programs made are not
+// touched, and a file that cannot be removed is left for the next time.
+function tidy(file) {
+  const dir = path.dirname(file);
+  const prefix = `${path.basename(file)}.dshproxy-`;
+  let names;
+  try {
+    names = fs.readdirSync(dir).filter((name) => name.startsWith(prefix));
+  } catch {
+    return;
+  }
+  const remove = (name) => {
+    try {
+      fs.unlinkSync(path.join(dir, name));
+    } catch { /* in use or already gone */ }
+  };
+  const backups = names.filter((name) => name.endsWith(".bak")).sort();
+  for (const name of backups.slice(0, Math.max(0, backups.length - KEPT_BACKUPS))) remove(name);
+  for (const name of names.filter((item) => /^\d+\.tmp$/.test(item.slice(prefix.length)))) {
+    try {
+      if (Date.now() - fs.statSync(path.join(dir, name)).mtimeMs > STALE_TEMPORARY_MS) remove(name);
+    } catch { /* already gone */ }
+  }
 }
 
 // Adds the placeholder credential the routes refer to. A reference that is

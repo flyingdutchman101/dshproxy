@@ -488,3 +488,34 @@ test("verify reports a tool or an allowed model on a route that is gone", (t) =>
     "tool-reviewer names dshproxy-vanished/gemini-4-carbon-high, which this profile does not define (the tool would fail)"
   ]);
 });
+
+// 249 backups had piled up in two profiles by 2026-11-18, with a temporary
+// file left by an interrupted write.
+test("old backups and stale temporary files of this program are cleared, others are kept", (t) => {
+  const home = tempHome(t);
+  profile.apply(MODELS, ORIGIN, home);
+  const dir = path.dirname(patchPath(home));
+  const own = Array.from({ length: 14 }, (_, index) => `cordis.patch.yml.dshproxy-202611${String(index + 1).padStart(2, "0")}T120000000.bak`);
+  const foreign = ["cordis.patch.yml.dshgate-20261101T120000000.bak", "cordis.patch.yml.pre-image-input-20261101.bak", "cordis.patch.yml.2026-11-01T12-00-00-000Z.bak", "notes.dshproxy-20261101T120000000.bak"];
+  for (const name of [...own, ...foreign]) fs.writeFileSync(path.join(dir, name), "old");
+  const staleTmp = path.join(dir, "cordis.patch.yml.dshproxy-41836.tmp");
+  const freshTmp = path.join(dir, "cordis.patch.yml.dshproxy-777.tmp");
+  const foreignTmp = path.join(dir, "cordis.patch.yml.other-1.tmp");
+  for (const file of [staleTmp, freshTmp, foreignTmp]) fs.writeFileSync(file, "half");
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  fs.utimesSync(staleTmp, twoHoursAgo, twoHoursAgo);
+  fs.utimesSync(foreignTmp, twoHoursAgo, twoHoursAgo);
+
+  // A change writes one more backup, then clears up.
+  profile.apply([...MODELS, ...API_KEY], ORIGIN, home);
+  const left = fs.readdirSync(dir);
+  const ownLeft = left.filter((name) => /^cordis\.patch\.yml\.dshproxy-.*\.bak$/.test(name)).sort();
+  assert.equal(ownLeft.length, 10);
+  // The newest are kept: the one just written and the nine latest of the old ones.
+  assert.deepEqual(ownLeft.slice(0, 9), own.slice(5));
+  assert.equal(own.includes(ownLeft[9]), false);
+  for (const name of foreign) assert.ok(left.includes(name), `${name} was removed`);
+  assert.equal(fs.existsSync(staleTmp), false);
+  assert.equal(fs.existsSync(freshTmp), true);
+  assert.equal(fs.existsSync(foreignTmp), true);
+});
