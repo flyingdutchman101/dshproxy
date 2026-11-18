@@ -128,8 +128,28 @@ function describeShape(parsed) {
 const ACCOUNT_STRIKE_WINDOW_MS = 45 * 1000;
 const ACCOUNT_STRIKE_LIMIT = 3;
 const ACCOUNT_COOLDOWN_MS = 60 * 1000;
+// A model the usage report shows as used up is asked again after this long at
+// most, so a limit that was raised or reset early is noticed.
+const QUOTA_RECHECK_MS = 60 * 60 * 1000;
 
-function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}), control = null, supportsImages = null, accountOf = () => null, retryDelays = [2000, 5000, 12000, 20000], maxBodyBytes = MAX_BODY_BYTES }) {
+// `quotaReset(model)` resolves to the time (ms) the provider's usage report
+// says the model's quota returns, or null when it is not used up or unknown.
+function createGateway({ upstream, resolve, describe = () => ({}), failover, sessions = null, log = () => {}, status = () => ({}), control = null, supportsImages = null, accountOf = () => null, retryDelays = [2000, 5000, 12000, 20000], quotaReset = null, quotaLookupMs = 4000, maxBodyBytes = MAX_BODY_BYTES }) {
+  // A 429 that carries no time may be a throttle that passes in a minute or a
+  // weekly limit that is used up. The usage report tells them apart. Never
+  // rejects, and gives up after `quotaLookupMs`.
+  const usedUpUntil = (model) => {
+    if (!quotaReset) return Promise.resolve(null);
+    let timer;
+    const tooSlow = new Promise((done) => {
+      timer = setTimeout(done, quotaLookupMs, null);
+    });
+    const asked = Promise.resolve()
+      .then(() => quotaReset(model))
+      .then((reset) => (Number.isFinite(reset) && reset > Date.now() ? reset : null), () => null);
+    return Promise.race([asked, tooSlow]).finally(() => clearTimeout(timer));
+  };
+
   const accountStrikes = new Map();
   const accountCoolingUntil = new Map();
 
@@ -310,6 +330,17 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
 
       const verdict = failover.report(model, code, upstreamRes.headers["retry-after"], text);
       if (verdict.failover && route.lane) noteAccountStrike(model);
+      // The provider gave no time with its 429: look the model up in the usage
+      // report. A lane does not wait for the answer; it only makes the model
+      // sit out longer than the ten-minute guess.
+      const learned = code === 429 && verdict.source === "default"
+        ? usedUpUntil(model).then((reset) => {
+          if (reset === null) return null;
+          const until = failover.coolUntil(model, Math.min(reset, Date.now() + QUOTA_RECHECK_MS));
+          log(`${label}: ${model} is out of quota until about ${new Date(reset).toLocaleString()}, checked again at ${until.toLocaleTimeString()}`);
+          return reset;
+        }).catch(() => null)
+        : Promise.resolve(null);
       if (verdict.failover && next && !res.destroyed) {
         if (!read) upstreamRes.resume();
         log(`${label}: ${model} ${verdict.reason}${verdict.until ? `, skipped until about ${verdict.until.toLocaleTimeString()}` : ""}; using ${next}`);
@@ -331,14 +362,28 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       // A forced pick is strict about *which* model runs, not about giving up
       // after one refusal: providers throttle an account for a minute at a time,
       // so the same model is retried with growing pauses before failing.
+      //
+      // Not when the provider says the quota returns after the pauses that are
+      // left: then every retry is a wasted call, and the answer is returned now.
       if (verdict.failover && !next && forced && retries.length) {
         const delay = retries.shift();
-        log(`${label}: HTTP ${code}, retrying the same model in ${delay / 1000}s`);
-        if (!read) upstreamRes.resume();
-        await new Promise((done) => setTimeout(done, delay));
-        if (res.destroyed) return;
-        index -= 1;
-        continue;
+        const pausesLeft = () => retries.reduce((sum, item) => sum + item, 0);
+        let reset = verdict.source === "provider" && verdict.until.getTime() - Date.now() > delay + pausesLeft() ? verdict.until.getTime() : null;
+        if (reset === null) {
+          log(`${label}: HTTP ${code}, retrying the same model in ${delay / 1000}s`);
+          const [found] = await Promise.all([learned, new Promise((done) => setTimeout(done, delay))]);
+          if (res.destroyed) {
+            upstreamRes.destroy();
+            return;
+          }
+          if (found !== null && found - Date.now() > pausesLeft()) reset = found;
+        }
+        if (reset === null) {
+          if (!read) upstreamRes.resume();
+          index -= 1;
+          continue;
+        }
+        log(`${label}: HTTP ${code}, ${model} is out of quota until about ${new Date(reset).toLocaleString()}; not retrying`);
       }
       report(code, model);
       if (code >= 400) dumpFailure(code, model, text);

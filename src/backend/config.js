@@ -8,7 +8,7 @@ const { API_PROVIDERS, providerRegion, providerModels } = require("../catalog");
 // `managementKey` switches the Management API on for loopback callers that
 // send it; the backend replaces it with a hash when it starts. Without one the
 // Management API is off.
-function render({ host, port, authDir, requestRetry = 3, providers = {}, custom = [], managementKey = "" }) {
+function render({ host, port, authDir, providers = {}, custom = [], managementKey = "" }) {
   const config = {
     "config-version": 8,
     server: { host, port },
@@ -17,7 +17,9 @@ function render({ host, port, authDir, requestRetry = 3, providers = {}, custom 
       strategy: "round-robin",
       "session-affinity": true,
       "session-affinity-ttl": "2h",
-      retry: { "request-retry": requestRetry },
+      // One attempt per request. The gateway owns retries and failover; a backend
+      // that repeats a refused request as well multiplies every refusal.
+      retry: { "request-retry": 0 },
       // The gateway decides when a model sits out, so the backend must not
       // also black out a credential.
       cooldown: { "disable-cooling": true }

@@ -63,13 +63,15 @@ async function startBackend(t, answer) {
 const LANES = { main: ["gpt-6-astra", "claude-fable-5-2", "gemini-4-carbon-high"], empty: [] };
 const EFFORTS = { "gemini-4-carbon-high": ["high"] };
 
-async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages = null, resolve = null, accountOf = null, retryDelays = [] } = {}) {
+async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages = null, resolve = null, accountOf = null, retryDelays = [], quotaReset = null } = {}) {
   const logs = [];
+  const failover = createFailover(now ? { now } : {});
   const gateway = createGateway({
     upstream: { host: "127.0.0.1", port: backendPort },
     resolve: resolve || ((id) => (id.startsWith("lane-") ? { lane: id.slice(5), ladder: lanes[id.slice(5)] || [] } : { lane: null, ladder: [id] })),
     describe: (model) => (EFFORTS[model] ? { efforts: EFFORTS[model] } : {}),
-    failover: createFailover(now ? { now } : {}),
+    failover,
+    quotaReset: quotaReset || undefined,
     sessions: createSessions(),
     log: (line) => logs.push(line),
     status: () => ({ ok: true }),
@@ -82,7 +84,7 @@ async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages
     gateway.closeAllConnections();
     gateway.close();
   });
-  return { url: `http://127.0.0.1:${port}`, logs };
+  return { url: `http://127.0.0.1:${port}`, logs, failover };
 }
 
 const post = (url, body, headers = {}, signal = undefined) => fetch(`${url}/v1/messages`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: typeof body === "string" ? body : JSON.stringify(body), signal });
@@ -446,4 +448,100 @@ test("a forced model gives up after the retries are spent, with its own error", 
   const response = await post(url, { model: "gemini-4-carbon-high", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
   assert.equal(response.status, 429);
   assert.equal(backend.seen.length, 3, "one attempt plus two retries");
+});
+
+// ---- A quota that is used up, as opposed to a short throttle ----
+
+const QUOTA_BODY = { error: { type: "rate_limit_error", message: "This request would exceed your account's rate limit. Please try again later." } };
+const HOUR = 60 * 60 * 1000;
+
+test("a forced model whose provider names a far reset fails at once, with the provider's answer", async (t) => {
+  // ChatGPT's answer to a used-up weekly limit on 2026-11-18.
+  const backend = await startBackend(t, () => ({ status: 429, headers: { "retry-after": "66163" }, body: QUOTA_BODY }));
+  const { url, logs } = await startGateway(t, backend.port, { retryDelays: [400, 400] });
+  const started = Date.now();
+  const response = await post(url, { model: "gpt-6-astra", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "66163");
+  assert.deepEqual(await response.json(), QUOTA_BODY);
+  assert.equal(backend.seen.length, 1, "the provider is asked once");
+  assert.ok(Date.now() - started < 350, "no pause before the answer");
+  assert.match(logs.join("\n"), /not retrying/);
+});
+
+test("a forced model whose provider names a near reset is still retried", async (t) => {
+  let calls = 0;
+  const backend = await startBackend(t, () => {
+    calls += 1;
+    return calls === 1 ? { status: 429, headers: { "retry-after": "1" }, body: QUOTA_BODY } : { status: 200, body: { served: "gpt-6-astra" } };
+  });
+  // The pauses left (1.2 s) reach past the second the provider asked for.
+  const { url } = await startGateway(t, backend.port, { retryDelays: [600, 600] });
+  const response = await post(url, { model: "gpt-6-astra", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(response.status, 200);
+  assert.equal(backend.seen.length, 2);
+});
+
+test("a forced model the usage report shows as used up is not retried, and is not looked up twice", async (t) => {
+  // Claude's answer to a used-up weekly limit carries no time at all.
+  const backend = await startBackend(t, () => ({ status: 429, body: QUOTA_BODY }));
+  const asked = [];
+  const reset = Date.now() + 27 * HOUR;
+  const { url, failover } = await startGateway(t, backend.port, {
+    retryDelays: [30, 30, 30],
+    quotaReset: async (model) => {
+      asked.push(model);
+      return reset;
+    }
+  });
+  const first = await post(url, { model: "claude-fable-5-2", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(first.status, 429);
+  assert.deepEqual(await first.json(), QUOTA_BODY);
+  assert.equal(backend.seen.length, 1, "the provider is asked once");
+  // The model is checked again within the hour, not left alone for a day.
+  const until = failover.coolingUntil("claude-fable-5-2").getTime();
+  assert.ok(until > Date.now() + 55 * 60 * 1000 && until <= Date.now() + HOUR, "cools for an hour");
+
+  const second = await post(url, { model: "claude-fable-5-2", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(second.status, 429);
+  assert.equal(backend.seen.length, 2, "one more call for the second request");
+  assert.deepEqual(asked, ["claude-fable-5-2"], "the usage report is read once");
+});
+
+test("a forced model is retried as before when the usage report has nothing to say", async (t) => {
+  for (const quotaReset of [async () => null, async () => { throw new Error("usage endpoint is down"); }, async () => Date.now() - 1000, () => new Promise(() => {})]) {
+    let calls = 0;
+    const backend = await startBackend(t, () => {
+      calls += 1;
+      return calls === 1 ? { status: 429, body: QUOTA_BODY } : { status: 200, body: { served: "claude-fable-5-2" } };
+    });
+    const { url } = await startGateway(t, backend.port, { retryDelays: [20], quotaReset, quotaLookupMs: 60 });
+    const response = await post(url, { model: "claude-fable-5-2", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+    assert.equal(response.status, 200);
+    assert.equal(backend.seen.length, 2);
+  }
+});
+
+test("only a 429 is looked up in the usage report", async (t) => {
+  const backend = await startBackend(t, () => ({ status: 503, body: { error: { message: "overloaded" } } }));
+  let asked = 0;
+  const { url } = await startGateway(t, backend.port, { retryDelays: [10], quotaReset: async () => { asked += 1; return Date.now() + HOUR; } });
+  const response = await post(url, { model: "claude-fable-5-2", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(response.status, 503);
+  assert.equal(backend.seen.length, 2, "one attempt plus one retry");
+  assert.equal(asked, 0);
+});
+
+test("a lane moves on at once and leaves a used-up model alone until it is checked again", async (t) => {
+  const backend = await startBackend(t, (model) => (model === "claude-fable-5-2" ? { status: 429, body: QUOTA_BODY } : { status: 200, body: { served: model } }));
+  const { url, failover } = await startGateway(t, backend.port, {
+    lanes: { deep: ["claude-fable-5-2", "claude-opus-5-5"] },
+    quotaReset: async (model) => (model === "claude-fable-5-2" ? Date.now() + 27 * HOUR : null)
+  });
+  const response = await post(url, { model: "lane-deep", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-dshproxy-model"), "claude-opus-5-5");
+  await pause(30);
+  const until = failover.coolingUntil("claude-fable-5-2").getTime();
+  assert.ok(until > Date.now() + 55 * 60 * 1000 && until <= Date.now() + HOUR, "cools for an hour, not the ten-minute guess");
 });

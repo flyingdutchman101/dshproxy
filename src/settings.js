@@ -32,7 +32,6 @@ const DEFAULTS = {
   port: 8417,
   backendPort: 8418,
   authDir: "",
-  requestRetry: 3,
   cooldownMinutes: 10,
   failureThreshold: 3,
   custom: []
@@ -124,7 +123,6 @@ function sanitize(value = {}) {
     port,
     backendPort,
     authDir: typeof value.authDir === "string" ? value.authDir.trim() : DEFAULTS.authDir,
-    requestRetry: intIn(value.requestRetry, 0, 10, DEFAULTS.requestRetry),
     cooldownMinutes: Number.isFinite(cooldown) && cooldown >= 1 && cooldown <= 360 ? cooldown : DEFAULTS.cooldownMinutes,
     failureThreshold: intIn(value.failureThreshold, 1, 10, DEFAULTS.failureThreshold),
     lanes: sanitizeLanes(value.lanes),

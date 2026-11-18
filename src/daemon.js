@@ -50,7 +50,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
   // A new Management API key every start. Only this process knows it; the
   // backend stores a hash of it.
   const managementKey = crypto.randomBytes(32).toString("hex");
-  fs.writeFileSync(paths.config, render({ host: settings.host, port: settings.backendPort, authDir: state.authDir, requestRetry: settings.requestRetry, providers: state.readable, custom: state.custom, managementKey }));
+  fs.writeFileSync(paths.config, render({ host: settings.host, port: settings.backendPort, authDir: state.authDir, providers: state.readable, custom: state.custom, managementKey }));
   if (state.unreadable.length) log(`Saved API key cannot be read for: ${state.unreadable.join(", ")}. Enter it again with \`dshproxy key set\`.`);
 
   const supervisor = createSupervisor({ binary: backend.path, configPath: paths.config, host: settings.host, port: settings.backendPort, pidFile: paths.backendPid, log });
@@ -335,6 +335,9 @@ async function start({ home, print = console.log, restart = null } = {}) {
       return model === undefined ? true : model;
     },
     failover,
+    // When a subscription model's quota returns, from the provider's own usage
+    // report (the cached one the Accounts page shows).
+    quotaReset: (model) => limits.quotaReset({ accounts: accounts.list(state.authDir), model }),
     sessions: createSessions(),
     log,
     status,

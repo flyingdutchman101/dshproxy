@@ -85,7 +85,8 @@ test("the gateway and its backend never share a port", () => {
 test("invalid settings fall back to the defaults", () => {
   const clean = settings.sanitize({ port: "abc", requestRetry: 99, cooldownMinutes: 0, lanes: { "Bad Name": ["x"], ok: ["gpt-6-astra", "gpt-6-astra", ""] } });
   assert.equal(clean.port, 8417);
-  assert.equal(clean.requestRetry, 3);
+  // The backend retry count is no longer a setting: a stored value is dropped.
+  assert.equal("requestRetry" in clean, false);
   assert.equal(clean.cooldownMinutes, 10);
   assert.deepEqual(clean.lanes, { ok: ["gpt-6-astra"] });
 });

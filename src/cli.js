@@ -264,7 +264,7 @@ async function main(argv, out = console.log) {
       const state = await app.snapshot();
       const backend = await install(app.currentLock(state.home), state.paths.binDir, { log: out });
       fs.mkdirSync(state.authDir, { recursive: true });
-      fs.writeFileSync(state.paths.config, render({ host: state.settings.host, port: state.settings.backendPort, authDir: state.authDir, requestRetry: state.settings.requestRetry, providers: state.readable }));
+      fs.writeFileSync(state.paths.config, render({ host: state.settings.host, port: state.settings.backendPort, authDir: state.authDir, providers: state.readable }));
       const code = await accounts.login(args[0], { binary: backend.path, configPath: state.paths.config });
       if (code !== 0) throw new Error(`Sign-in ended with exit code ${code}.`);
       out("Signed in. Run `dshproxy dsh apply` to offer the new models to DeepSeek Harness.");

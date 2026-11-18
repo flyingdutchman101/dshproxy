@@ -91,10 +91,10 @@ The default ladders follow the model ladder in the DeepSeek Harness working defa
 
 | Lane | Ladder |
 |---|---|
-| `lane-main` | `gpt-6-astra`, `claude-fable-5-2`, `gemini-4-carbon-high`, `deepseek/deepseek-v4-pro` |
-| `lane-scout` | `claude-haiku-5-5`, `gemini-3.8-flash-high`, `deepseek/deepseek-flash`, `qwen/qwen3.8-flash` |
+| `lane-main` | `gpt-6-astra`, `claude-fable-5-2`, `claude-opus-5-5`, `gemini-4-carbon-high`, `deepseek/deepseek-v4-pro` |
+| `lane-scout` | `claude-haiku-5-5`, `gemini-3.8-flash-high`, `gpt-6-luna`, `deepseek/deepseek-flash`, `qwen/qwen3.8-flash` |
 | `lane-builder` | `gpt-6-astra`, `claude-sonnet-5-5`, `deepseek/deepseek-v4-pro`, `gemini-4-argon-high` |
-| `lane-architect` | `claude-fable-5-2`, `gpt-6.1-terra`, `deepseek/deepseek-v4-pro`, `gemini-4-argon-high` |
+| `lane-architect` | `claude-fable-5-2`, `gpt-6.1-terra`, `claude-opus-5-5`, `deepseek/deepseek-v4-pro`, `gemini-4-argon-high` |
 | `lane-reviewer` | `gemini-4-carbon-high`, `deepseek/deepseek-v4-pro`, `claude-opus-5-5` |
 | `lane-google` | `gemini-3.8-flash-high`, `gemini-4-carbon-high`, `gemini-4-hydrogen-xhigh`, `gemini-3.8-flash-tiered` |
 
@@ -111,7 +111,7 @@ Change the ladders under `lanes` in `~/.dshproxy/settings.json`, then restart th
 
 | Upstream answer | What happens |
 |---|---|
-| HTTP 402, 429, 503 or 529 | The model sits out for 10 minutes (or for `Retry-After`, up to 6 hours). The request moves on. |
+| HTTP 402, 429, 503 or 529 | The model sits out for as long as the provider says (`Retry-After`, up to a day), or for 10 minutes when it does not say. The request moves on. |
 | HTTP 500, 502, 504 or no answer, three times in a row | Same as above. The first two are returned to the client. |
 | A rejection saying the request is too long for the model | The request moves on. The model stays in use. |
 | A rejection saying no signed-in account serves the model | The model sits out for 10 minutes. The request moves on. |
@@ -122,6 +122,8 @@ A request never moves on because an answer looked weak. A rung with no account o
 A conversation stays on the rung that last served it, so a recovered first rung does not pull it back mid-conversation. A conversation is identified by the `X-Session-ID` header, then `prompt_cache_key`, then its first user message.
 
 Each response carries `x-dshproxy-model` (the model that served it) and, for a lane, `x-dshproxy-lane`.
+
+The backend tries each request once. Retries and failover belong to the gateway alone, so a provider's refusal is one upstream call, not several.
 
 A lane is declared to DeepSeek Harness with the smallest context window and output limit on its ladder, so a request sized for the lane fits every rung.
 

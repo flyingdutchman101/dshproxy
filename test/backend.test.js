@@ -53,7 +53,14 @@ test("the backend never blacks out a credential on its own", () => {
   const config = YAML.parse(render(BASE));
   assert.equal(config.routing.cooldown["disable-cooling"], true);
   assert.equal(config.routing["session-affinity"], true);
-  assert.equal(config.routing.retry["request-retry"], 3);
+});
+
+// The gateway owns retries and failover. A backend that also repeats a refused
+// request multiplies every provider refusal (4 upstream calls per 429 were
+// logged on 2026-11-18), which is the traffic providers suspend accounts for.
+test("the backend tries a request once, whatever is asked", () => {
+  assert.equal(YAML.parse(render(BASE)).routing.retry["request-retry"], 0);
+  assert.equal(YAML.parse(render({ ...BASE, requestRetry: 7 })).routing.retry["request-retry"], 0);
 });
 
 test("no API-key section is written when no key is configured", () => {

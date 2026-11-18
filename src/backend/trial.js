@@ -38,11 +38,11 @@ function freePort() {
 // writes the file, and the running backend's folder watcher reloads it. A copy
 // would be worse: providers that rotate refresh tokens would then invalidate
 // the token the running backend still holds.
-async function runTrial({ binary, authDir, workDir, accounts, providers = {}, requestRetry = 0, log = () => {} }) {
+async function runTrial({ binary, authDir, workDir, accounts, providers = {}, log = () => {} }) {
   fs.mkdirSync(workDir, { recursive: true });
   const port = await freePort();
   const configPath = path.join(workDir, "trial-config.yaml");
-  fs.writeFileSync(configPath, render({ host: "127.0.0.1", port, authDir, requestRetry, providers }));
+  fs.writeFileSync(configPath, render({ host: "127.0.0.1", port, authDir, providers }));
   const supervisor = createSupervisor({ binary, configPath, host: "127.0.0.1", port, log: (line) => log(`trial: ${line}`) });
   const checks = [];
   let ok = true;

@@ -225,6 +225,97 @@ test("an account's limits carry the resets ChatGPT offers", async () => {
   assert.deepEqual(result.accounts[0].resets, { available: 1, applicable: 1 });
 });
 
+// ---- When a model's quota returns ----
+
+const CLAUDE_USAGE = "https://api.anthropic.com/api/oauth/usage";
+const TWO_CLAUDE = [
+  { file: "claude-b.json", provider: "claude", label: "Claude", account: "b@example.com", disabled: false },
+  { file: "claude-e.json", provider: "claude", label: "Claude", account: "e@example.com", disabled: false }
+];
+const TWO_CREDENTIALS = [{ name: "claude-b.json", auth_index: "2", status: "active" }, { name: "claude-e.json", auth_index: "5", status: "active" }];
+
+// Answers the Claude usage call per account (by backend index).
+function claudeManagement(byIndex, credentials = TWO_CREDENTIALS) {
+  const calls = [];
+  return {
+    calls,
+    credentials: async () => credentials,
+    apiCall: async (request) => {
+      calls.push(request);
+      const reply = request.url === CLAUDE_USAGE ? byIndex[request.authIndex] : null;
+      if (!reply) return { status_code: 404, body: "" };
+      return { status_code: reply.status || 200, body: JSON.stringify(reply.body) };
+    }
+  };
+}
+
+const quotaLimits = (byIndex, credentials) => createLimits({ management: claudeManagement(byIndex, credentials), detailsFor: () => ({}), now: () => NOW });
+const FABLE_RESET = Date.parse("2026-11-19T16:00:00.248Z");
+
+test("a model whose own weekly limit is used up returns when that limit resets", async () => {
+  const limits = quotaLimits({ 2: { body: CLAUDE_WITH_SCOPED } }, TWO_CREDENTIALS.slice(0, 1));
+  const accounts = TWO_CLAUDE.slice(0, 1);
+  assert.equal(await limits.quotaReset({ accounts, model: "claude-fable-5-2" }), FABLE_RESET);
+  assert.equal(await limits.quotaReset({ accounts, model: "claude-fable-5-1" }), FABLE_RESET);
+  // The same account still serves the other Claude models.
+  assert.equal(await limits.quotaReset({ accounts, model: "claude-opus-5-5" }), null);
+  assert.equal(await limits.quotaReset({ accounts, model: "claude-haiku-5-5" }), null);
+});
+
+test("a used-up account-wide limit stops every model of the account", async () => {
+  const body = { five_hour: { utilization: 100, resets_at: "2026-11-16T03:00:00Z" }, seven_day: { utilization: 60, resets_at: "2026-11-20T10:00:00Z" } };
+  const limits = quotaLimits({ 2: { body } }, TWO_CREDENTIALS.slice(0, 1));
+  assert.equal(await limits.quotaReset({ accounts: TWO_CLAUDE.slice(0, 1), model: "claude-sonnet-5-5" }), Date.parse("2026-11-16T03:00:00Z"));
+});
+
+test("with two limits used up the model returns when the later one resets", async () => {
+  const body = { ...CLAUDE_WITH_SCOPED, five_hour: { utilization: 100, resets_at: "2026-11-16T03:00:00Z" } };
+  const limits = quotaLimits({ 2: { body } }, TWO_CREDENTIALS.slice(0, 1));
+  assert.equal(await limits.quotaReset({ accounts: TWO_CLAUDE.slice(0, 1), model: "claude-fable-5-2" }), FABLE_RESET);
+});
+
+test("a model is only out of quota when no active account can serve it", async () => {
+  const fresh = { five_hour: { utilization: 3, resets_at: "2026-11-16T03:00:00Z" }, seven_day: { utilization: 14, resets_at: "2026-11-22T19:00:00Z" } };
+  const oneLeft = quotaLimits({ 2: { body: CLAUDE_WITH_SCOPED }, 5: { body: fresh } });
+  assert.equal(await oneLeft.quotaReset({ accounts: TWO_CLAUDE, model: "claude-fable-5-2" }), null);
+
+  // Both used up: the model returns with whichever account resets first.
+  const later = { ...CLAUDE_WITH_SCOPED, limits: CLAUDE_WITH_SCOPED.limits.map((item) => (item.kind === "weekly_scoped" ? { ...item, resets_at: "2026-11-22T19:00:00Z" } : item)) };
+  const noneLeft = quotaLimits({ 2: { body: later }, 5: { body: CLAUDE_WITH_SCOPED } });
+  assert.equal(await noneLeft.quotaReset({ accounts: TWO_CLAUDE, model: "claude-fable-5-2" }), FABLE_RESET);
+
+  // A paused account does not count either way.
+  const paused = quotaLimits({ 2: { body: CLAUDE_WITH_SCOPED }, 5: { body: fresh } });
+  assert.equal(await paused.quotaReset({ accounts: [TWO_CLAUDE[0], { ...TWO_CLAUDE[1], disabled: true }], model: "claude-fable-5-2" }), FABLE_RESET);
+});
+
+test("what cannot be told from the usage report is not treated as used up", async () => {
+  const accounts = TWO_CLAUDE.slice(0, 1);
+  const one = TWO_CREDENTIALS.slice(0, 1);
+  // The usage call failed.
+  assert.equal(await quotaLimits({ 2: { status: 429, body: { error: "slow down" } } }, one).quotaReset({ accounts, model: "claude-fable-5-2" }), null);
+  // A limit for something else (another model, a surface) is used up.
+  const other = { seven_day: { utilization: 10 }, limits: [
+    { kind: "weekly_scoped", percent: 100, resets_at: "2026-11-19T16:00:00Z", scope: { model: { display_name: "Opus" } } },
+    { kind: "weekly_scoped", percent: 100, resets_at: "2026-11-19T16:00:00Z", scope: { model: null, surface: { display_name: "Fable Studio" } } }
+  ] };
+  assert.equal(await quotaLimits({ 2: { body: other } }, one).quotaReset({ accounts, model: "claude-fable-5-2" }), null);
+  // Used up, but the report does not say until when.
+  assert.equal(await quotaLimits({ 2: { body: { seven_day: { utilization: 100 } } } }, one).quotaReset({ accounts, model: "claude-opus-5-5" }), null);
+  // Not a Claude model, or no Claude account at all.
+  assert.equal(await quotaLimits({ 2: { body: CLAUDE_WITH_SCOPED } }, one).quotaReset({ accounts, model: "gpt-6-astra" }), null);
+  assert.equal(await quotaLimits({}, []).quotaReset({ accounts: [], model: "claude-fable-5-2" }), null);
+});
+
+test("requests that ask at the same moment share one usage call", async () => {
+  const management = claudeManagement({ 2: { body: CLAUDE_WITH_SCOPED } }, TWO_CREDENTIALS.slice(0, 1));
+  const limits = createLimits({ management, detailsFor: () => ({}), now: () => NOW });
+  const accounts = TWO_CLAUDE.slice(0, 1);
+  const answers = await Promise.all([1, 2, 3, 4].map(() => limits.quotaReset({ accounts, model: "claude-fable-5-2" })));
+  assert.deepEqual(answers, [FABLE_RESET, FABLE_RESET, FABLE_RESET, FABLE_RESET]);
+  assert.equal(management.calls.length, 1);
+});
+
 // A stand-in that records calls and answers the reset endpoints.
 function resetManagement(replies) {
   const calls = [];

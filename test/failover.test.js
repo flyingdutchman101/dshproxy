@@ -66,6 +66,48 @@ test("Retry-After sets the cool-down, capped at six hours", () => {
   assert.equal(failover.report("claude-fable-5-2", 429, "86400").until.toISOString(), "2026-11-15T18:00:00.000Z");
 });
 
+// ChatGPT answered a used-up weekly limit with "retry-after: 66163" (18 hours)
+// on 2026-11-18. A shorter cap sends a request to the provider every few hours
+// for nothing.
+test("by default a provider's Retry-After is honoured for up to a day", () => {
+  const clock = { time: Date.parse("2026-11-15T12:00:00Z") };
+  const failover = createFailover({ now: () => clock.time });
+  assert.equal(failover.report("gpt-6-astra", 429, "66163").until.getTime(), clock.time + 66163 * 1000);
+  assert.equal(failover.report("claude-fable-5-2", 429, String(3 * 24 * 3600)).until.getTime(), clock.time + 24 * 3600 * 1000);
+});
+
+test("a cool-down says whether the provider gave its end or it is a guess", () => {
+  const { failover } = withClock();
+  assert.equal(failover.report("gpt-6-astra", 429, "1800").source, "provider");
+  assert.equal(failover.report("claude-fable-5-2", 429).source, "default");
+  assert.equal(failover.report("gemini-4-carbon-high", 503, "soon").source, "default");
+  assert.equal(failover.report("gpt-6.1-terra", 200).source, null);
+});
+
+test("a guess never replaces an end the provider gave", () => {
+  const { clock, failover } = withClock();
+  failover.report("gpt-6-astra", 429, "7200");
+  clock.time += MINUTE;
+  const again = failover.report("gpt-6-astra", 429);
+  assert.equal(again.until.toISOString(), "2026-11-15T14:00:00.000Z");
+  assert.equal(again.source, "provider");
+  // Once that time has passed, a guess is all there is.
+  clock.time += 3 * 60 * MINUTE;
+  const later = failover.report("gpt-6-astra", 429);
+  assert.equal(later.until.toISOString(), "2026-11-15T15:11:00.000Z");
+  assert.equal(later.source, "default");
+});
+
+test("an end learned from the provider's usage report cools the model until then", () => {
+  const { clock, failover } = withClock();
+  const until = failover.coolUntil("claude-fable-5-2", clock.time + 45 * MINUTE);
+  assert.equal(until.toISOString(), "2026-11-15T12:45:00.000Z");
+  assert.deepEqual(failover.order(LADDER), ["gpt-6-astra", "gemini-4-carbon-high"]);
+  assert.equal(failover.report("claude-fable-5-2", 429).source, "provider");
+  // Never beyond the longest cool-down.
+  assert.equal(failover.coolUntil("gpt-6-astra", clock.time + 30 * 24 * 60 * MINUTE).toISOString(), "2026-11-15T18:00:00.000Z");
+});
+
 test("the third server error in a row moves on; the first two do not", () => {
   const { failover } = withClock();
   assert.equal(failover.report("gpt-6-astra", 502).failover, false);

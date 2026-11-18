@@ -144,6 +144,44 @@ function parseClaude(json, now = Date.now()) {
   return [...named, ...scoped];
 }
 
+// Claude limits that stop every model of an account when they are used up.
+// Any other window (a surface, another product) is left out on purpose: a
+// model is only set aside on a limit known to apply to it.
+const CLAUDE_ACCOUNT_WINDOWS = new Set(["5-hour", "Weekly", "Weekly (OAuth apps)"]);
+const CLAUDE_FAMILIES = new Set(["fable", "opus", "sonnet", "haiku"]);
+
+// "claude-fable-5-2" -> "fable"; null for anything that is not a Claude model.
+function claudeFamily(model) {
+  const family = /^claude-([a-z]+)-/.exec(String(model || ""))?.[1];
+  return family && CLAUDE_FAMILIES.has(family) ? family : null;
+}
+
+// `entries` are the accounts of a limits read. A model is out of quota only
+// when every active Claude account shows a used-up limit that applies to it;
+// it returns when the first of those accounts is free again. Null when an
+// account can serve it, or when a report is missing or names no reset time.
+function claudeQuotaReset(entries, model) {
+  const family = claudeFamily(model);
+  const active = (Array.isArray(entries) ? entries : []).filter((entry) => entry.provider === "claude" && !entry.disabled);
+  if (!family || !active.length) return null;
+  let earliest = null;
+  for (const entry of active) {
+    if (entry.error) return null;
+    let blockedUntil = null;
+    for (const item of entry.windows || []) {
+      if (item.reported === false || !(item.usedPercent >= 100)) continue;
+      const scope = /^(?:Weekly|5-hour) \((.+)\)$/.exec(item.title)?.[1];
+      if (!CLAUDE_ACCOUNT_WINDOWS.has(item.title) && !(scope && scope.toLowerCase() === family)) continue;
+      const reset = Date.parse(item.resetsAt);
+      if (!Number.isFinite(reset)) return null;
+      blockedUntil = Math.max(blockedUntil ?? 0, reset);
+    }
+    if (blockedUntil === null) return null;
+    earliest = earliest === null ? blockedUntil : Math.min(earliest, blockedUntil);
+  }
+  return earliest;
+}
+
 // "Gemini Models" -> "Gemini", "Claude and GPT models" -> "Claude/GPT".
 function shortGroup(name) {
   const trimmed = String(name).replace(/\s*models?\s*$/i, "").trim();
@@ -245,9 +283,21 @@ async function fetchOtherWindows({ management, account, authIndex, details, want
 // non-secret IDs a usage call needs ({ accountId, projectId, plan }).
 function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 60 * 1000, now = Date.now }) {
   let cache = null;
+  let reading = null;
 
-  async function read({ accounts, force = false }) {
-    if (!force && cache && now() - cache.at < cacheMs) return cache.value;
+  // Callers that arrive while a read is under way share it: a burst of
+  // requests must not become a burst of usage calls.
+  function read({ accounts, force = false }) {
+    if (!force && cache && now() - cache.at < cacheMs) return Promise.resolve(cache.value);
+    if (!force && reading) return reading;
+    const started = fetchAll(accounts).finally(() => {
+      if (reading === started) reading = null;
+    });
+    reading = started;
+    return started;
+  }
+
+  async function fetchAll(accounts) {
     const credentials = await management.credentials();
     const byName = new Map(credentials.map((item) => [item.name, item]));
     const results = await Promise.all(accounts.map(async (account) => {
@@ -285,6 +335,14 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
     const value = { fetchedAt: new Date(now()).toISOString(), accounts: results };
     cache = { at: now(), value };
     return value;
+  }
+
+  // When `model` can be served again (a timestamp), if the usage report shows
+  // that no active account can serve it now; null when one can or when the
+  // report does not tell. Uses the cached report.
+  async function quotaReset({ accounts, model }) {
+    if (!claudeFamily(model)) return null;
+    return claudeQuotaReset((await read({ accounts })).accounts, model);
   }
 
   // The provider's usage reply for one account, as received, with anything
@@ -355,7 +413,7 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
     return { code, windowsReset, message: messages[code] || `ChatGPT answered "${code}".` };
   }
 
-  return { read, raw, listResets, useReset, clear: () => (cache = null) };
+  return { read, raw, quotaReset, listResets, useReset, clear: () => (cache = null) };
 }
 
 const SECRET_KEY = /token|secret|password|authorization|cookie|api_?key/i;
