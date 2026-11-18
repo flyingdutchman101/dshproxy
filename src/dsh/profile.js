@@ -288,6 +288,32 @@ function remove(home = dshHome(), options = {}) {
 }
 
 
+// Every `{ provider: dshproxy-…, model }` pair in the profile, wherever it
+// sits (a tool's agentOptions, the allowed subagent models), that names a route
+// or a model the profile's own provider list does not have. The default model
+// is left to its own check. Each is described by the nearest entry ID.
+function danglingReferences(doc, providersNode) {
+  const defined = new Map();
+  for (const pair of YAML.isMap(providersNode) ? providersNode.items : []) {
+    const models = YAML.isMap(pair.value) ? pair.value.get("models", true) : null;
+    defined.set(String(pair.key), new Set((YAML.isSeq(models) ? models.items : []).map((item) => (YAML.isMap(item) ? String(item.get("id") || "") : ""))));
+  }
+  const found = [];
+  YAML.visit(doc, {
+    Map(_key, node, ancestors) {
+      const provider = node.get("provider");
+      const model = node.get("model");
+      if (typeof provider !== "string" || typeof model !== "string" || !provider.startsWith("dshproxy-")) return;
+      if (defined.get(provider)?.has(model)) return;
+      const owner = [...ancestors].reverse().find((item) => YAML.isMap(item) && typeof item.get("id") === "string");
+      const name = owner ? owner.get("id") : "an entry";
+      if (name === "agent-default-model") return;
+      found.push(`${name} names ${provider}/${model}, which this profile does not define (the tool would fail)`);
+    }
+  });
+  return [...new Set(found)].sort();
+}
+
 // Reads the profiles back and reports what would stop DeepSeek Harness from
 // using DSHProxy: wrong or missing routes, stale or unrouted models, a missing
 // default model, missing image caps, a leftover DroidProxy provider or a missing
@@ -368,6 +394,15 @@ function verify({ origin, lanes, models, home = dshHome() }) {
         if (!ROUTES[provider]) problems.push(`agent-default-model names provider ${provider || "(none)"}, which is not a DSHProxy route`);
         if (!laneIds.includes(model) && !offered.has(model)) problems.push(`agent-default-model names model ${model || "(none)"}, which is not offered`);
       }
+    } catch (error) {
+      problems.push(error.message);
+    }
+
+    // Tools and the subagent model list name routes too. One that names a
+    // DSHProxy route or model this profile does not define fails when it is
+    // used, long after the profile was written.
+    try {
+      problems.push(...danglingReferences(readPatch(profile, home).doc, providersNode));
     } catch (error) {
       problems.push(error.message);
     }

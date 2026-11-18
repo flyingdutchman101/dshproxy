@@ -433,3 +433,58 @@ test("verify reports a DroidProxy provider left behind", (t) => {
   assert.equal(report.ok, false);
   assert.match(report.profiles[0].problems.join("\n"), /DroidProxy provider \(droidproxy-claude\)/);
 });
+
+// What broke the `reviewer` tool on 2026-11-18: it was pinned to a route that
+// had gone when its account was suspended, and verify still said "ready".
+const TOOL_WIRING = (reviewer, allowed) => [
+  "- id: subagent-model-selection-settings",
+  "  name: \"@deepseek-ai/dsh-subagent-model-selection\"",
+  "  config:",
+  "    allowedModels:",
+  ...allowed.map((entry) => `      - { provider: ${entry[0]}, model: ${entry[1]} }`),
+  "- insert:",
+  "    - id: tool-scout",
+  "      name: \"@deepseek-ai/dsh-tool-subagent\"",
+  "      config:",
+  "        toolName: scout",
+  "        agentOptions:",
+  "          provider: dshproxy-lanes",
+  "          model: lane-main",
+  "    - id: tool-reviewer",
+  "      name: \"@deepseek-ai/dsh-tool-subagent\"",
+  "      config:",
+  "        toolName: reviewer",
+  "        agentOptions:",
+  `          provider: ${reviewer[0]}`,
+  `          model: ${reviewer[1]}`,
+  ""
+].join("\n");
+
+function verifyWithWiring(t, reviewer, allowed) {
+  const home = tempHome(t);
+  const lanes = { main: ["gemini-4-carbon-high"] };
+  profile.apply(MODELS, ORIGIN, home, { lanes });
+  fs.appendFileSync(patchPath(home), TOOL_WIRING(reviewer, allowed));
+  return profile.verify({ origin: ORIGIN, lanes, models: MODELS.map((entry) => ({ id: entry.id, api: entry.api })), home });
+}
+
+test("verify accepts tools and allowed models that point at routes the profile has", (t) => {
+  const report = verifyWithWiring(t, ["dshproxy-lanes", "lane-main"], [["dshproxy-lanes", "lane-main"], ["dshproxy-compat", "gemini-4-carbon-high"], ["some-other-gateway", "any-model"]]);
+  assert.deepEqual(report.profiles[0].problems, []);
+  assert.equal(report.ok, true);
+});
+
+test("verify reports a tool pinned to a model its route does not list", (t) => {
+  const report = verifyWithWiring(t, ["dshproxy-compat", "gemini-9-gone"], [["dshproxy-lanes", "lane-main"]]);
+  assert.equal(report.ok, false);
+  assert.deepEqual(report.profiles[0].problems, ["tool-reviewer names dshproxy-compat/gemini-9-gone, which this profile does not define (the tool would fail)"]);
+});
+
+test("verify reports a tool or an allowed model on a route that is gone", (t) => {
+  const report = verifyWithWiring(t, ["dshproxy-vanished", "gemini-4-carbon-high"], [["dshproxy-lanes", "lane-main"], ["dshproxy-lanes", "lane-nowhere"]]);
+  assert.equal(report.ok, false);
+  assert.deepEqual(report.profiles[0].problems, [
+    "subagent-model-selection-settings names dshproxy-lanes/lane-nowhere, which this profile does not define (the tool would fail)",
+    "tool-reviewer names dshproxy-vanished/gemini-4-carbon-high, which this profile does not define (the tool would fail)"
+  ]);
+});
