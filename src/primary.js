@@ -17,27 +17,32 @@
 //   account still has it.
 //
 // Without the last two the backend would ask an account that cannot answer
-// first in every new conversation. The choice is kept in the DSHProxy
-// settings and applied again when the gateway starts, so it does not depend
-// on what the backend remembers.
+// first in every new conversation.
+//
+// The backend keeps both the priority and the excluded models in each
+// account's file. DSHProxy owns them: every run compares what the backend
+// holds with what the settings and the usage report ask for, so a choice
+// that was taken back, or made while the gateway was not running, never
+// leaves an old order behind. A paused account is left alone until it is
+// resumed.
 
 const PRIMARY_PRIORITY = 10;
 const SECONDARY_PRIORITY = 5;
+const RETRY_MS = 60 * 1000;
 
-const byFile = (accounts) => [...accounts].sort((a, b) => a.file.localeCompare(b.file));
+const active = (accounts) => accounts.filter((account) => !account.disabled).sort((a, b) => a.file.localeCompare(b.file));
+const choiceOf = (primary) => (primary && typeof primary === "object" ? primary : {});
 
-// `accounts` are entries of accounts.list(); `primary` is { [provider]: file },
-// where a provider with no file has its order taken back; `usedUp` holds the
-// files of accounts that are out of quota. Only providers named in `primary`
-// are touched, and only credentials whose priority differs are written.
-// Returns { changed, failed }.
+// `accounts` are entries of accounts.list(); `primary` is { [provider]: file };
+// `usedUp` holds the files of accounts that are out of quota. An account of a
+// provider without a choice gets no priority. Only credentials whose priority
+// differs are written. Returns { changed, failed }.
 async function applyPrimary({ management, accounts, primary, usedUp = new Set() }) {
-  const choice = primary && typeof primary === "object" ? primary : {};
+  const choice = choiceOf(primary);
   const current = new Map((await management.credentials()).map((item) => [item.name, Number(item.priority) || 0]));
   const changed = [];
   const failed = [];
-  for (const account of byFile(accounts)) {
-    if (!(account.provider in choice)) continue;
+  for (const account of active(accounts)) {
     const chosen = choice[account.provider];
     const wanted = !chosen || usedUp.has(account.file) ? 0 : chosen === account.file ? PRIMARY_PRIORITY : SECONDARY_PRIORITY;
     if ((current.get(account.file) ?? 0) === wanted) continue;
@@ -55,18 +60,19 @@ async function applyPrimary({ management, accounts, primary, usedUp = new Set() 
 // accounts that have run out of some models only. Such an account is told
 // not to serve them, but only while another account of the provider can: a
 // model nobody else has stays, so the provider's own refusal comes back.
-// `sent` remembers what each account was last told, so nothing is sent
-// twice; on a first run every account is told, which clears what an earlier
-// run of the program left in the account's file. Returns { changed, failed },
-// `changed` as [{ file, models }].
+// An account of a provider without a choice is told to serve everything.
+//
+// The backend does not report what an account was told, so `sent` remembers
+// it: a list is sent when it differs, and to every account `sent` does not
+// know yet. Returns { changed, failed }, `changed` as [{ file, models }].
 async function applyExclusions({ management, accounts, primary, usedUp = new Set(), usedUpModels = new Map(), sent }) {
-  const choice = primary && typeof primary === "object" ? primary : {};
+  const choice = choiceOf(primary);
   const changed = [];
   const failed = [];
-  for (const account of byFile(accounts)) {
-    if (!(account.provider in choice)) continue;
-    const others = accounts.filter((other) => other.provider === account.provider && other.file !== account.file && !other.disabled && !usedUp.has(other.file));
-    const out = choice[account.provider] && !account.disabled ? [...(usedUpModels.get(account.file)?.keys() || [])] : [];
+  const list = active(accounts);
+  for (const account of list) {
+    const others = list.filter((other) => other.provider === account.provider && other.file !== account.file && !usedUp.has(other.file));
+    const out = choice[account.provider] ? [...(usedUpModels.get(account.file)?.keys() || [])] : [];
     const models = out.filter((pattern) => others.some((other) => !usedUpModels.get(other.file)?.has(pattern))).sort();
     const key = models.join(",");
     const before = sent.get(account.file);
@@ -84,41 +90,48 @@ async function applyExclusions({ management, accounts, primary, usedUp = new Set
 
 // Keeps the backend's account order in step with the choice and the usage
 // report. `primary()` returns the current choice; `limits` gives usedUp() and
-// usedUpModels(); `listAccounts()` the signed-in accounts.
+// usedUpModels(), which are read only when there is a choice;
+// `listAccounts()` the signed-in accounts.
 //
-//   apply({ reset })  applies the order now; `reset` names a provider whose
-//                     choice was taken back. Callers that arrive during a run
-//                     share the one run that follows it.
-//   refresh()         the same in the background, only when there is a
-//                     choice; failures are logged.
-//   idle()            resolves when no run is under way.
-//   stop()            cancels the pending check; nothing runs afterwards.
+//   apply()                applies the order now. Callers that arrive during
+//                          a run share the one run that follows it.
+//   refresh({ ifChosen })  the same in the background; failures are logged.
+//                          With `ifChosen`, only when there is a choice.
+//   forget()               the accounts changed: tell every account again.
+//   idle()                 resolves when no run is under way.
+//   stop()                 cancels the pending check; nothing runs afterwards.
 //
-// A run schedules the next one for a minute after the earliest reset it saw.
+// A run schedules the next one for a minute after the earliest reset it saw,
+// or for a minute later when something could not be set.
 function createAccountOrder({ management, limits, listAccounts, primary, log = () => {}, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout }) {
   const sent = new Map();
   const aside = new Set();
-  const resets = new Set();
   let running = null;
   let queued = null;
   let timer = null;
   let stopped = false;
 
+  const chosen = () => Object.keys(choiceOf(primary())).length > 0;
+
+  function schedule(delay) {
+    clearTimer(timer);
+    timer = stopped ? null : setTimer(() => refresh(), Math.min(Math.max(delay, RETRY_MS), 2 ** 31 - 1));
+  }
+
   async function run() {
     const accounts = listAccounts();
-    const choice = { ...(primary() || {}) };
-    for (const provider of resets) if (!choice[provider]) choice[provider] = null;
-    resets.clear();
-    if (!Object.keys(choice).length) return { changed: [], failed: [] };
+    const choice = { ...choiceOf(primary()) };
 
     // A usage report that cannot be read leaves the order as chosen.
     let usedUp = new Map();
     let usedUpModels = new Map();
-    try {
-      [usedUp, usedUpModels] = await Promise.all([limits.usedUp({ accounts }), limits.usedUpModels({ accounts })]);
-    } catch {
-      usedUp = new Map();
-      usedUpModels = new Map();
+    if (Object.keys(choice).length) {
+      try {
+        [usedUp, usedUpModels] = await Promise.all([limits.usedUp({ accounts }), limits.usedUpModels({ accounts })]);
+      } catch {
+        usedUp = new Map();
+        usedUpModels = new Map();
+      }
     }
     const out = new Set(usedUp.keys());
     const order = await applyPrimary({ management, accounts, primary: choice, usedUp: out });
@@ -131,7 +144,8 @@ function createAccountOrder({ management, limits, listAccounts, primary, log = (
     const until = (time) => new Date(time).toLocaleString();
     for (const account of accounts) {
       const file = account.file;
-      if (!choice[account.provider]) {
+      if (!choice[account.provider] || account.disabled) {
+        if (order.changed.includes(file)) log(`account order: ${named(file)} has no place in an order now`);
         aside.delete(file);
         continue;
       }
@@ -150,39 +164,50 @@ function createAccountOrder({ management, limits, listAccounts, primary, log = (
     const failed = [...order.failed, ...models.failed];
     for (const item of failed) log(`account order: ${named(item.file)} could not be set (${item.error})`);
 
-    // Look again a minute after the first limit that is due to reset.
+    // Look again a minute after the first limit that is due to reset, or in a
+    // minute when the backend refused something.
     const times = [...usedUp.values(), ...[...usedUpModels.values()].flatMap((patterns) => [...patterns.values()])];
-    clearTimer(timer);
-    timer = null;
-    if (times.length && !stopped) {
-      const wait = Math.min(...times) - now() + 60 * 1000;
-      timer = setTimer(refresh, Math.min(Math.max(wait, 60 * 1000), 2 ** 31 - 1));
+    if (failed.length) schedule(RETRY_MS);
+    else if (times.length) schedule(Math.min(...times) - now() + 60 * 1000);
+    else {
+      clearTimer(timer);
+      timer = null;
     }
     return { changed: [...order.changed, ...models.changed.map((item) => item.file)], failed };
   }
 
-  function apply({ reset = null } = {}) {
-    if (reset) resets.add(reset);
+  function apply() {
     if (stopped) return Promise.resolve({ changed: [], failed: [] });
+    // A run that is waiting to start serves every caller that arrives.
+    if (queued) return queued;
     if (!running) {
-      const started = run().finally(() => {
-        if (running === started) running = null;
-      });
+      const started = run()
+        .catch((error) => {
+          // The backend did not answer: nothing was applied, so try again.
+          schedule(RETRY_MS);
+          throw error;
+        })
+        .finally(() => {
+          if (running === started) running = null;
+        });
       running = started;
       return started;
     }
-    if (!queued) {
-      queued = running.catch(() => {}).then(() => {
-        queued = null;
-        return apply();
-      });
-    }
-    return queued;
+    const next = running.catch(() => {}).then(() => {
+      if (queued === next) queued = null;
+      return apply();
+    });
+    queued = next;
+    return next;
   }
 
-  function refresh() {
-    if (stopped || !Object.keys(primary() || {}).length) return;
+  function refresh({ ifChosen = false } = {}) {
+    if (stopped || (ifChosen && !chosen())) return;
     apply().catch((error) => log(`account order not applied: ${error.message}`));
+  }
+
+  function forget() {
+    sent.clear();
   }
 
   async function idle() {
@@ -195,7 +220,7 @@ function createAccountOrder({ management, limits, listAccounts, primary, log = (
     timer = null;
   }
 
-  return { apply, refresh, idle, stop };
+  return { apply, refresh, forget, idle, stop };
 }
 
 module.exports = { createAccountOrder, applyPrimary, applyExclusions, PRIMARY_PRIORITY, SECONDARY_PRIORITY };

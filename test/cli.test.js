@@ -138,4 +138,10 @@ test("the primary account of a provider can be chosen and taken back from the co
   const cleared = run(home, ["accounts", "primary", "claude", "none"]);
   assert.equal(cleared.status, 0, cleared.stderr);
   assert.deepEqual(stored(), {});
+
+  // The names `dshproxy login` accepts work here too.
+  fs.writeFileSync(path.join(home, "auth", "codex-user@example.com.json"), JSON.stringify({ type: "codex", email: "user@example.com", access_token: "not-a-real-token" }));
+  const alias = run(home, ["accounts", "primary", "chatgpt", "user@example.com"]);
+  assert.equal(alias.status, 0, alias.stderr);
+  assert.deepEqual(stored(), { codex: "codex-user@example.com.json" });
 });

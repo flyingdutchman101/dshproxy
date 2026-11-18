@@ -226,7 +226,10 @@ async function start({ home, print = console.log, restart = null } = {}) {
     cached = { at: 0, active: cached.active };
     limits.clear();
     failover.clear();
-    // The backend needs a moment to load a changed account.
+    // A signed-out account's file is gone, and one signed in again is new:
+    // every account is told its place afresh. The backend needs a moment to
+    // load a changed account first.
+    order.forget();
     clearTimeout(changeTimer);
     changeTimer = setTimeout(() => order.refresh(), 2000);
   };
@@ -290,7 +293,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
         else current.primary[account.provider] = account.file;
         settingsFile.save(current, state.home);
         settings.primary = current.primary;
-        const result = await order.apply(primary === false ? { reset: account.provider } : {});
+        const result = await order.apply();
         if (result.failed.length) throw new Error(`The backend did not accept the change: ${result.failed[0].error}`);
         log(primary === false ? `${account.label} has no primary account now` : `${account.label} (${account.account}) is the primary account`);
         return { provider: account.provider, primary: settings.primary[account.provider] || null };
@@ -378,7 +381,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
     quotaReset: async (model) => {
       const reset = await limits.quotaReset({ accounts: accounts.list(state.authDir), model });
       // The refusal may mean an account has just run out: let it step aside.
-      order.refresh();
+      order.refresh({ ifChosen: true });
       return reset;
     },
     sessions: createSessions(),

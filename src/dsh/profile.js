@@ -134,7 +134,11 @@ function writeWhole(file, text) {
   try {
     fs.renameSync(temporary, file);
   } catch (error) {
-    fs.rmSync(temporary, { force: true });
+    // The reason the profile could not be replaced is what the caller needs,
+    // whatever happens to the temporary file.
+    try {
+      fs.rmSync(temporary, { force: true });
+    } catch { /* swept later by tidy() */ }
     throw error;
   }
 }

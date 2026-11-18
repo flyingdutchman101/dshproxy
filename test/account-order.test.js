@@ -77,16 +77,70 @@ test("the chosen account goes first and the others follow", async () => {
   const world = setup();
   await world.order.apply();
   assert.deepEqual(world.sent("priority").sort(), [["claude-new.json", SECONDARY_PRIORITY], ["claude-old.json", PRIMARY_PRIORITY]]);
-  // The provider without a choice is not touched at all.
-  assert.equal(world.calls.some((call) => call[1] === "codex-a.json"), false);
+  // The provider without a choice gets no place in any order.
+  assert.equal(world.sent("priority").some((call) => call[0] === "codex-a.json"), false);
 });
 
-test("without a choice nothing is read from the usage report and nothing is sent", async () => {
+test("without a choice the usage report is not read and the accounts are left equal", async () => {
   const world = setup({ primary: {} });
   await world.order.apply();
-  world.order.refresh();
   assert.equal(world.usageReads, 0);
-  assert.deepEqual(world.calls, []);
+  assert.deepEqual(world.sent("priority"), []);
+  // A refused model is no reason to look when there is no order to keep.
+  const before = world.calls.length;
+  world.order.refresh({ ifChosen: true });
+  await world.order.idle();
+  assert.equal(world.calls.length, before);
+});
+
+// The backend keeps the order in each account's file. A choice taken back
+// while the gateway was not running (`dshproxy accounts primary claude none`)
+// must not leave the old order behind.
+test("an order the backend still holds for a provider without a choice is removed", async () => {
+  const world = setup({ primary: {} });
+  world.priorities = { "claude-old.json": PRIMARY_PRIORITY, "claude-new.json": SECONDARY_PRIORITY };
+  await world.order.apply();
+  assert.deepEqual(world.sent("priority").sort(), [["claude-new.json", 0], ["claude-old.json", 0]]);
+  assert.deepEqual(world.sent("exclude").sort(), [["claude-new.json", []], ["claude-old.json", []], ["codex-a.json", []]]);
+});
+
+test("a paused account is left alone until it is resumed", async () => {
+  const world = setup({ accounts: ACCOUNTS.map((account) => (account.file === "claude-new.json" ? { ...account, disabled: true } : account)) });
+  await world.order.apply();
+  assert.equal(world.calls.some((call) => call[1] === "claude-new.json"), false);
+  world.accounts = ACCOUNTS;
+  await world.order.apply();
+  assert.deepEqual(world.sent("priority").at(-1), ["claude-new.json", SECONDARY_PRIORITY]);
+  assert.deepEqual(world.sent("exclude").at(-1), ["claude-new.json", []]);
+});
+
+// Signing out deletes the account's file, and signing in again writes a new
+// one under the same name, without the exclusion.
+test("after a change of accounts every account is told again", async () => {
+  const world = setup({ usedUpModels: new Map([["claude-old.json", new Map([[FABLE, NOW + 28 * HOUR]])]]) });
+  await world.order.apply();
+  world.order.forget();
+  await world.order.apply();
+  assert.deepEqual(world.sent("exclude").filter((call) => call[0] === "claude-old.json"), [["claude-old.json", [FABLE]], ["claude-old.json", [FABLE]]]);
+});
+
+test("a run the backend did not answer is tried again a minute later", async () => {
+  const world = setup();
+  const working = world.order;
+  let down = true;
+  const push = world.calls.push.bind(world.calls);
+  world.calls.push = (call) => {
+    push(call);
+    if (call[0] === "credentials" && down) throw new Error("the backend did not answer in time");
+    return world.calls.length;
+  };
+  await assert.rejects(working.apply(), /did not answer/);
+  const timer = world.timers.at(-1);
+  assert.equal(timer.delay, 60 * 1000);
+  down = false;
+  timer.run();
+  await working.idle();
+  assert.equal(world.priorities["claude-old.json"], PRIMARY_PRIORITY);
 });
 
 test("an account that is out of quota steps aside and is checked again a minute after its reset", async () => {
@@ -150,7 +204,7 @@ test("a first run clears what an earlier run of the program may have left behind
   // not remember across a restart what it sent.
   const world = setup();
   await world.order.apply();
-  assert.deepEqual(world.sent("exclude").sort(), [["claude-new.json", []], ["claude-old.json", []]]);
+  assert.deepEqual(world.sent("exclude").sort(), [["claude-new.json", []], ["claude-old.json", []], ["codex-a.json", []]]);
 });
 
 test("a usage report that cannot be read leaves the order as chosen", async () => {
@@ -184,7 +238,7 @@ test("taking the choice back makes the provider's accounts equal again", async (
   const world = setup({ usedUpModels: new Map([["claude-old.json", new Map([[FABLE, NOW + 28 * HOUR]])]]) });
   await world.order.apply();
   world.primary = {};
-  await world.order.apply({ reset: "claude" });
+  await world.order.apply();
   assert.equal(world.priorities["claude-old.json"], 0);
   assert.equal(world.priorities["claude-new.json"], 0);
   assert.deepEqual(world.sent("exclude").at(-1), ["claude-old.json", []]);
@@ -204,6 +258,8 @@ test("a backend that refuses one change is reported and does not stop the rest",
   assert.deepEqual(result.failed, [{ file: "claude-new.json", error: "backend said no" }]);
   assert.equal(world.priorities["claude-old.json"], PRIMARY_PRIORITY);
   assert.match(world.logs.join("\n"), /new@example\.com.*could not be set.*backend said no/);
+  // What was refused is tried again a minute later.
+  assert.equal(world.timers.at(-1).delay, 60 * 1000);
 });
 
 test("stopping cancels the check that was waiting for a reset", async () => {

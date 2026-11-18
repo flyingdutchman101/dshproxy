@@ -264,7 +264,8 @@ async function main(argv, out = console.log) {
       const state = await app.snapshot();
       if (args[0] !== "primary") return printAccounts(state, out);
       // dshproxy accounts primary <provider> <account|none>
-      const [, provider, wanted] = args;
+      const provider = accounts.providerKey(args[1]);
+      const wanted = args[2];
       const label = accounts.PROVIDERS[provider]?.label;
       if (!label || !wanted) throw new Error(`Usage: dshproxy accounts primary <${Object.keys(accounts.PROVIDERS).join("|")}> <account|none>`);
       const current = settingsFile.load();
