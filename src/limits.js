@@ -166,20 +166,29 @@ function claudeQuotaReset(entries, model) {
   if (!family || !active.length) return null;
   let earliest = null;
   for (const entry of active) {
-    if (entry.error) return null;
-    let blockedUntil = null;
-    for (const item of entry.windows || []) {
-      if (item.reported === false || !(item.usedPercent >= 100)) continue;
-      const scope = /^(?:Weekly|5-hour) \((.+)\)$/.exec(item.title)?.[1];
-      if (!CLAUDE_ACCOUNT_WINDOWS.has(item.title) && !(scope && scope.toLowerCase() === family)) continue;
-      const reset = Date.parse(item.resetsAt);
-      if (!Number.isFinite(reset)) return null;
-      blockedUntil = Math.max(blockedUntil ?? 0, reset);
-    }
-    if (blockedUntil === null) return null;
+    const blockedUntil = claudeBlockedUntil(entry, family);
+    if (!Number.isFinite(blockedUntil)) return null;
     earliest = earliest === null ? blockedUntil : Math.min(earliest, blockedUntil);
   }
   return earliest;
+}
+
+// When one Claude account can serve again: the latest reset of its used-up
+// limits that apply — those covering every model and, with `family`, the one
+// for that model family. Null when no such limit is used up; NaN when the
+// report is missing or a used-up limit names no reset time.
+function claudeBlockedUntil(entry, family = null) {
+  if (entry.error) return NaN;
+  let until = null;
+  for (const item of entry.windows || []) {
+    if (item.reported === false || !(item.usedPercent >= 100)) continue;
+    const scope = /^(?:Weekly|5-hour) \((.+)\)$/.exec(item.title)?.[1];
+    if (!CLAUDE_ACCOUNT_WINDOWS.has(item.title) && !(family && scope && scope.toLowerCase() === family)) continue;
+    const reset = Date.parse(item.resetsAt);
+    if (!Number.isFinite(reset)) return NaN;
+    until = Math.max(until ?? 0, reset);
+  }
+  return until;
 }
 
 // "Gemini Models" -> "Gemini", "Claude and GPT models" -> "Claude/GPT".
@@ -345,6 +354,19 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
     return claudeQuotaReset((await read({ accounts })).accounts, model);
   }
 
+  // The active accounts that cannot serve any model now, with the time each
+  // returns: Map of file -> timestamp. Only what the usage report shows for
+  // certain; an account with a limit on one model alone is not in it.
+  async function usedUp({ accounts }) {
+    const found = new Map();
+    for (const entry of (await read({ accounts })).accounts) {
+      if (entry.provider !== "claude" || entry.disabled) continue;
+      const until = claudeBlockedUntil(entry);
+      if (Number.isFinite(until) && until > now()) found.set(entry.file, until);
+    }
+    return found;
+  }
+
   // The provider's usage reply for one account, as received, with anything
   // that looks like a credential removed. For diagnosing what a provider
   // reports.
@@ -413,7 +435,7 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
     return { code, windowsReset, message: messages[code] || `ChatGPT answered "${code}".` };
   }
 
-  return { read, raw, quotaReset, listResets, useReset, clear: () => (cache = null) };
+  return { read, raw, quotaReset, usedUp, listResets, useReset, clear: () => (cache = null) };
 }
 
 const SECRET_KEY = /token|secret|password|authorization|cookie|api_?key/i;

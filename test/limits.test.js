@@ -392,3 +392,25 @@ test("limits are cached for a minute unless a refresh is asked for", async () =>
   await limits.read({ accounts });
   assert.equal(management.calls.length, 3);
 });
+
+// ---- An account whose own limit is used up ----
+
+test("an account is used up when a limit that covers all its models is at 100%", async () => {
+  const weekly = { five_hour: { utilization: 2, resets_at: "2026-11-16T15:10:00Z" }, seven_day: { utilization: 100, resets_at: "2026-11-19T16:00:00Z" } };
+  const fresh = { five_hour: { utilization: 3, resets_at: "2026-11-16T15:10:00Z" }, seven_day: { utilization: 14, resets_at: "2026-11-22T19:00:00Z" } };
+  const limits = quotaLimits({ 2: { body: weekly }, 5: { body: fresh } });
+  assert.deepEqual([...(await limits.usedUp({ accounts: TWO_CLAUDE }))], [["claude-b.json", Date.parse("2026-11-19T16:00:00Z")]]);
+});
+
+test("a limit on one model does not make the whole account used up", async () => {
+  // Fable is out, and the account still serves Opus, Sonnet and Haiku.
+  const limits = quotaLimits({ 2: { body: CLAUDE_WITH_SCOPED } }, TWO_CREDENTIALS.slice(0, 1));
+  assert.equal((await limits.usedUp({ accounts: TWO_CLAUDE.slice(0, 1) })).size, 0);
+});
+
+test("an account whose usage cannot be read, or whose limit has reset, is not treated as used up", async () => {
+  const past = { five_hour: { utilization: 100, resets_at: "2026-11-15T03:00:00Z" }, seven_day: { utilization: 10, resets_at: "2026-11-20T10:00:00Z" } };
+  const noTime = { five_hour: { utilization: 100 }, seven_day: { utilization: 10, resets_at: "2026-11-20T10:00:00Z" } };
+  assert.equal((await quotaLimits({ 2: { status: 429, body: { error: "rate limited" } }, 5: { body: past } }).usedUp({ accounts: TWO_CLAUDE })).size, 0);
+  assert.equal((await quotaLimits({ 2: { body: noTime } }, TWO_CREDENTIALS.slice(0, 1)).usedUp({ accounts: TWO_CLAUDE.slice(0, 1) })).size, 0);
+});

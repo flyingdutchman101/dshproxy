@@ -1,13 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { applyPrimary, PRIMARY_PRIORITY } = require("../src/primary");
+const { applyPrimary, PRIMARY_PRIORITY, SECONDARY_PRIORITY } = require("../src/primary");
 const settings = require("../src/settings");
 
 // Two plans with one provider: one account serves until it is out of quota,
 // then the next. The backend picks the credential with the highest priority
-// that is available, so the primary account gets a priority and the others
-// get none.
+// that is available, so the primary account gets the highest priority, the
+// provider's other accounts a lower one, and an account whose limit is used
+// up none: it steps aside until the limit resets.
 const ACCOUNTS = [
   { file: "claude-old.json", provider: "claude", disabled: false },
   { file: "claude-new.json", provider: "claude", disabled: false },
@@ -30,17 +31,18 @@ function fakeManagement(priorities = {}, { failFor = null } = {}) {
   };
 }
 
-test("the primary account gets the priority and the provider's other accounts lose theirs", async () => {
+test("the primary account goes first and the provider's other accounts after it", async () => {
   const management = fakeManagement({ "claude-new.json": PRIMARY_PRIORITY });
   const result = await applyPrimary({ management, accounts: ACCOUNTS, primary: { claude: "claude-old.json" } });
-  assert.deepEqual(management.calls.sort(), [["claude-new.json", 0], ["claude-old.json", PRIMARY_PRIORITY]]);
+  assert.deepEqual(management.calls.sort(), [["claude-new.json", SECONDARY_PRIORITY], ["claude-old.json", PRIMARY_PRIORITY]]);
+  assert.ok(PRIMARY_PRIORITY > SECONDARY_PRIORITY && SECONDARY_PRIORITY > 0);
   assert.deepEqual(result, { changed: ["claude-new.json", "claude-old.json"], failed: [] });
   // The ChatGPT account has no choice recorded and is not touched.
   assert.equal(management.state["codex-a.json"], undefined);
 });
 
 test("nothing is sent when the backend already has it right", async () => {
-  const management = fakeManagement({ "claude-old.json": PRIMARY_PRIORITY });
+  const management = fakeManagement({ "claude-old.json": PRIMARY_PRIORITY, "claude-new.json": SECONDARY_PRIORITY });
   const result = await applyPrimary({ management, accounts: ACCOUNTS, primary: { claude: "claude-old.json" } });
   assert.deepEqual(management.calls, []);
   assert.deepEqual(result, { changed: [], failed: [] });
@@ -49,14 +51,15 @@ test("nothing is sent when the backend already has it right", async () => {
 test("a primary account that is signed out leaves the provider's accounts equal", async () => {
   const management = fakeManagement({ "claude-new.json": PRIMARY_PRIORITY });
   const result = await applyPrimary({ management, accounts: ACCOUNTS, primary: { claude: "claude-gone.json" } });
-  assert.deepEqual(management.calls, [["claude-new.json", 0]]);
-  assert.deepEqual(result.changed, ["claude-new.json"]);
+  assert.deepEqual(management.calls.sort(), [["claude-new.json", SECONDARY_PRIORITY], ["claude-old.json", SECONDARY_PRIORITY]]);
+  assert.deepEqual(result.changed, ["claude-new.json", "claude-old.json"]);
 });
 
 test("a choice never crosses providers", async () => {
   const management = fakeManagement();
   await applyPrimary({ management, accounts: ACCOUNTS, primary: { claude: "codex-a.json" } });
-  assert.deepEqual(management.calls, []);
+  // The ChatGPT account is not touched and no Claude account is made primary.
+  assert.deepEqual(management.calls.sort(), [["claude-new.json", SECONDARY_PRIORITY], ["claude-old.json", SECONDARY_PRIORITY]]);
 });
 
 test("an account the backend refuses is reported and the others are still set", async () => {
@@ -64,6 +67,19 @@ test("an account the backend refuses is reported and the others are still set", 
   const result = await applyPrimary({ management, accounts: ACCOUNTS, primary: { claude: "claude-old.json" } });
   assert.deepEqual(result.changed, ["claude-old.json"]);
   assert.deepEqual(result.failed, [{ file: "claude-new.json", error: "backend said no" }]);
+});
+
+// "Use the one which has usage": a primary account that is out of quota would
+// otherwise cost one refused call for every new conversation.
+test("a primary account whose limit is used up steps aside, and returns when it is not", async () => {
+  const management = fakeManagement({ "claude-old.json": PRIMARY_PRIORITY, "claude-new.json": SECONDARY_PRIORITY });
+  const primary = { claude: "claude-old.json" };
+  await applyPrimary({ management, accounts: ACCOUNTS, primary, usedUp: new Set(["claude-old.json"]) });
+  assert.deepEqual(management.calls, [["claude-old.json", 0]]);
+  assert.equal(management.state["claude-new.json"], SECONDARY_PRIORITY);
+
+  await applyPrimary({ management, accounts: ACCOUNTS, primary, usedUp: new Set() });
+  assert.deepEqual(management.calls[1], ["claude-old.json", PRIMARY_PRIORITY]);
 });
 
 test("the choice of primary account is a setting, kept per provider", () => {
