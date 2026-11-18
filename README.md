@@ -243,6 +243,17 @@ Compared with VeryCuteDroidProxy, DSHProxy leaves these out:
 - Voice and video generation
 - The Claude `Anthropic-Beta` rewrite and the removal of old thinking blocks
 
+## Two accounts with one provider
+
+Sign in a second account of the same provider (for example two Claude plans) and DSHProxy uses both, one at a time:
+
+- One account is the **primary**. It serves every request until it is out of quota. Only then does the other account take over, inside the same request, so nothing fails.
+- Pick the primary on the Accounts page (**Make primary**). The choice is kept in `~/.dshproxy/settings.json` under `primary` and applied again each time the gateway starts.
+- Without a choice the accounts take turns per conversation.
+- A model counts as out of quota only when every active account of the provider is out. Until then a lane keeps using it.
+
+This is meant for plans you own and would otherwise use by hand, one after the other. It does not rotate requests across accounts to get around a plan's limits: providers treat that as abuse and suspend accounts for it. Using a subscription sign-in through any gateway is at the provider's discretion; an API key is the route their terms describe for programs.
+
 ## License
 
 MIT, see [LICENSE](LICENSE). CLIProxyAPI is a separate project under its own license; DSHProxy downloads its released binary and does not include its source.

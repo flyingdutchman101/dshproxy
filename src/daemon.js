@@ -14,6 +14,7 @@ const { createGateway } = require("./gateway/server");
 const { createSessions } = require("./gateway/sessions");
 const { createResolver, describe, availability } = require("./lanes");
 const { createLimits } = require("./limits");
+const { applyPrimary } = require("./primary");
 const { createLogins } = require("./login");
 const catalog = require("./catalog");
 const profile = require("./dsh/profile");
@@ -202,7 +203,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
       name,
       ladder: ladder.map((model) => ({ model, available: isAvailable(model), coolingUntil: failover.coolingUntil(model)?.toISOString() ?? null }))
     })),
-    accounts: accounts.list(state.authDir).map(({ provider, account, disabled }) => ({ provider, account, disabled })),
+    accounts: accounts.list(state.authDir).map(({ file, provider, account, disabled }) => ({ provider, account, disabled, primary: settings.primary[provider] === file })),
     apiKeys: { readable: Object.keys(state.readable), unreadable: state.unreadable },
     deepseekHarness: { applied: profile.state(state.origin).applied }
   });
@@ -227,6 +228,13 @@ async function start({ home, print = console.log, restart = null } = {}) {
     failover.clear();
   };
 
+  // Tells the backend which account of each provider goes first.
+  const usePrimary = async () => {
+    const result = await applyPrimary({ management, accounts: accounts.list(state.authDir), primary: settings.primary });
+    for (const item of result.failed) log(`primary account: ${item.file} could not be set (${item.error})`);
+    return result;
+  };
+
   const controlToken = newToken();
   writeToken(paths.controlToken, controlToken);
   const control = createControl({
@@ -238,7 +246,13 @@ async function start({ home, print = console.log, restart = null } = {}) {
         return result;
       }),
       "POST login/cancel": ({ id }) => logins.cancel(String(id || "")).then((cancelled) => ({ cancelled })),
-      "GET limits": (_body, { refresh }) => limits.read({ accounts: accounts.list(state.authDir), force: refresh === "1" }),
+      "GET limits": async (_body, { refresh }) => {
+        const report = await limits.read({ accounts: accounts.list(state.authDir), force: refresh === "1" });
+        // `siblings` is how many accounts the provider has, so the app offers
+        // "Make primary" only where there is a choice.
+        const count = (provider) => report.accounts.filter((entry) => entry.provider === provider).length;
+        return { ...report, accounts: report.accounts.map((entry) => ({ ...entry, primary: settings.primary[entry.provider] === entry.file, siblings: count(entry.provider) })) };
+      },
       "GET limits/raw": (_body, { file }) => limits.raw({ accounts: accounts.list(state.authDir), file: String(file || "") }),
       "GET resets": (_body, { file }) => limits.listResets({ accounts: accounts.list(state.authDir), file: String(file || "") }),
       "POST resets/use": async ({ file, creditId, requestId }) => {
@@ -260,6 +274,20 @@ async function start({ home, print = console.log, restart = null } = {}) {
         afterChange();
         log(`${disabled ? "paused" : "resumed"} ${account.label} (${account.account})`);
         return { file: account.file, disabled: Boolean(disabled) };
+      },
+      // Makes one account the provider's primary (`primary: false` takes the
+      // choice back, so the provider's accounts are equal again).
+      "POST accounts/primary": async ({ file, primary }) => {
+        const account = accountFile(String(file || ""));
+        const current = settingsFile.load(state.home);
+        if (primary === false) delete current.primary[account.provider];
+        else current.primary[account.provider] = account.file;
+        settingsFile.save(current, state.home);
+        settings.primary = current.primary;
+        const result = await usePrimary();
+        if (result.failed.length) throw new Error(`The backend did not accept the change: ${result.failed[0].error}`);
+        log(primary === false ? `${account.label} has no primary account now` : `${account.label} (${account.account}) is the primary account`);
+        return { provider: account.provider, primary: settings.primary[account.provider] || null };
       },
       "POST models/refresh": async () => {
         const result = await discover();
@@ -363,6 +391,8 @@ async function start({ home, print = console.log, restart = null } = {}) {
   // update check after that and then every few hours.
   const timers = [
     setTimeout(() => discover().catch((error) => log(`model discovery failed: ${error.message}`)), 3000),
+    // The backend needs a moment to load the accounts before it can be told.
+    setTimeout(() => usePrimary().catch((error) => log(`primary account not applied: ${error.message}`)), 5000),
     setTimeout(() => checkUpdate(), 15000),
     setInterval(() => discover().catch((error) => log(`model discovery failed: ${error.message}`)), DISCOVERY_MS),
     setInterval(() => checkUpdate(), UPDATE_CHECK_MS)

@@ -112,6 +112,13 @@ function sanitizeCustom(value) {
     .slice(0, 20);
 }
 
+// The primary account per subscription provider: { claude: "<auth file>" }.
+// A file name only, never a path.
+function sanitizePrimary(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([provider, file]) => /^[a-z][a-z0-9-]{0,30}$/.test(provider) && typeof file === "string" && /^[A-Za-z0-9._@+-]{1,200}\.json$/.test(file) && !file.includes("..")));
+}
+
 function sanitize(value = {}) {
   const port = intIn(value.port, 1024, 65535, DEFAULTS.port);
   let backendPort = intIn(value.backendPort, 1024, 65535, DEFAULTS.backendPort);
@@ -128,6 +135,7 @@ function sanitize(value = {}) {
     lanes: sanitizeLanes(value.lanes),
     providers: sanitizeProviders(value.providers),
     custom: sanitizeCustom(value.custom),
+    primary: sanitizePrimary(value.primary),
     models: sanitizeModels(value.models)
   };
 }

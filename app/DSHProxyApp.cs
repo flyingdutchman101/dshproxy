@@ -1620,6 +1620,11 @@ namespace DSHProxy
             var planText = plan.Replace("_", " ");
             if (planText.Length > 16) planText = planText.Substring(0, 15) + "\u2026";
             if (plan.Length > 0) title.Controls.Add(new Chip { Text = planText, Tint = Theme.Teal, Margin = new Padding(0, 3, 8, 0) });
+            // With two accounts at one provider, the primary one serves until it
+            // is out of quota; only then does the other take over.
+            var primary = Json.Bool(account, "primary");
+            var siblings = (int)Json.Num(account, "siblings", 1);
+            if (primary && siblings > 1) title.Controls.Add(new Chip { Text = "Primary", Tint = Theme.Ok, Margin = new Padding(0, 3, 8, 0) });
             title.Controls.Add(new GlassLabel { Text = disabled ? "\u25CF Paused" : "\u25CF Active", AutoSize = true, ForeColor = disabled ? Theme.Muted : Theme.Ok, Margin = new Padding(0, 5, 0, 0) });
             card.Controls.Add(title, 0, 0);
             card.SetColumnSpan(title, 2);
@@ -1631,6 +1636,12 @@ namespace DSHProxy
             pause.Click += (s, e) => SetPaused(file, label, email, !disabled);
             actions.Controls.Add(signOut);
             actions.Controls.Add(pause);
+            if (siblings > 1 && !primary && !disabled)
+            {
+                var makePrimary = new PillButton { Text = "Make primary", AutoSize = true, Margin = new Padding(6, 0, 0, 0) };
+                makePrimary.Click += (s, e) => AccountCall("accounts/primary", new Dictionary<string, object> { { "file", file } }, label + " (" + email + ") is now the primary account: it is used until it runs out, then the other one takes over.");
+                actions.Controls.Add(makePrimary);
+            }
             var resets = Json.Obj(Json.Get(account, "resets"));
             var resetCount = (int)Json.Num(resets, "available", 0);
             card.Controls.Add(actions, 2, 0);

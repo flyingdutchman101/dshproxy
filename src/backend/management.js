@@ -75,6 +75,11 @@ function createManagement({ host, port, key, timeoutMs = 30000 }) {
     setDisabled(name, disabled) {
       return request("PATCH", "/v0/management/auth-files/status", { name, disabled });
     },
+    // A larger priority is picked first; 0 puts the credential back among the
+    // rest. Each credential in credentials() carries its `priority` when set.
+    setPriority(name, priority) {
+      return request("PATCH", "/v0/management/auth-files/fields", { name, priority });
+    },
     // An HTTP call made by the backend with the account's own token.
     apiCall({ authIndex, method = "GET", url, header = {}, data }) {
       return request("POST", "/v0/management/api-call", { auth_index: authIndex, method, url, header, ...(data === undefined ? {} : { data }) });
