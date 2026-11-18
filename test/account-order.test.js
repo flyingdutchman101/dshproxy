@@ -43,6 +43,7 @@ function setup({ primary = { claude: "claude-old.json" }, accounts = ACCOUNTS, u
     },
     setExcludedModels: async (name, models) => {
       world.calls.push(["exclude", name, models]);
+      if (world.holdExclude) await world.holdExclude;
     }
   };
   const limits = {
@@ -122,6 +123,50 @@ test("after a change of accounts every account is told again", async () => {
   world.order.forget();
   await world.order.apply();
   assert.deepEqual(world.sent("exclude").filter((call) => call[0] === "claude-old.json"), [["claude-old.json", [FABLE]], ["claude-old.json", [FABLE]]]);
+});
+
+test("accounts that change while a run is under way are still told again afterwards", async () => {
+  const world = setup({ usedUpModels: new Map([["claude-old.json", new Map([[FABLE, NOW + 28 * HOUR]])]]) });
+  let release;
+  world.holdExclude = new Promise((done) => {
+    release = done;
+  });
+  const first = world.order.apply();
+  // The account is signed out and in again while the backend is answering.
+  await new Promise((done) => setImmediate(done));
+  world.order.forget();
+  world.holdExclude = null;
+  release();
+  await first;
+  await world.order.apply();
+  assert.equal(world.sent("exclude").filter((call) => call[0] === "claude-old.json" && call[1].length).length, 2);
+});
+
+test("a change the backend keeps refusing is tried less and less often", async () => {
+  const world = setup();
+  let refuse = true;
+  const push = world.calls.push.bind(world.calls);
+  world.calls.push = (call) => {
+    push(call);
+    if (call[0] === "priority" && call[1] === "claude-new.json" && refuse) throw new Error("backend said no");
+    return world.calls.length;
+  };
+  const delays = [];
+  await world.order.apply();
+  for (let round = 0; round < 8; round += 1) {
+    delays.push(world.timers.at(-1).delay / 60000);
+    world.timers.at(-1).run();
+    await world.order.idle();
+  }
+  assert.deepEqual(delays, [1, 2, 4, 8, 16, 32, 60, 60]);
+  // Once it works, the next refusal starts from a minute again.
+  refuse = false;
+  await world.order.apply();
+  assert.equal(world.priorities["claude-new.json"], SECONDARY_PRIORITY);
+  refuse = true;
+  world.priorities["claude-new.json"] = 0;
+  await world.order.apply();
+  assert.equal(world.timers.at(-1).delay, 60 * 1000);
 });
 
 test("a run the backend did not answer is tried again a minute later", async () => {

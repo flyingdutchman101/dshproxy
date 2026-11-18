@@ -29,6 +29,7 @@
 const PRIMARY_PRIORITY = 10;
 const SECONDARY_PRIORITY = 5;
 const RETRY_MS = 60 * 1000;
+const RETRY_MAX_MS = 60 * 60 * 1000;
 
 const active = (accounts) => accounts.filter((account) => !account.disabled).sort((a, b) => a.file.localeCompare(b.file));
 const choiceOf = (primary) => (primary && typeof primary === "object" ? primary : {});
@@ -101,8 +102,9 @@ async function applyExclusions({ management, accounts, primary, usedUp = new Set
 //   idle()                 resolves when no run is under way.
 //   stop()                 cancels the pending check; nothing runs afterwards.
 //
-// A run schedules the next one for a minute after the earliest reset it saw,
-// or for a minute later when something could not be set.
+// A run schedules the next one for a minute after the earliest reset it saw.
+// When something could not be set it is tried again after a minute, then
+// after two, four and so on up to an hour, until it works.
 function createAccountOrder({ management, limits, listAccounts, primary, log = () => {}, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout }) {
   const sent = new Map();
   const aside = new Set();
@@ -110,8 +112,15 @@ function createAccountOrder({ management, limits, listAccounts, primary, log = (
   let queued = null;
   let timer = null;
   let stopped = false;
+  let failures = 0;
+  let generation = 0;
 
   const chosen = () => Object.keys(choiceOf(primary())).length > 0;
+
+  function retry() {
+    failures += 1;
+    schedule(Math.min(RETRY_MS * 2 ** (failures - 1), RETRY_MAX_MS));
+  }
 
   function schedule(delay) {
     clearTimer(timer);
@@ -135,7 +144,11 @@ function createAccountOrder({ management, limits, listAccounts, primary, log = (
     }
     const out = new Set(usedUp.keys());
     const order = await applyPrimary({ management, accounts, primary: choice, usedUp: out });
+    const told = generation;
     const models = await applyExclusions({ management, accounts, primary: choice, usedUp: out, usedUpModels, sent });
+    // The accounts changed while the backend was answering: what was just
+    // sent may have gone to a file that has since been replaced.
+    if (told !== generation) sent.clear();
 
     const named = (file) => {
       const account = accounts.find((item) => item.file === file);
@@ -167,11 +180,14 @@ function createAccountOrder({ management, limits, listAccounts, primary, log = (
     // Look again a minute after the first limit that is due to reset, or in a
     // minute when the backend refused something.
     const times = [...usedUp.values(), ...[...usedUpModels.values()].flatMap((patterns) => [...patterns.values()])];
-    if (failed.length) schedule(RETRY_MS);
-    else if (times.length) schedule(Math.min(...times) - now() + 60 * 1000);
+    if (failed.length) retry();
     else {
-      clearTimer(timer);
-      timer = null;
+      failures = 0;
+      if (times.length) schedule(Math.min(...times) - now() + 60 * 1000);
+      else {
+        clearTimer(timer);
+        timer = null;
+      }
     }
     return { changed: [...order.changed, ...models.changed.map((item) => item.file)], failed };
   }
@@ -184,7 +200,7 @@ function createAccountOrder({ management, limits, listAccounts, primary, log = (
       const started = run()
         .catch((error) => {
           // The backend did not answer: nothing was applied, so try again.
-          schedule(RETRY_MS);
+          retry();
           throw error;
         })
         .finally(() => {
@@ -207,6 +223,7 @@ function createAccountOrder({ management, limits, listAccounts, primary, log = (
   }
 
   function forget() {
+    generation += 1;
     sent.clear();
   }
 
