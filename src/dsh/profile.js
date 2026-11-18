@@ -131,7 +131,12 @@ function backupPath(file) {
 function writeWhole(file, text) {
   const temporary = `${file}.dshproxy-${process.pid}.tmp`;
   fs.writeFileSync(temporary, text);
-  fs.renameSync(temporary, file);
+  try {
+    fs.renameSync(temporary, file);
+  } catch (error) {
+    fs.rmSync(temporary, { force: true });
+    throw error;
+  }
 }
 
 function writePatch({ file, existing, doc }, dryRun) {

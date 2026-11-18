@@ -529,3 +529,21 @@ test("a default model that is gone is reported once, by its own check", (t) => {
   const report = profile.verify({ origin: ORIGIN, lanes, models: MODELS.map((entry) => ({ id: entry.id, api: entry.api })), home });
   assert.deepEqual(report.profiles[0].problems, ["agent-default-model names model lane-nowhere, which is not offered"]);
 });
+
+// Windows refuses to replace a read-only file, which is how a write can fail
+// half-way: the new text is already in a temporary file next to the profile.
+test("a profile that cannot be replaced is left as it was, with no temporary file beside it", (t) => {
+  const home = tempHome(t);
+  profile.apply(MODELS, ORIGIN, home);
+  const file = patchPath(home);
+  const before = fs.readFileSync(file, "utf8");
+  fs.chmodSync(file, 0o444);
+  try {
+    assert.throws(() => profile.apply([...MODELS, ...API_KEY], ORIGIN, home), /EPERM|EACCES/);
+  } finally {
+    // So the temporary folder can be removed afterwards.
+    fs.chmodSync(file, 0o666);
+  }
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+  assert.deepEqual(fs.readdirSync(path.dirname(file)).filter((name) => name.endsWith(".tmp")), []);
+});

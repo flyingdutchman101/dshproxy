@@ -14,7 +14,7 @@ const { createGateway } = require("./gateway/server");
 const { createSessions } = require("./gateway/sessions");
 const { createResolver, describe, availability } = require("./lanes");
 const { createLimits } = require("./limits");
-const { applyPrimary } = require("./primary");
+const { createAccountOrder } = require("./primary");
 const { createLogins } = require("./login");
 const catalog = require("./catalog");
 const profile = require("./dsh/profile");
@@ -228,47 +228,19 @@ async function start({ home, print = console.log, restart = null } = {}) {
     failover.clear();
     // The backend needs a moment to load a changed account.
     clearTimeout(changeTimer);
-    changeTimer = setTimeout(refreshPrimary, 2000);
+    changeTimer = setTimeout(() => order.refresh(), 2000);
   };
 
-  // Tells the backend which account of each provider goes first. An account
-  // the usage report shows as out of quota steps aside, and this runs again a
-  // minute after its limit resets. Callers that arrive while it runs share it.
-  let applyingPrimary = null;
-  let primaryTimer = null;
+  // Tells the backend in which order to use a provider's accounts, and keeps
+  // that in step with the usage report (see primary.js).
+  const order = createAccountOrder({
+    management,
+    limits,
+    listAccounts: () => accounts.list(state.authDir),
+    primary: () => settings.primary,
+    log
+  });
   let changeTimer = null;
-  const hasPrimary = () => Object.keys(settings.primary).length > 0;
-  const usePrimary = () => {
-    if (applyingPrimary) return applyingPrimary;
-    const run = (async () => {
-      const list = accounts.list(state.authDir);
-      // Without a choice there is nothing to read the usage report for.
-      const usedUp = hasPrimary() ? await limits.usedUp({ accounts: list }).catch(() => new Map()) : new Map();
-      const result = await applyPrimary({ management, accounts: list, primary: settings.primary, usedUp: new Set(usedUp.keys()) });
-      const name = (file) => {
-        const account = list.find((item) => item.file === file);
-        return account ? `${account.label} (${account.account})` : file;
-      };
-      for (const item of result.failed) log(`account order: ${name(item.file)} could not be set (${item.error})`);
-      for (const file of result.changed) {
-        log(usedUp.has(file) ? `account order: ${name(file)} is out of quota and steps aside until ${new Date(usedUp.get(file)).toLocaleString()}` : `account order: ${name(file)} is ${settings.primary[list.find((item) => item.file === file)?.provider] === file ? "the primary account" : "used after the primary account"}`);
-      }
-      clearTimeout(primaryTimer);
-      if (usedUp.size) {
-        const wait = Math.min(...usedUp.values()) - Date.now() + 60 * 1000;
-        primaryTimer = setTimeout(refreshPrimary, Math.min(Math.max(wait, 60 * 1000), 2 ** 31 - 1));
-      }
-      return result;
-    })().finally(() => {
-      if (applyingPrimary === run) applyingPrimary = null;
-    });
-    applyingPrimary = run;
-    return run;
-  };
-  const refreshPrimary = () => {
-    if (hasPrimary()) usePrimary().catch((error) => log(`account order not applied: ${error.message}`));
-  };
-
   const controlToken = newToken();
   writeToken(paths.controlToken, controlToken);
   const control = createControl({
@@ -318,9 +290,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
         else current.primary[account.provider] = account.file;
         settingsFile.save(current, state.home);
         settings.primary = current.primary;
-        // A run that started before the choice changed has to finish first.
-        if (applyingPrimary) await applyingPrimary.catch(() => {});
-        const result = await usePrimary();
+        const result = await order.apply(primary === false ? { reset: account.provider } : {});
         if (result.failed.length) throw new Error(`The backend did not accept the change: ${result.failed[0].error}`);
         log(primary === false ? `${account.label} has no primary account now` : `${account.label} (${account.account}) is the primary account`);
         return { provider: account.provider, primary: settings.primary[account.provider] || null };
@@ -408,7 +378,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
     quotaReset: async (model) => {
       const reset = await limits.quotaReset({ accounts: accounts.list(state.authDir), model });
       // The refusal may mean an account has just run out: let it step aside.
-      refreshPrimary();
+      order.refresh();
       return reset;
     },
     sessions: createSessions(),
@@ -433,7 +403,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
   const timers = [
     setTimeout(() => discover().catch((error) => log(`model discovery failed: ${error.message}`)), 3000),
     // The backend needs a moment to load the accounts before it can be told.
-    setTimeout(refreshPrimary, 5000),
+    setTimeout(() => order.refresh(), 5000),
     setTimeout(() => checkUpdate(), 15000),
     setInterval(() => discover().catch((error) => log(`model discovery failed: ${error.message}`)), DISCOVERY_MS),
     setInterval(() => checkUpdate(), UPDATE_CHECK_MS)
@@ -442,7 +412,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
   // Resolves once the gateway port is closed and the backend has exited.
   const stop = () => {
     for (const timer of timers) clearTimeout(timer);
-    clearTimeout(primaryTimer);
+    order.stop();
     clearTimeout(changeTimer);
     logins.closeAll();
     fs.rmSync(paths.controlToken, { force: true });

@@ -248,10 +248,13 @@ Compared with VeryCuteDroidProxy, DSHProxy leaves these out:
 Sign in a second account of the same provider (for example two Claude plans) and DSHProxy uses both, one at a time:
 
 - One account is the **primary**. It serves every request until it is out of quota. Only then does the other account take over, inside the same request, so nothing fails.
-- Pick the primary on the Accounts page (**Make primary**). The choice is kept in `~/.dshproxy/settings.json` under `primary` and applied again each time the gateway starts.
-- An account whose 5-hour or weekly limit is used up steps aside until that limit resets, so it is not asked first while it cannot answer. A limit on one model alone (Claude's weekly Fable limit) does not move the account aside, because it still serves the other models; a new conversation with that model then costs one refused call before the other account answers.
+- Pick the primary on the Accounts page (**Make primary**, and **Not primary** to take it back) or with `dshproxy accounts primary <provider> <account|none>`. The choice is kept in `~/.dshproxy/settings.json` under `primary` and applied again each time the gateway starts.
+- An account whose 5-hour or weekly limit is used up steps aside until that limit resets, so it is not asked first while it cannot answer.
+- An account that has run out of one model only (Claude's weekly Fable limit) keeps its place for the other models. It is told not to serve that model until the limit resets, as long as another account still has it. If no other account has it, nothing changes and the provider's own refusal comes back.
 - Without a choice the accounts take turns per conversation.
 - A model counts as out of quota only when every active account of the provider is out. Until then a lane keeps using it.
+
+DSHProxy learns all of this from the provider's usage report, the same one the Accounts page shows, and looks again a minute after a limit is due to reset. The backend keeps the order and the model exclusion in each account's sign-in file; DSHProxy sets both again from its own settings every time it starts.
 
 This is meant for plans you own and would otherwise use by hand, one after the other. It does not rotate requests across accounts to get around a plan's limits: providers treat that as abuse and suspend accounts for it. Using a subscription sign-in through any gateway is at the provider's discretion; an API key is the route their terms describe for programs.
 

@@ -434,3 +434,19 @@ test("a question about one provider reads that provider's usage only", async () 
   await limits.usedUp({ accounts });
   assert.equal(management.calls.length, before);
 });
+
+// ---- One model of an account used up ----
+
+test("a used-up limit on one model family is reported as the models it stops", async () => {
+  const fresh = { five_hour: { utilization: 3, resets_at: "2026-11-16T15:10:00Z" }, seven_day: { utilization: 14, resets_at: "2026-11-22T19:00:00Z" } };
+  const limits = quotaLimits({ 2: { body: CLAUDE_WITH_SCOPED }, 5: { body: fresh } });
+  const found = await limits.usedUpModels({ accounts: TWO_CLAUDE });
+  assert.deepEqual([...found].map(([file, models]) => [file, [...models]]), [["claude-b.json", [["claude-fable-*", FABLE_RESET]]]]);
+});
+
+test("a limit on the whole account, an unreadable report or a past reset stops no single model", async () => {
+  const weekly = { five_hour: { utilization: 2, resets_at: "2026-11-16T15:10:00Z" }, seven_day: { utilization: 100, resets_at: "2026-11-19T16:00:00Z" } };
+  const past = { ...CLAUDE_WITH_SCOPED, limits: CLAUDE_WITH_SCOPED.limits.map((item) => (item.kind === "weekly_scoped" ? { ...item, resets_at: "2026-11-15T03:00:00Z" } : item)) };
+  assert.equal((await quotaLimits({ 2: { body: weekly }, 5: { status: 429, body: { error: "rate limited" } } }).usedUpModels({ accounts: TWO_CLAUDE })).size, 0);
+  assert.equal((await quotaLimits({ 2: { body: past } }, TWO_CREDENTIALS.slice(0, 1)).usedUpModels({ accounts: TWO_CLAUDE.slice(0, 1) })).size, 0);
+});

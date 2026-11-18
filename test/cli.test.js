@@ -111,3 +111,31 @@ test("routing presets can be listed and used from the command line", (t) => {
   assert.notEqual(bad.status, 0);
   assert.match(bad.stderr, /Unknown routing preset "fastest"/);
 });
+
+test("the primary account of a provider can be chosen and taken back from the command line", (t) => {
+  const home = tempHome(t);
+  fs.mkdirSync(path.join(home, "auth"), { recursive: true });
+  // Sign-in files as the backend writes them; the tokens are not real.
+  fs.writeFileSync(path.join(home, "auth", "claude-old@example.com.json"), JSON.stringify({ type: "claude", email: "old@example.com", access_token: "not-a-real-token" }));
+  fs.writeFileSync(path.join(home, "auth", "claude-new@example.com.json"), JSON.stringify({ type: "claude", email: "new@example.com", access_token: "not-a-real-token" }));
+  const stored = () => JSON.parse(fs.readFileSync(path.join(home, "settings.json"), "utf8")).primary;
+
+  const chosen = run(home, ["accounts", "primary", "claude", "new@example.com"]);
+  assert.equal(chosen.status, 0, chosen.stderr);
+  assert.match(chosen.stdout, /new@example\.com is the primary Claude account/);
+  assert.deepEqual(stored(), { claude: "claude-new@example.com.json" });
+
+  const listed = run(home, ["accounts"]);
+  assert.match(listed.stdout, /new@example\.com \(primary\)/);
+  assert.doesNotMatch(listed.stdout, /old@example\.com \(primary\)/);
+  assert.doesNotMatch(listed.stdout + chosen.stdout, /not-a-real-token/);
+
+  const unknown = run(home, ["accounts", "primary", "claude", "nobody@example.com"]);
+  assert.notEqual(unknown.status, 0);
+  assert.match(unknown.stderr, /No Claude account "nobody@example\.com"/);
+  assert.deepEqual(stored(), { claude: "claude-new@example.com.json" });
+
+  const cleared = run(home, ["accounts", "primary", "claude", "none"]);
+  assert.equal(cleared.status, 0, cleared.stderr);
+  assert.deepEqual(stored(), {});
+});

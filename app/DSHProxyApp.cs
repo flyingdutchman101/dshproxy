@@ -1642,6 +1642,12 @@ namespace DSHProxy
                 makePrimary.Click += (s, e) => AccountCall("accounts/primary", new Dictionary<string, object> { { "file", file } }, label + " (" + email + ") is now the primary account: it is used until it runs out, then the other one takes over.");
                 actions.Controls.Add(makePrimary);
             }
+            else if (siblings > 1 && primary)
+            {
+                var noPrimary = new PillButton { Text = "Not primary", AutoSize = true, Margin = new Padding(6, 0, 0, 0) };
+                noPrimary.Click += (s, e) => AccountCall("accounts/primary", new Dictionary<string, object> { { "file", file }, { "primary", false } }, label + " has no primary account now: its accounts take turns.");
+                actions.Controls.Add(noPrimary);
+            }
             var resets = Json.Obj(Json.Get(account, "resets"));
             var resetCount = (int)Json.Num(resets, "available", 0);
             card.Controls.Add(actions, 2, 0);

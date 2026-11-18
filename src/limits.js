@@ -381,6 +381,28 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
     return found;
   }
 
+  // The active accounts that have run out of some models only, as the model
+  // patterns each cannot serve and when they return: Map of file -> Map of
+  // pattern -> timestamp. A limit on the whole account is not in it (see
+  // usedUp), and neither is anything the report does not show for certain.
+  async function usedUpModels({ accounts }) {
+    const found = new Map();
+    for (const entry of (await read({ accounts, provider: "claude" })).accounts) {
+      if (entry.provider !== "claude" || entry.disabled || entry.error) continue;
+      const models = new Map();
+      for (const item of entry.windows || []) {
+        if (item.reported === false || !(item.usedPercent >= 100)) continue;
+        const family = /^(?:Weekly|5-hour) \((.+)\)$/.exec(item.title)?.[1].toLowerCase();
+        const reset = Date.parse(item.resetsAt);
+        if (!CLAUDE_FAMILIES.has(family) || !(reset > now())) continue;
+        const pattern = `claude-${family}-*`;
+        models.set(pattern, Math.max(models.get(pattern) ?? 0, reset));
+      }
+      if (models.size) found.set(entry.file, models);
+    }
+    return found;
+  }
+
   // The provider's usage reply for one account, as received, with anything
   // that looks like a credential removed. For diagnosing what a provider
   // reports.
@@ -449,7 +471,7 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
     return { code, windowsReset, message: messages[code] || `ChatGPT answered "${code}".` };
   }
 
-  return { read, raw, quotaReset, usedUp, listResets, useReset, clear: () => cache.clear() };
+  return { read, raw, quotaReset, usedUp, usedUpModels, listResets, useReset, clear: () => cache.clear() };
 }
 
 const SECRET_KEY = /token|secret|password|authorization|cookie|api_?key/i;

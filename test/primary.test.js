@@ -88,3 +88,9 @@ test("the choice of primary account is a setting, kept per provider", () => {
   assert.deepEqual(settings.sanitize({}).primary, {});
   assert.deepEqual(settings.sanitize({ primary: "claude-old.json" }).primary, {});
 });
+
+test("an account-order choice that is taken back resets the provider's priorities", async () => {
+  const management = fakeManagement({ "claude-old.json": PRIMARY_PRIORITY, "claude-new.json": SECONDARY_PRIORITY });
+  await applyPrimary({ management, accounts: ACCOUNTS, primary: { claude: null } });
+  assert.deepEqual(management.calls.sort(), [["claude-new.json", 0], ["claude-old.json", 0]]);
+});

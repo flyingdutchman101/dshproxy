@@ -18,6 +18,8 @@ Usage:
   dshproxy status                      Show accounts, API keys, lanes and the DeepSeek Harness state
   dshproxy login <provider>            Sign in: ${Object.keys(accounts.PROVIDERS).join(", ")}
   dshproxy accounts                    List signed-in accounts
+  dshproxy accounts primary <provider> <account|none>
+                                       Use one account of a provider first; the others take over when it is out of quota
   dshproxy key set <provider> [region] Save an API key (read from standard input, never from the command line)
   dshproxy key remove <provider>       Remove a saved API key
   dshproxy key list                    List API-key providers and their regions
@@ -93,7 +95,7 @@ function printAccounts(state, out) {
     return;
   }
   out("Accounts:");
-  for (const account of state.accounts) out(`  ${account.label}: ${account.account}${account.disabled ? " (disabled)" : ""}`);
+  for (const account of state.accounts) out(`  ${account.label}: ${account.account}${account.disabled ? " (disabled)" : ""}${state.settings.primary[account.provider] === account.file ? " (primary)" : ""}`);
 }
 
 async function status(out) {
@@ -258,8 +260,28 @@ async function main(argv, out = console.log) {
     case "status":
       if (flags.has("--json")) return out(JSON.stringify(await statusJson()));
       return status(out);
-    case "accounts":
-      return printAccounts(await app.snapshot(), out);
+    case "accounts": {
+      const state = await app.snapshot();
+      if (args[0] !== "primary") return printAccounts(state, out);
+      // dshproxy accounts primary <provider> <account|none>
+      const [, provider, wanted] = args;
+      const label = accounts.PROVIDERS[provider]?.label;
+      if (!label || !wanted) throw new Error(`Usage: dshproxy accounts primary <${Object.keys(accounts.PROVIDERS).join("|")}> <account|none>`);
+      const current = settingsFile.load();
+      if (wanted === "none") {
+        delete current.primary[provider];
+        settingsFile.save(current);
+        out(`${label} has no primary account now: its accounts take turns.`);
+      } else {
+        const account = state.accounts.find((item) => item.provider === provider && (item.account === wanted || item.file === wanted));
+        if (!account) throw new Error(`No ${label} account "${wanted}". Run \`dshproxy accounts\` to list them.`);
+        current.primary[provider] = account.file;
+        settingsFile.save(current);
+        out(`${account.account} is the primary ${label} account. It is used until it is out of quota; then the provider's other accounts take over.`);
+      }
+      out("If the gateway is running, restart it (Stop, then Start in the app) to apply this, or use Make primary on the Accounts page instead.");
+      return undefined;
+    }
     case "login": {
       const state = await app.snapshot();
       const backend = await install(app.currentLock(state.home), state.paths.binDir, { log: out });

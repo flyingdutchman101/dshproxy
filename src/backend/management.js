@@ -80,6 +80,12 @@ function createManagement({ host, port, key, timeoutMs = 30000 }) {
     setPriority(name, priority) {
       return request("PATCH", "/v0/management/auth-files/fields", { name, priority });
     },
+    // Model patterns ("claude-fable-*") this credential must not serve; an
+    // empty list lifts it. The backend stops offering them for the credential
+    // at once and keeps the list in the credential's file.
+    setExcludedModels(name, models) {
+      return request("PATCH", "/v0/management/auth-files/fields", { name, excluded_models: models });
+    },
     // An HTTP call made by the backend with the account's own token.
     apiCall({ authIndex, method = "GET", url, header = {}, data }) {
       return request("POST", "/v0/management/api-call", { auth_index: authIndex, method, url, header, ...(data === undefined ? {} : { data }) });
