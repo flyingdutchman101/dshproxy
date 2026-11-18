@@ -414,3 +414,23 @@ test("an account whose usage cannot be read, or whose limit has reset, is not tr
   assert.equal((await quotaLimits({ 2: { status: 429, body: { error: "rate limited" } }, 5: { body: past } }).usedUp({ accounts: TWO_CLAUDE })).size, 0);
   assert.equal((await quotaLimits({ 2: { body: noTime } }, TWO_CREDENTIALS.slice(0, 1)).usedUp({ accounts: TWO_CLAUDE.slice(0, 1) })).size, 0);
 });
+
+// A question about Claude must not make DSHProxy call another provider.
+test("a question about one provider reads that provider's usage only", async () => {
+  const fresh = { five_hour: { utilization: 3, resets_at: "2026-11-16T15:10:00Z" }, seven_day: { utilization: 14, resets_at: "2026-11-22T19:00:00Z" } };
+  const accounts = [...TWO_CLAUDE, { file: "codex-a.json", provider: "codex", label: "ChatGPT", account: "a@example.com", disabled: false }];
+  const management = claudeManagement({ 2: { body: fresh }, 5: { body: fresh } }, [...TWO_CREDENTIALS, { name: "codex-a.json", auth_index: "7", status: "active" }]);
+  const limits = createLimits({ management, detailsFor: () => ({}), now: () => NOW });
+
+  await limits.quotaReset({ accounts, model: "claude-fable-5-2" });
+  await limits.usedUp({ accounts });
+  assert.deepEqual(management.calls.map((call) => call.authIndex).sort(), ["2", "5"], "only the two Claude accounts were asked, once each");
+
+  // The Accounts page still gets every account, not the narrower report.
+  const report = await limits.read({ accounts });
+  assert.deepEqual(report.accounts.map((entry) => entry.file), ["claude-b.json", "claude-e.json", "codex-a.json"]);
+  // And a full report that is fresh answers the next question about Claude.
+  const before = management.calls.length;
+  await limits.usedUp({ accounts });
+  assert.equal(management.calls.length, before);
+});

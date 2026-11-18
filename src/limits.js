@@ -291,18 +291,34 @@ async function fetchOtherWindows({ management, account, authIndex, details, want
 // `accounts` are entries from accounts.list(); `detailsFor(file)` returns the
 // non-secret IDs a usage call needs ({ accountId, projectId, plan }).
 function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 60 * 1000, now = Date.now }) {
-  let cache = null;
-  let reading = null;
+  // The report of every account under "", and reports of one provider alone
+  // under the provider's name: { at, value }.
+  const cache = new Map();
+  const reading = new Map();
 
+  // With `provider`, only that provider's accounts are asked: a question about
+  // Claude is no reason to call ChatGPT. A fresh report of every account
+  // answers it too, but the narrower report never stands in for the full one.
   // Callers that arrive while a read is under way share it: a burst of
   // requests must not become a burst of usage calls.
-  function read({ accounts, force = false }) {
-    if (!force && cache && now() - cache.at < cacheMs) return Promise.resolve(cache.value);
-    if (!force && reading) return reading;
-    const started = fetchAll(accounts).finally(() => {
-      if (reading === started) reading = null;
-    });
-    reading = started;
+  function read({ accounts, force = false, provider = null }) {
+    const key = provider || "";
+    if (!force) {
+      for (const slot of new Set([key, ""])) {
+        const kept = cache.get(slot);
+        if (kept && now() - kept.at < cacheMs) return Promise.resolve(kept.value);
+        if (reading.has(slot)) return reading.get(slot);
+      }
+    }
+    const started = fetchAll(provider ? accounts.filter((account) => account.provider === provider) : accounts)
+      .then((value) => {
+        cache.set(key, { at: now(), value });
+        return value;
+      })
+      .finally(() => {
+        if (reading.get(key) === started) reading.delete(key);
+      });
+    reading.set(key, started);
     return started;
   }
 
@@ -341,9 +357,7 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
       }
       return entry;
     }));
-    const value = { fetchedAt: new Date(now()).toISOString(), accounts: results };
-    cache = { at: now(), value };
-    return value;
+    return { fetchedAt: new Date(now()).toISOString(), accounts: results };
   }
 
   // When `model` can be served again (a timestamp), if the usage report shows
@@ -351,7 +365,7 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
   // report does not tell. Uses the cached report.
   async function quotaReset({ accounts, model }) {
     if (!claudeFamily(model)) return null;
-    return claudeQuotaReset((await read({ accounts })).accounts, model);
+    return claudeQuotaReset((await read({ accounts, provider: "claude" })).accounts, model);
   }
 
   // The active accounts that cannot serve any model now, with the time each
@@ -359,7 +373,7 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
   // certain; an account with a limit on one model alone is not in it.
   async function usedUp({ accounts }) {
     const found = new Map();
-    for (const entry of (await read({ accounts })).accounts) {
+    for (const entry of (await read({ accounts, provider: "claude" })).accounts) {
       if (entry.provider !== "claude" || entry.disabled) continue;
       const until = claudeBlockedUntil(entry);
       if (Number.isFinite(until) && until > now()) found.set(entry.file, until);
@@ -423,7 +437,7 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
     const { authIndex, details } = await codexAccount(accounts, file);
     const body = { redeem_request_id: String(requestId), ...(creditId ? { credit_id: String(creditId) } : {}) };
     const json = bodyOf(await management.apiCall({ authIndex, method: "POST", url: `${CHATGPT}/wham/rate-limit-reset-credits/consume`, header: codexHeader(details, { "Content-Type": "application/json" }), data: JSON.stringify(body) }), "ChatGPT");
-    cache = null;
+    cache.clear();
     const code = String(json?.code || "unknown");
     const windowsReset = numberValue(json?.windows_reset) || 0;
     const messages = {
@@ -435,7 +449,7 @@ function createLimits({ management, detailsFor, wantedModels = null, cacheMs = 6
     return { code, windowsReset, message: messages[code] || `ChatGPT answered "${code}".` };
   }
 
-  return { read, raw, quotaReset, usedUp, listResets, useReset, clear: () => (cache = null) };
+  return { read, raw, quotaReset, usedUp, listResets, useReset, clear: () => cache.clear() };
 }
 
 const SECRET_KEY = /token|secret|password|authorization|cookie|api_?key/i;

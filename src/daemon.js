@@ -227,7 +227,8 @@ async function start({ home, print = console.log, restart = null } = {}) {
     limits.clear();
     failover.clear();
     // The backend needs a moment to load a changed account.
-    setTimeout(refreshPrimary, 2000);
+    clearTimeout(changeTimer);
+    changeTimer = setTimeout(refreshPrimary, 2000);
   };
 
   // Tells the backend which account of each provider goes first. An account
@@ -235,6 +236,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
   // minute after its limit resets. Callers that arrive while it runs share it.
   let applyingPrimary = null;
   let primaryTimer = null;
+  let changeTimer = null;
   const hasPrimary = () => Object.keys(settings.primary).length > 0;
   const usePrimary = () => {
     if (applyingPrimary) return applyingPrimary;
@@ -441,6 +443,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
   const stop = () => {
     for (const timer of timers) clearTimeout(timer);
     clearTimeout(primaryTimer);
+    clearTimeout(changeTimer);
     logins.closeAll();
     fs.rmSync(paths.controlToken, { force: true });
     const closed = new Promise((resolve) => gateway.close(() => resolve()));
