@@ -242,3 +242,7 @@ Compared with VeryCuteDroidProxy, DSHProxy leaves these out:
 - Routing that uses the remaining limits (limits are shown, not yet used to pick a model)
 - Voice and video generation
 - The Claude `Anthropic-Beta` rewrite and the removal of old thinking blocks
+
+## License
+
+MIT, see [LICENSE](LICENSE). CLIProxyAPI is a separate project under its own license; DSHProxy downloads its released binary and does not include its source.

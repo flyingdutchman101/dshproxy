@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Local model gateway for DeepSeek Harness: supervises a pinned CLIProxyAPI and adds lane failover.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "os": [
     "win32"
   ],
