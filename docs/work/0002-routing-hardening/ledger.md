@@ -233,3 +233,22 @@ Open:
 - Confirm P1-d in a new session.
 - Phase 4 media: waiting for keys (D2). D3 account safety: open.
 - Worktree `../DSHProxy-hardening`: merged, can be removed.
+
+## 2026-11-18 15:00 — Rulings; what is left
+User: media "hold off" (Phase 4 stays parked). Account safety (D3):
+"definitely sub signins" — subscription sign-ins stay; no move to API keys.
+Push of the Phase 2 commits and removal of the worktree: not answered, so
+neither was done.
+
+Plan items delivered differently or not at all (all reported to the user):
+- P1-a scout rung is `gpt-6-luna`, not `gpt-6.1-sol`.
+- P1-b no reading of `resets_at` from a 429 body (ChatGPT sends Retry-After).
+- P1-c no separate warning for a paused or used-up account.
+- P1-d cause found by reading DSH source; not confirmed in a new session.
+- P2-a no `dshproxy accounts primary` CLI command; the app's button was
+  compiled but not looked at on screen.
+- P2-b by priority, not backend cooling; the step-aside has not happened
+  live yet; a Fable-only limit costs one refused call per new conversation.
+- P3-a no removal of the temp file when a rename fails.
+- X1 two existing assertions were changed on purpose (`requestRetry`).
+- Review was by DeepSeek (the user's choice), not GPT as the plan said.

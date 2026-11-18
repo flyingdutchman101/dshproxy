@@ -180,8 +180,8 @@ other model family: GPT reviews what Claude built, and the reverse.
 | | Decision | Status |
 |---|---|---|
 | D1 | Use reset credits | **No** (user, 2026-11-18) |
-| D2 | Media keys: OpenRouter (required), OpenAI and Recraft (optional); daily cap (suggested $5) | **not now** (user, 2026-11-18); Phase 4 waits |
-| D3 | Account safety: keep subscriptions, move chat to API keys, or mix per lane (E12) | open |
+| D2 | Media keys: OpenRouter (required), OpenAI and Recraft (optional); daily cap (suggested $5) | **hold off** (user, 2026-11-18, twice); Phase 4 waits |
+| D3 | Account safety: keep subscriptions, move chat to API keys, or mix per lane (E12) | **keep subscription sign-ins** (user, 2026-11-18: "definitely sub signins") |
 | D4 | Which Claude account is primary once both are active | **old account primary, new one secondary; use the one that has usage** (user, 2026-11-18) |
 | D5 | OK to edit `AGENTS.md` (P3-b) | **yes**, done 2026-11-18 |
 | D6 | OK to push LICENSE + CI (P3-c) | **yes**, pushed 2026-11-18; CI green |
