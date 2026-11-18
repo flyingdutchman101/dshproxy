@@ -10,11 +10,16 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 // Ladders from the DeepSeek Harness working defaults (~/.dsh/AGENTS.md). The
 // reviewer ladder leaves out GPT: main and builder start on GPT, and automatic
 // failover cannot check which model wrote the code under review.
+//
+// Each working lane names a second model on the Claude subscription outside
+// Fable, and a model on the ChatGPT subscription: Fable has its own weekly
+// limit, so a lane whose only Claude rung is Fable stops when that limit is
+// used up although the account still serves Opus, Sonnet and Haiku.
 const DEFAULT_LANES = {
-  main: ["gpt-6-astra", "claude-fable-5-2", "gemini-4-carbon-high", "deepseek/deepseek-v4-pro"],
-  scout: ["claude-haiku-5-5", "gemini-3.8-flash-high", "deepseek/deepseek-flash", "qwen/qwen3.8-flash"],
+  main: ["gpt-6-astra", "claude-fable-5-2", "claude-opus-5-5", "gemini-4-carbon-high", "deepseek/deepseek-v4-pro"],
+  scout: ["claude-haiku-5-5", "gemini-3.8-flash-high", "gpt-6-luna", "deepseek/deepseek-flash", "qwen/qwen3.8-flash"],
   builder: ["gpt-6-astra", "claude-sonnet-5-5", "deepseek/deepseek-v4-pro", "gemini-4-argon-high"],
-  architect: ["claude-fable-5-2", "gpt-6.1-terra", "deepseek/deepseek-v4-pro", "gemini-4-argon-high"],
+  architect: ["claude-fable-5-2", "gpt-6.1-terra", "claude-opus-5-5", "deepseek/deepseek-v4-pro", "gemini-4-argon-high"],
   reviewer: ["gemini-4-carbon-high", "deepseek/deepseek-v4-pro", "claude-opus-5-5"],
   // A Google-only ladder: one Gemini model being throttled no longer fails the
   // turn, the gateway cools it and answers from the next one.
