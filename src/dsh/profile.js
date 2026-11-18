@@ -167,7 +167,8 @@ function tidy(file) {
       fs.unlinkSync(path.join(dir, name));
     } catch { /* in use or already gone */ }
   };
-  const backups = names.filter((name) => name.endsWith(".bak")).sort();
+  // Only names in the form backupPath() writes: anything else is not ours.
+  const backups = names.filter((name) => /^\d{8}T\d{9}(-\d+)?\.bak$/.test(name.slice(prefix.length))).sort();
   for (const name of backups.slice(0, Math.max(0, backups.length - KEPT_BACKUPS))) remove(name);
   for (const name of names.filter((item) => /^\d+\.tmp$/.test(item.slice(prefix.length)))) {
     try {

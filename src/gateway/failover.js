@@ -50,10 +50,13 @@ function createFailover({ now = Date.now, cooldownMs = 10 * 60 * 1000, maxCooldo
 
   const isCooling = (model) => held(model) !== null;
 
-  // A guess never replaces an end the provider gave: the provider knows.
+  // A guess never replaces an end the provider gave: the provider knows. Of
+  // two ends the provider gave, the later one stands, so an answer that
+  // arrives late (a usage lookup) cannot put a model back in use early.
   function set(model, until, source) {
     const current = held(model);
-    const entry = current && current.source === "provider" && source === "default" ? current : { until, source };
+    const keep = current && current.source === "provider" && (source === "default" || current.until >= until);
+    const entry = keep ? current : { until, source };
     cooling.set(model, entry);
     strikes.delete(model);
     return entry;
@@ -105,7 +108,14 @@ function createFailover({ now = Date.now, cooldownMs = 10 * 60 * 1000, maxCooldo
     return entry ? new Date(entry.until) : null;
   }
 
-  return { order, report, isCooling, coolingUntil, coolUntil };
+  // Puts every model back in use: what was learned no longer holds once an
+  // account is signed in, paused, resumed or has its limit reset.
+  function clear() {
+    cooling.clear();
+    strikes.clear();
+  }
+
+  return { order, report, isCooling, coolingUntil, coolUntil, clear };
 }
 
 module.exports = { createFailover, needsBody, CAPACITY, TRANSIENT };

@@ -371,7 +371,13 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
         let reset = verdict.source === "provider" && verdict.until.getTime() - Date.now() > delay + pausesLeft() ? verdict.until.getTime() : null;
         if (reset === null) {
           log(`${label}: HTTP ${code}, retrying the same model in ${delay / 1000}s`);
-          const [found] = await Promise.all([learned, new Promise((done) => setTimeout(done, delay))]);
+          // The pause is never longer for the lookup: an answer that comes
+          // later has already set the cool-down, and the next refusal sees it.
+          let found = null;
+          learned.then((value) => {
+            found = value;
+          });
+          await new Promise((done) => setTimeout(done, delay));
           if (res.destroyed) {
             upstreamRes.destroy();
             return;

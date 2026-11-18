@@ -44,3 +44,12 @@ test("every working lane still has a model when ChatGPT is the only account", ()
     }
   }
 });
+
+// A review must come from another model family than the one that wrote the
+// code, and main and builder start on GPT.
+test("no preset reviews with a ChatGPT model", () => {
+  const gpt = new Set(catalog.SUBSCRIPTION_MODELS.filter((model) => model.account === "codex").map((model) => model.id));
+  for (const name of presets.names()) {
+    assert.deepEqual(presets.get(name).lanes.reviewer.filter((id) => gpt.has(id)), [], `${name} reviews with GPT`);
+  }
+});

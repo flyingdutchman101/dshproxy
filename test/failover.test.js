@@ -159,3 +159,20 @@ test("a model listed twice on a ladder is tried once", () => {
   const { failover } = withClock();
   assert.deepEqual(failover.order(["gpt-6-astra", "claude-fable-5-2", "gpt-6-astra"]), ["gpt-6-astra", "claude-fable-5-2"]);
 });
+
+test("a later end from the provider is kept when an earlier one arrives after it", () => {
+  const { clock, failover } = withClock();
+  failover.report("gpt-6-astra", 429, "18000");
+  // A usage lookup that was under way resolves late with a nearer time.
+  assert.equal(failover.coolUntil("gpt-6-astra", clock.time + 60 * MINUTE).toISOString(), "2026-11-15T17:00:00.000Z");
+  assert.equal(failover.report("gpt-6-astra", 429, "60").until.toISOString(), "2026-11-15T17:00:00.000Z");
+});
+
+test("forgetting the cool-downs puts every model back in use", () => {
+  const { failover } = withClock();
+  failover.report("gpt-6-astra", 429, "66000");
+  failover.report("claude-fable-5-2", 429);
+  failover.clear();
+  assert.deepEqual(failover.order(LADDER), LADDER);
+  assert.equal(failover.coolingUntil("gpt-6-astra"), null);
+});

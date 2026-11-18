@@ -219,9 +219,12 @@ async function start({ home, print = console.log, restart = null } = {}) {
     if (!found) throw new Error("That account is not signed in.");
     return found;
   };
+  // The accounts changed (signed in or out, paused, resumed, limit reset):
+  // what was learned about which model is out of quota no longer holds.
   const afterChange = () => {
     cached = { at: 0, active: cached.active };
     limits.clear();
+    failover.clear();
   };
 
   const controlToken = newToken();
@@ -241,6 +244,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
       "POST resets/use": async ({ file, creditId, requestId }) => {
         const result = await limits.useReset({ accounts: accounts.list(state.authDir), file: String(file || ""), creditId: creditId ? String(creditId) : null, requestId: String(requestId || "") });
         log(`limit reset for ${String(file || "")}: ${result.message}`);
+        if (result.code === "reset") afterChange();
         return result;
       },
       "POST accounts/remove": async ({ file }) => {

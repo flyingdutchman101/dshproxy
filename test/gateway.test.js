@@ -63,7 +63,7 @@ async function startBackend(t, answer) {
 const LANES = { main: ["gpt-6-astra", "claude-fable-5-2", "gemini-4-carbon-high"], empty: [] };
 const EFFORTS = { "gemini-4-carbon-high": ["high"] };
 
-async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages = null, resolve = null, accountOf = null, retryDelays = [], quotaReset = null } = {}) {
+async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages = null, resolve = null, accountOf = null, retryDelays = [], quotaReset = null, quotaLookupMs = undefined } = {}) {
   const logs = [];
   const failover = createFailover(now ? { now } : {});
   const gateway = createGateway({
@@ -72,6 +72,7 @@ async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages
     describe: (model) => (EFFORTS[model] ? { efforts: EFFORTS[model] } : {}),
     failover,
     quotaReset: quotaReset || undefined,
+    quotaLookupMs,
     sessions: createSessions(),
     log: (line) => logs.push(line),
     status: () => ({ ok: true }),
@@ -544,4 +545,17 @@ test("a lane moves on at once and leaves a used-up model alone until it is check
   await pause(30);
   const until = failover.coolingUntil("claude-fable-5-2").getTime();
   assert.ok(until > Date.now() + 55 * 60 * 1000 && until <= Date.now() + HOUR, "cools for an hour, not the ten-minute guess");
+});
+
+test("a slow usage report does not stretch the pause before a retry", async (t) => {
+  let calls = 0;
+  const backend = await startBackend(t, () => {
+    calls += 1;
+    return calls === 1 ? { status: 429, body: QUOTA_BODY } : { status: 200, body: { served: "claude-fable-5-2" } };
+  });
+  const { url } = await startGateway(t, backend.port, { retryDelays: [20], quotaReset: () => new Promise(() => {}), quotaLookupMs: 1500 });
+  const started = Date.now();
+  const response = await post(url, { model: "claude-fable-5-2", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(response.status, 200);
+  assert.ok(Date.now() - started < 1000, `answered after ${Date.now() - started} ms`);
 });

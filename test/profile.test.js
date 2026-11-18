@@ -495,8 +495,8 @@ test("old backups and stale temporary files of this program are cleared, others 
   const home = tempHome(t);
   profile.apply(MODELS, ORIGIN, home);
   const dir = path.dirname(patchPath(home));
-  const own = Array.from({ length: 14 }, (_, index) => `cordis.patch.yml.dshproxy-202611${String(index + 1).padStart(2, "0")}T120000000.bak`);
-  const foreign = ["cordis.patch.yml.dshgate-20261101T120000000.bak", "cordis.patch.yml.pre-image-input-20261101.bak", "cordis.patch.yml.2026-11-01T12-00-00-000Z.bak", "notes.dshproxy-20261101T120000000.bak"];
+  const own = Array.from({ length: 14 }, (_, index) => `cordis.patch.yml.dshproxy-200101${String(index + 1).padStart(2, "0")}T120000000.bak`);
+  const foreign = ["cordis.patch.yml.dshgate-20261101T120000000.bak", "cordis.patch.yml.pre-image-input-20261101.bak", "cordis.patch.yml.2026-11-01T12-00-00-000Z.bak", "notes.dshproxy-20261101T120000000.bak", "cordis.patch.yml.dshproxy-notes.bak", "cordis.patch.yml.dshproxy-20010101.bak"];
   for (const name of [...own, ...foreign]) fs.writeFileSync(path.join(dir, name), "old");
   const staleTmp = path.join(dir, "cordis.patch.yml.dshproxy-41836.tmp");
   const freshTmp = path.join(dir, "cordis.patch.yml.dshproxy-777.tmp");
@@ -509,7 +509,7 @@ test("old backups and stale temporary files of this program are cleared, others 
   // A change writes one more backup, then clears up.
   profile.apply([...MODELS, ...API_KEY], ORIGIN, home);
   const left = fs.readdirSync(dir);
-  const ownLeft = left.filter((name) => /^cordis\.patch\.yml\.dshproxy-.*\.bak$/.test(name)).sort();
+  const ownLeft = left.filter((name) => /^cordis\.patch\.yml\.dshproxy-\d{8}T\d{9}(-\d+)?\.bak$/.test(name)).sort();
   assert.equal(ownLeft.length, 10);
   // The newest are kept: the one just written and the nine latest of the old ones.
   assert.deepEqual(ownLeft.slice(0, 9), own.slice(5));
@@ -518,4 +518,14 @@ test("old backups and stale temporary files of this program are cleared, others 
   assert.equal(fs.existsSync(staleTmp), false);
   assert.equal(fs.existsSync(freshTmp), true);
   assert.equal(fs.existsSync(foreignTmp), true);
+});
+
+test("a default model that is gone is reported once, by its own check", (t) => {
+  const home = tempHome(t);
+  const lanes = { main: ["gemini-4-carbon-high"] };
+  profile.apply(MODELS, ORIGIN, home, { lanes });
+  const file = patchPath(home);
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/(- id: agent-default-model[\s\S]*?model: )lane-[a-z-]+/, "$1lane-nowhere"));
+  const report = profile.verify({ origin: ORIGIN, lanes, models: MODELS.map((entry) => ({ id: entry.id, api: entry.api })), home });
+  assert.deepEqual(report.profiles[0].problems, ["agent-default-model names model lane-nowhere, which is not offered"]);
 });

@@ -11,7 +11,9 @@ const PERFORMANCE = {
   scout: ["claude-sonnet-5-5", "gpt-6.1-sol", "gemini-4-argon-high", "deepseek/deepseek-v4-pro"],
   builder: ["gpt-6-astra", "claude-sonnet-5-5", "claude-fable-5-2", "gemini-4-argon-high"],
   architect: ["claude-fable-5-2", "gpt-6.1-terra", "claude-opus-5-5", "gemini-4-carbon-high"],
-  reviewer: ["gemini-4-carbon-high", "claude-opus-5-5", "gpt-6.1-terra"],
+  // No GPT here: main and builder start on GPT, and a review has to come from
+  // another model family.
+  reviewer: ["gemini-4-carbon-high", "claude-opus-5-5", "deepseek/deepseek-v4-pro"],
   google: ["gemini-4-carbon-high", "gemini-4-hydrogen-xhigh", "gemini-3.8-flash-high", "gemini-3.8-flash-tiered"]
 };
 
