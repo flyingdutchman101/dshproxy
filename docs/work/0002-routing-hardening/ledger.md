@@ -87,3 +87,74 @@ Configuration only; no repository code changed.
   had an independent review.
 - Open: D2 media keys + cap, D3 account safety, D4 primary account,
   D5 `AGENTS.md`, D6 push LICENSE + CI.
+
+## 2026-11-18 14:45 — Phase 1 core, hygiene and review (user: "OK to edit everything")
+Rulings: media keys not now (D2 deferred). Old Claude account is primary,
+new one secondary; "use the one which has usage". Review with DeepSeek/Qwen.
+
+Built on branch `hardening` (worktree `../DSHProxy-hardening`), each slice
+red first, merged to local `main` by fast-forward. Not pushed.
+- `1fdea80` P1-a lanes survive one used-up quota pool. Red: balanced/main
+  and balanced/scout had no model left. Shipped ladders: main +Opus,
+  architect +Opus, scout +`gpt-6-luna` (plan said `gpt-6.1-sol`; Luna is
+  the light model, which fits a scout).
+- `9e7f422` P1-b quota-aware failure. Backend `request-retry: 0`; setting
+  `requestRetry` removed; cool-down `source`; provider cap 24 h;
+  `limits.quotaReset` (Claude usage report, shared in-flight read); forced
+  pick stops when the provider's reset lies beyond the pauses left. 15
+  tests red on base. Two existing assertions changed on purpose
+  (`catalog.test.js`, `backend.test.js`: the setting is gone, the value is 0).
+  Cut: reading `resets_at` from a 429 body (ChatGPT sends Retry-After).
+- `3395f11` P1-c `dsh verify` checks every `dshproxy-*` provider/model pair
+  in a profile. Run against the pre-fix backup it reports the broken
+  `tool-reviewer` pin and the three dead `allowedModels` entries.
+- `ff2cad4` P3-a keep 10 own backups, sweep own stale `.tmp`. Cut: rename
+  retry (not reachable through a public seam without mocking `fs`).
+- `f9fc8ab` P3-c MIT LICENSE, `.github/workflows/ci.yml` (windows-latest,
+  Node 22.x/24.x, actions pinned by SHA). Rehearsed from a clean checkout:
+  `npm ci --ignore-scripts`, check, 264 tests pass.
+- `951eff1` review fixes (below).
+- P3-b `~/.dsh/AGENTS.md`: lane tools and "failover happens inside
+  DSHProxy" replace the 10 `droidproxy-*` references. Backup
+  `AGENTS.md.before-lanes-20261118.bak`. DSH reloaded it.
+
+Independent review: `reviewer` tool, served by `deepseek/deepseek-v4-pro`
+(gateway log; the author is Claude Fable, so a different model family).
+No CRITICAL/HIGH. All five findings verified and fixed test-first:
+1. MEDIUM performance preset reviewed with `gpt-6.1-terra` → DeepSeek; new
+   test over every preset.
+2. LOW slow usage lookup stretched the retry pause → the pause no longer
+   waits for the lookup (the helper also had not passed `quotaLookupMs`).
+3. LOW a late lookup could shorten a provider cool-down → the later end stands.
+4. LOW `tidy` matched any `.dshproxy-*.bak` → only the stamp form.
+5. LOW backup test depended on the calendar → fixture stamps in 2001.
+Also from its residual risks: cool-downs are cleared when an account
+changes or a limit is reset (a 24 h cool-down must not outlive a reset).
+Not changed: usage reads share a promise without their own timeout (the
+management call times out after 30 s; gateway lookups are capped at 4 s).
+
+Gates on `main` (`951eff1`): `node scripts/check.js` 44 files OK;
+`node --test` 269 pass, 0 fail, three runs. Identity scan clean; secret
+scan hits only the two synthetic keys in `test/cli.test.js`.
+
+Live after restart (14:40):
+- backend config `request-retry: 0`.
+- Forced `gpt-6-astra`: 429 in 0.9 s, log "out of quota until about
+  19. 11. 2026. 07:08:41; not retrying". Before: ~39 s of pauses and 4
+  upstream calls per attempt (E6, E24).
+- Three requests that reach GPT (forced pick, `lane-main`, `lane-builder`)
+  cost one upstream failure in total; GPT cools until Thu 07:08 (the real
+  reset), not 6 hours.
+- Preset re-selected: Balanced. All five lanes 200. `dsh verify` ready.
+- S1 swarm gate: 8 then 16 requests at once on `lane-scout`: 24 x 200,
+  0 upstream failures, median 0.8 s. No concurrency cap enters the plan.
+  (Tiny requests; a real swarm sends larger ones.)
+
+Open:
+- Push to GitHub (7 commits ahead) — needs the user's OK; CI first runs then.
+- P1-d subagent model selection (`list_subagent_models` empty).
+- Phase 2 primary account. Until then the old Claude account stays paused
+  and must be resumed after Thu 19 Nov 17:00.
+- Phase 4 media: waiting for keys (D2). D3 account safety: open.
+- Worktree `../DSHProxy-hardening` and branch `hardening` are merged and
+  can be removed.

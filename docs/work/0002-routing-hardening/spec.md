@@ -86,7 +86,8 @@ R3 A forced pick whose provider gave a reset (Retry-After, `resets_at`, or an
 R4 Usage-window cooling lasts min(reset, 1 h) and re-checks; unknown windows
    ignored; other families unaffected.
 R5 `dsh verify` flags a tool pin / `allowedModels` entry on a missing
-   `dshproxy-*` route or absent model as not ready; unavailable accounts warn.
+   `dshproxy-*` route or absent model as not ready. (A paused or signed-out
+   account removes its models from the route, so it shows the same way.)
 G1 ≤ 10 own backups per profile file, newest by name stamp; foreign untouched;
    failed rename leaves no `.tmp`.
 G2 AGENTS.md names only existing routes (user-approved).

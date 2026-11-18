@@ -46,7 +46,11 @@ Left open by the quick fix:
 - The preset now shows "Custom" (one rung differs). P1-a makes the same
   change the shipped default.
 
-## Phase 1 — Reliability core (~1 day)
+## Phase 1 — Reliability core
+
+Status 2026-11-18 14:45: P1-a, P1-b, P1-c and gate S1 are DONE, reviewed by
+DeepSeek and running live (commits `1fdea80`..`951eff1` on local `main`).
+P1-d is open. Details and evidence: `ledger.md`.
 
 ### P1-a  Lanes survive one exhausted quota pool (~1 h)
 - Test (fails today): for `balanced` and `performance`, every role lane
@@ -119,7 +123,10 @@ Live since today: two Claude accounts.
   selection on the primary; when it is exhausted, the second takes over
   with at most one failed call per cooldown period.
 
-## Phase 3 — Hygiene (~2 h)
+## Phase 3 — Hygiene
+
+Status 2026-11-18 14:45: P3-a, P3-b and P3-c are DONE locally. Pushing P3-c
+(LICENSE + CI) to GitHub waits for the user's OK.
 
 - **P3-a Backups.** Keep the newest 10 of DSHProxy's own backups per profile
   file (sorted by the stamp in the name), leave foreign ones alone, remove
@@ -167,11 +174,11 @@ other model family: GPT reviews what Claude built, and the reverse.
 | | Decision | Status |
 |---|---|---|
 | D1 | Use reset credits | **No** (user, 2026-11-18) |
-| D2 | Media keys: OpenRouter (required), OpenAI and Recraft (optional); daily cap (suggested $5) | open |
+| D2 | Media keys: OpenRouter (required), OpenAI and Recraft (optional); daily cap (suggested $5) | **not now** (user, 2026-11-18); Phase 4 waits |
 | D3 | Account safety: keep subscriptions, move chat to API keys, or mix per lane (E12) | open |
-| D4 | Which Claude account is primary once both are active | open |
-| D5 | OK to edit `AGENTS.md` (P3-b) | open |
-| D6 | OK to push LICENSE + CI (P3-c) | open |
+| D4 | Which Claude account is primary once both are active | **old account primary, new one secondary; use the one that has usage** (user, 2026-11-18) |
+| D5 | OK to edit `AGENTS.md` (P3-b) | **yes**, done 2026-11-18 |
+| D6 | OK to push LICENSE + CI (P3-c) | built locally; push not yet confirmed |
 
 ## Risks and how the plan handles them
 
