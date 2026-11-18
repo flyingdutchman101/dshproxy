@@ -88,7 +88,7 @@ Configuration only; no repository code changed.
 - Open: D2 media keys + cap, D3 account safety, D4 primary account,
   D5 `AGENTS.md`, D6 push LICENSE + CI.
 
-## 2026-11-18 14:45 — Phase 1 core, hygiene and review (user: "OK to edit everything")
+## 2026-11-18 14:20 — Phase 1 core, hygiene and review (user: "OK to edit everything")
 Rulings: media keys not now (D2 deferred). Old Claude account is primary,
 new one secondary; "use the one which has usage". Review with DeepSeek/Qwen.
 
@@ -137,7 +137,7 @@ Gates on `main` (`951eff1`): `node scripts/check.js` 44 files OK;
 `node --test` 269 pass, 0 fail, three runs. Identity scan clean; secret
 scan hits only the two synthetic keys in `test/cli.test.js`.
 
-Live after restart (14:40):
+Live after restart (14:15):
 - backend config `request-retry: 0`.
 - Forced `gpt-6-astra`: 429 in 0.9 s, log "out of quota until about
   19. 11. 2026. 07:08:41; not retrying". Before: ~39 s of pauses and 4
@@ -158,3 +158,78 @@ Open:
 - Phase 4 media: waiting for keys (D2). D3 account safety: open.
 - Worktree `../DSHProxy-hardening` and branch `hardening` are merged and
   can be removed.
+
+## 2026-11-18 14:50 — Pushed; Phase 2 (two accounts) built; P1-d cause found
+User: "Ok push then go next." Pushed `6e3d548..b6c28a7` after an identity
+and secret scan of the outgoing diff. First CI run: success (Node 22 and 24).
+
+Phase 2, on `hardening`, merged to local `main`, NOT pushed:
+- `a624156` P2-a primary account. Setting `primary: { <provider>: <auth
+  file> }`; `src/primary.js` `applyPrimary`; `management.setPriority`
+  (`PATCH /v0/management/auth-files/fields {name, priority}`); control route
+  `POST accounts/primary`; `GET limits` adds `primary` and `siblings`; the
+  Accounts page shows a Primary chip and Make primary. 6 tests, red first
+  (module missing).
+- `0055d61` P2-b a used-up primary steps aside. Priorities: primary 10,
+  the provider's other accounts 5, an account whose 5-hour or weekly limit
+  is at 100% gets none until its reset (`limits.usedUp`). Applied 5 s after
+  start, on a change of account, after a refused model, and one minute
+  after the reset. Two assertions of `a624156` changed with the rule
+  ("others get 0" became "others get 5").
+- `b666b3c` review fixes.
+- P2-c README section "Two accounts with one provider", with the terms
+  position.
+
+Backend facts used (source `v8.0.76`, read by a scout, then checked live):
+selection takes the available credential with the highest priority; a
+credential that answers 429 is skipped inside the same request; a
+conversation stays bound to the credential that served it; the backend
+keeps the priority across a restart (after the restart only the second
+account needed writing).
+
+Live (old account resumed and made primary, as the user ruled):
+- 3 Fable requests in 3 conversations: each asked the primary first (429,
+  its Fable limit is used up), then the second account answered in the
+  same request: 3 x 200.
+- 3 Haiku requests: all served by the primary.
+- 3 Fable requests in ONE conversation: 1 refused call, then the
+  conversation stays on the second account.
+- So a model-scoped limit costs one refused call per new conversation
+  until Thu 19 Nov 17:00. An account-wide limit costs none after the first
+  refusal (the account steps aside). Not done on purpose: moving an account
+  aside for one model would leave its other models unused.
+- Plan deviation: P2-b said "enable the backend's cooling for quota errors".
+  Not done: backend cooling would answer a forced pick with a made-up 429
+  for up to 30 minutes, which breaks "a forced model is really tried".
+- Cut: `dshproxy accounts primary <file>` CLI (the app and the control API
+  cover it). No way in the app to clear a choice; choose the other account.
+
+Independent review 2: `reviewer` tool (lane-reviewer; the log shows
+`deepseek/deepseek-v4-pro`). No CRITICAL/HIGH/MEDIUM. Two LOW, both real,
+both fixed test-first or by reading:
+1. Choosing a Claude primary made usage reads go to every provider (also
+   true of P1-b's lookup). `limits.read` takes `provider`; a narrower report
+   is cached apart and never replaces the full one. New test, red first.
+2. The timer set after an account change was not cleared on stop.
+Not changed: a paused account can be recorded as primary through the API
+(the app hides the button); settings load/save is not atomic across
+concurrent control calls (as before).
+
+Gates on `main` (`b666b3c`): check 46 files OK; `node --test` 280 pass,
+0 fail, three runs. Scans clean. Daemon wiring has no automated test
+(none exists in this project); it was checked live.
+
+P1-d subagent model selection — cause found, no code change:
+`dsh-tool-subagent/src/model-selection-settings.ts:57-74` records the
+allowed routes once, when a top-level Session is created; subagents take
+their parent's. `list-models.ts:66-70` prints "(no LLM providers)" when
+none of the recorded providers is registered. This session was created
+when the profile still named `droidproxy-*`, so its recorded list names
+providers that no longer exist. The profile itself is correct (verify:
+ready). To confirm: open a NEW session and call `list_subagent_models`.
+
+Open:
+- Push 4 commits (`a624156`, `0055d61`, `b666b3c`, this ledger) — ask.
+- Confirm P1-d in a new session.
+- Phase 4 media: waiting for keys (D2). D3 account safety: open.
+- Worktree `../DSHProxy-hardening`: merged, can be removed.

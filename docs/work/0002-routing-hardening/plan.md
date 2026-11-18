@@ -48,9 +48,10 @@ Left open by the quick fix:
 
 ## Phase 1 — Reliability core
 
-Status 2026-11-18 14:45: P1-a, P1-b, P1-c and gate S1 are DONE, reviewed by
+Status 2026-11-18 14:20: P1-a, P1-b, P1-c and gate S1 are DONE, reviewed by
 DeepSeek and running live (commits `1fdea80`..`951eff1` on local `main`).
-P1-d is open. Details and evidence: `ledger.md`.
+P1-d: cause found (the session predates the profile), no code change; to be
+confirmed in a new session. Details and evidence: `ledger.md`.
 
 ### P1-a  Lanes survive one exhausted quota pool (~1 h)
 - Test (fails today): for `balanced` and `performance`, every role lane
@@ -101,7 +102,12 @@ failed upstream calls and latency from the gateway log. Passes when there
 are no 429s and no failed calls. If it fails, a per-lane concurrency cap
 enters the plan with that evidence; otherwise it stays out.
 
-## Phase 2 — Two accounts with one provider (~0.5 day)
+## Phase 2 — Two accounts with one provider
+
+Status 2026-11-18 14:50: P2-a, P2-b and P2-c are DONE, reviewed by DeepSeek
+and running live (`a624156`..`b666b3c` on local `main`). P2-b was solved
+differently from the text below: a used-up account steps aside by priority;
+backend cooling stays off. See `ledger.md`.
 
 Live since today: two Claude accounts.
 
@@ -125,7 +131,7 @@ Live since today: two Claude accounts.
 
 ## Phase 3 — Hygiene
 
-Status 2026-11-18 14:45: P3-a, P3-b and P3-c are DONE locally. Pushing P3-c
+Status 2026-11-18 14:20: P3-a, P3-b and P3-c are DONE locally. Pushing P3-c
 (LICENSE + CI) to GitHub waits for the user's OK.
 
 - **P3-a Backups.** Keep the newest 10 of DSHProxy's own backups per profile
@@ -178,7 +184,7 @@ other model family: GPT reviews what Claude built, and the reverse.
 | D3 | Account safety: keep subscriptions, move chat to API keys, or mix per lane (E12) | open |
 | D4 | Which Claude account is primary once both are active | **old account primary, new one secondary; use the one that has usage** (user, 2026-11-18) |
 | D5 | OK to edit `AGENTS.md` (P3-b) | **yes**, done 2026-11-18 |
-| D6 | OK to push LICENSE + CI (P3-c) | built locally; push not yet confirmed |
+| D6 | OK to push LICENSE + CI (P3-c) | **yes**, pushed 2026-11-18; CI green |
 
 ## Risks and how the plan handles them
 
