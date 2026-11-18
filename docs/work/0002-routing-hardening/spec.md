@@ -70,10 +70,15 @@ windows with reset times per account.
 H1 Live: `scout`, `architect`, `reviewer` each answer "ok"; `dsh verify` ready.
    **MET 2026-11-18 13:29** (E22).
 H2 Live: `list_subagent_models` lists providers, or the cause is found and
-   recorded as a DSH limitation. **NOT MET** (E23); slice P1-d.
+   recorded as a DSH limitation. **MET 2026-11-18** (cause found): DSH records
+   the allowed routes once per top-level session
+   (`dsh-tool-subagent/src/model-selection-settings.ts:57-74`). The session
+   records show it: sessions started 12–16 Nov hold `droidproxy-*`, the two
+   started after the profile changed (16 Nov 16:21, 18 Nov 11:45) hold
+   `dshproxy-*`. Not a DSHProxy defect; a new session has the right list.
 S1 Swarm load test: 8 then 16 parallel `scout` calls produce no 429 and no
    failed upstream call. A failure adds a per-lane concurrency cap to the
-   plan; a pass keeps it out.
+   plan; a pass keeps it out. **MET 2026-11-18**: 24 x 200, 0 failures.
 R1 For `balanced` and `performance`, every role lane resolves ≥ 1 rung when
    (a) only Claude is available and Fable cools, (b) only GPT is available
    (reviewer and `cheap`: (a) only; `google` exempt). Red on base.
@@ -82,15 +87,19 @@ R3 A forced pick whose provider gave a reset (Retry-After, `resets_at`, or an
    allowlisted usage window exhausted on every enabled account) beyond the
    retry budget returns the provider's error after one upstream call:
    < 1 s (header), < 5 s (usage window). A bare 429 with no known reset still
-   retries (`gateway.test.js:427` stays green).
+   retries (`gateway.test.js:427` stays green). **MET 2026-11-18**: forced
+   `gpt-6-astra` answered 429 in 0.9 s after one call. `resets_at` in a 429
+   body is not read (cut: ChatGPT sends Retry-After).
 R4 Usage-window cooling lasts min(reset, 1 h) and re-checks; unknown windows
-   ignored; other families unaffected.
+   ignored; other families unaffected. **MET** (tests).
 R5 `dsh verify` flags a tool pin / `allowedModels` entry on a missing
    `dshproxy-*` route or absent model as not ready. (A paused or signed-out
    account removes its models from the route, so it shows the same way.)
+   **MET 2026-11-18**: flags the pre-fix profile backup, passes the current one.
 G1 ≤ 10 own backups per profile file, newest by name stamp; foreign untouched;
-   failed rename leaves no `.tmp`.
-G2 AGENTS.md names only existing routes (user-approved).
+   failed rename leaves no `.tmp`. **MET 2026-11-18**: 10 own backups in each
+   profile; read-only-profile test red on base, green with the fix.
+G2 AGENTS.md names only existing routes (user-approved). **MET 2026-11-18.**
 G3 MIT LICENSE + Windows CI (check + tests) green on GitHub (user-approved push).
 M1 Spike: one image (OpenRouter), one image edit (OpenAI if keyed), one 4 s
    video draft — request/response shapes recorded as fixtures; cost < $1.
@@ -104,6 +113,20 @@ A1 With two active accounts of one provider that both have quota, every
    selection in the backend log is on the user-chosen primary. When the
    primary is exhausted the second takes over with at most one failed
    upstream call per cooldown period. Auth files are never edited by hand.
-   README states the terms-of-service position.
+   README states the terms-of-service position. **MET 2026-11-18**: Haiku on
+   the primary; with its Fable limit used up, Fable goes to the second
+   account with 0 refused calls (was 1 per new conversation).
+A2 An account out of one model family is told not to serve it
+   (`excluded_models`) while another active account still has it, and only
+   then; a model nobody else has is never excluded. An account out of quota
+   altogether steps aside. Both are lifted a minute after the reset, on a
+   change of accounts, and when the choice is taken back — also from the
+   command line while the gateway is stopped. **MET 2026-11-18** (tests and
+   live), except "steps aside" and "lifted after the reset", which are
+   covered by tests only: neither has happened live yet.
 X1 All existing tests pass unmodified; each new behaviour has a test that
    failed on base for the expected reason (config constants verified live).
+   **MET with two stated exceptions**: `catalog.test.js` and
+   `backend.test.js` each had one assertion changed because the
+   `requestRetry` setting was removed (criterion R2 asks for that).
+M1–M4 are parked with Phase 4 (user: "hold off").

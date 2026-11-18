@@ -252,3 +252,81 @@ Plan items delivered differently or not at all (all reported to the user):
 - P3-a no removal of the temp file when a rename fails.
 - X1 two existing assertions were changed on purpose (`requestRetry`).
 - Review was by DeepSeek (the user's choice), not GPT as the plan said.
+
+## 2026-11-18 15:35 — "Go. Don't stop until everything is finished."
+Pushed `b6c28a7..13d64bd` (scans clean). Then closed every open point from
+the previous entry except Phase 4 (parked) and the worktree (no answer).
+
+Closed:
+- **Make primary on screen.** `DSHProxy.exe --preview-limits <sample.json>`
+  (synthetic accounts), captured with PrintWindow: "Primary" chip on the
+  primary, "Make primary" on the second account, neither on a provider with
+  one account. Added "Not primary" (the only way to take a choice back in
+  the app); that button compiles but was not captured again.
+- **P1-d confirmed.** Session files are concatenated zstd frames of JSONL.
+  Event 5 of each top-level session is `subagent/model-selection-policy`:
+  five sessions started 12–16 Nov 10:47 hold `droidproxy-*`; the two started
+  16 Nov 16:21 and 18 Nov 11:45 hold `dshproxy-*`. Subagents copy their
+  parent's. This session is one of the old ones. `list_subagent_models`
+  itself was not run in a new session.
+- **Refused call per new Fable conversation: gone.** Backend source
+  (`v8.0.76`, read by a scout): a credential's `excluded_models` (patterns,
+  `*` wildcard) removes those models from that one credential at once, via
+  `PATCH auth-files/fields`; it is kept in the credential file and is not
+  reported by `GET auth-files`. `limits.usedUpModels` gives
+  `claude-<family>-*` for a model-scoped limit at 100%.
+- **Account order is a tested module** (`createAccountOrder` in
+  `src/primary.js`): priorities, stepping aside, exclusions, the check a
+  minute after a reset, shared runs, retry with back-off (1, 2, 4 … 60 min).
+  The daemon only wires it. 20 tests with fake backend, usage report and
+  timers. The daemon wiring itself still has no automated test.
+- **CLI**: `dshproxy accounts primary <provider> <account|none>`; `accounts`
+  marks the primary.
+- **G1 remainder**: a failed profile rename leaves no `.tmp` (read-only
+  profile test: red on base with the leftover file, green with the fix).
+
+Commits (hardening → main, fast-forward): `c906b1c`, `cacbe04`, `84551d5`.
+
+Independent reviews 3 and 4 (`reviewer` tool; log: `deepseek/deepseek-v4-pro`):
+- Review 3 of `c906b1c`: 1 HIGH, 2 MEDIUM, 4 LOW — all real, all fixed in
+  `cacbe04`. HIGH: a choice taken back from the CLI while the gateway was
+  stopped was never applied, because the backend keeps priorities in the
+  credential file. Fix: no one-shot reset; every run reconciles all active
+  accounts (a provider without a choice wants priority 0 and no exclusion).
+  MEDIUM: lost reset on a failed run (gone with the fix; failed runs retry);
+  stale record after sign-out/sign-in under the same file name
+  (`order.forget()` on every account change). LOW: masked rename error,
+  coalescing gap, no retry timer, CLI provider aliases.
+- Review 4 of `cacbe04`: all seven FIXED; 1 new MEDIUM (accounts changing
+  during a run could leave a stale record) and a residual (endless
+  one-minute retry). Both fixed test-first in `84551d5`. That last commit
+  (2 tests, ~15 lines) has not had its own independent review.
+
+Gates on `main` (`84551d5`): check 47 files OK; `node --test` 303 pass,
+0 fail, three runs (280 before this round). Scans clean.
+
+Live on `main` build (15:30):
+- Start: "Claude (m***) is out of claude-fable-* and is not asked for it
+  until 19. 11. 2026. 17:00".
+- 6 Fable requests in new conversations across three restarts: all served
+  by the second account, 0 refused calls (before: 1 each). Haiku: primary.
+- CLI while stopped: `accounts primary claude none` → next start logs both
+  accounts "has no place in an order now"; choosing the old account again →
+  next start restores primary, second, and the Fable exclusion.
+- All five lanes 200; forced `claude-fable-5-2` 200; 8 at once on
+  `lane-scout`: 8 x 200. One refused call in the whole run: GPT, once,
+  because a restart forgets cool-downs (then skipped until Thu 07:08).
+- `dsh verify`: desktop ready, web ready.
+
+Known limits, on purpose:
+- Stepping aside (whole-account limit) and lifting an exclusion after a
+  reset have not happened live yet; first chance Thu 19 Nov 17:00.
+- If DSHProxy is not running when a limit resets, the exclusion stays in
+  the credential file until the next start (5 s after start).
+- Exclusions and order are only kept for Claude; other providers' usage
+  reports are not interpreted.
+- A gateway restart forgets cool-downs: one refused call per used-up
+  provider after each restart.
+
+Open: Phase 4 (parked, D2). Worktree `../DSHProxy-hardening` is merged and
+can be removed (asked twice, no answer, left in place).

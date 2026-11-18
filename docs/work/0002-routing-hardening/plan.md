@@ -39,19 +39,20 @@ Rollback: profile backups `cordis.patch.yml.quickfix-20261118T122652435.bak`;
 lane via `lanes/replace`; account via Accounts → Resume.
 
 Left open by the quick fix:
-- **Resume the original Claude account** after it resets (Thu 19 Nov 17:00).
-  Until Phase 2 lands, two active accounts alternate again.
-- `list_subagent_models` still returns "no LLM providers" (E11). Cause
-  unknown; see slice P1-d.
-- The preset now shows "Custom" (one rung differs). P1-a makes the same
-  change the shipped default.
+- ~~Resume the original Claude account~~ — done 2026-11-18: resumed and made
+  primary (Phase 2).
+- ~~`list_subagent_models` returns "no LLM providers"~~ — explained
+  2026-11-18 (P1-d): true only for sessions created before the profile
+  changed.
+- ~~The preset shows "Custom"~~ — Balanced re-selected 2026-11-18.
 
 ## Phase 1 — Reliability core
 
 Status 2026-11-18 14:20: P1-a, P1-b, P1-c and gate S1 are DONE, reviewed by
 DeepSeek and running live (commits `1fdea80`..`951eff1` on local `main`).
-P1-d: cause found (the session predates the profile), no code change; to be
-confirmed in a new session. Details and evidence: `ledger.md`.
+P1-d: DONE — cause found and confirmed from the session records (a session
+keeps the routes it was created with); no code change. Details and
+evidence: `ledger.md`.
 
 ### P1-a  Lanes survive one exhausted quota pool (~1 h)
 - Test (fails today): for `balanced` and `performance`, every role lane
@@ -107,7 +108,12 @@ enters the plan with that evidence; otherwise it stays out.
 Status 2026-11-18 14:50: P2-a, P2-b and P2-c are DONE, reviewed by DeepSeek
 and running live (`a624156`..`b666b3c` on local `main`). P2-b was solved
 differently from the text below: a used-up account steps aside by priority;
-backend cooling stays off. See `ledger.md`.
+an account out of one model family is told not to serve it; backend cooling
+stays off. Final state `84551d5` (15:35), three DeepSeek reviews. See
+`ledger.md`.
+
+**Everything in Phases 0–3 is done and pushed. Phase 4 is parked (user:
+"hold off").**
 
 Live since today: two Claude accounts.
 
