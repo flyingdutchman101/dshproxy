@@ -1,0 +1,7 @@
+# Implementation plan
+
+1. Model, route and pricing contract (`src/video/catalog.js`, `test/video-catalog.test.js`): red/green offline quote cases; run `node --test test/video-catalog.test.js`.
+2. Single-attempt transport (`src/video/transport.js`, `test/video-transport.test.js`): red/green submit and status against documented provider shapes, security and ambiguity checks. Run `node --test test/video-transport.test.js`.
+3. Wire the public `video` command (`src/cli.js`, `src/video/command.js`, `test/video-command.test.js`), document invocation and Krea preflight handoff. Verify offline quote, no implicit spend, status and errors.
+4. Run `npm test`, `npm run check`, inspect diff and independent review. No running app replacement or paid generation. Isolated branch: video-routing. The original checkout already has unrelated uncommitted gateway work.
+5. Workspace extension: prove client behavior; if existing clients cannot guarantee exact non-replaying calls, pause for a design decision. Implement the approved separate helper, native-unit preflight/submit/status, and an explicit manual login flow. Test with synthetic responses and an empty profile; verify Windows storage using disposable synthetic data, never real tokens. Combine candidate with pending main edits only in a disposable directory and run final review. Account operations, live validation and shipping remain separate gates.

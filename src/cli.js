@@ -24,6 +24,7 @@ Usage:
   dshproxy key remove <provider>       Remove a saved API key
   dshproxy key list                    List API-key providers and their regions
   dshproxy key custom add|list|remove   Add a custom OpenAI-compatible endpoint (LiteLLM, One API, ...)
+  dshproxy video help                  Quote benchmark videos, submit once, or check a job
   dshproxy models                      List the models that can be offered right now
   dshproxy dsh apply [--dry-run]       Write the models into every DeepSeek Harness profile
   dshproxy dsh verify                  Check that DeepSeek Harness has every route it needs
@@ -194,6 +195,8 @@ function rollbackLock(out) {
 }
 
 async function main(argv, out = console.log) {
+  // Offline media quotes must not migrate, read, or modify the user's chat settings.
+  if (argv[0] === "video") return require("./video/command").run(argv.slice(1), out);
   // Only the default data folder is migrated; a DSHPROXY_HOME the user set is
   // used as given.
   if (!process.env.DSHPROXY_HOME) {

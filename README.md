@@ -232,6 +232,18 @@ npm test
 npm run check
 ```
 
+## Video routing (CLI)
+
+From a source checkout, `node bin/dshproxy.js video help` works without starting the gateway. `video list` shows the supported model names. `video quote wan-3.0` prints a dated offline estimate for a five-second, native 720p, 16:9 text-only clip; H3 uses 768p. You can specify the route, for example `video quote minimax-h3 callirra`. Callirra's dollars are a **full-utilization subscription equivalent**, not a purchase or a cash rate. These API-route quotes never contact a provider.
+
+**Krea workspace route (Windows, mock-tested release candidate).** The separate helper owns the workspace session; the routing CLI does not receive OAuth tokens. Sign-in is an explicit account operation, never an effect of a quote. After separately authorizing it, run `node bin/dshproxy-krea.js login` from this checkout (a registered public client may require `--client-id ID`). Select the intended Krea workspace during consent. An expired session requires another explicit login.
+
+- `video quote MODEL krea --prompt "PROMPT"` contacts the signed-in workspace for a compute-unit preflight, not a USD estimate. Unknown tool shapes or unverified presets are refused. In particular, H3 needs an explicit 768p selector.
+- `video submit MODEL krea --max-units COUNT --confirm-charge "PROMPT"` requests a fresh preflight before one generation call. The cap limits the quoted amount, not the final debit. `video status MODEL krea JOB_ID` checks the original job. After an uncertain submission check the workspace; never retry blindly.
+- `video krea MODEL` remains an **offline manual handoff** for another OAuth-capable client. No workspace command falls back to API billing. Real OAuth issuer compatibility, model availability and actual charges require live verification before production use.
+
+For an explicitly paid run, use `video submit MODEL ROUTE --max-usd AMOUNT --confirm-charge "PROMPT"`, with the corresponding provider key already in the environment. For Callirra, use `--max-credits 10` instead of a dollar budget: the provider bills credits. The limit checks the local estimate per submission, **not** the provider's final debit or a cumulative budget. Rates may change. Save the returned model, route and job ID; use `video status MODEL ROUTE JOB_ID` to check progress. Nothing automatically retries a submission or changes hosts. After an ambiguous failure, check the provider dashboard before trying again. Output URLs may be short-lived and private; do not share job output or paste secrets into prompts. This release has no new desktop controls or chat models.
+
 ## Not included
 
 Compared with VeryCuteDroidProxy, DSHProxy leaves these out:
@@ -240,7 +252,7 @@ Compared with VeryCuteDroidProxy, DSHProxy leaves these out:
 - A window, tray icon or installer
 - Auto routing by task type, and routing by remaining quota or weekly pace
 - Routing that uses the remaining limits (limits are shown, not yet used to pick a model)
-- Voice and video generation
+- Voice generation and video generation through chat lanes
 - The Claude `Anthropic-Beta` rewrite and the removal of old thinking blocks
 
 ## Two accounts with one provider
