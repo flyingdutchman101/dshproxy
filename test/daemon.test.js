@@ -662,22 +662,72 @@ test("the control call stops an idle gateway, answers once the backend has exite
   t.after(() => agent.destroy());
   await call(g.port, { target: "/v1/models?how=ok", agent }).done;
 
-  // The caller keeps its connections open too; the answer closes this one, so
-  // that the process can end.
+  // The caller keeps the connection of its call open as well.
   const asked = call(g.port, { method: "POST", target: "/dshproxy/control/stop", headers: { "x-dshproxy-token": g.token(), "content-type": "application/json" }, body: JSON.stringify({ waitSeconds: 5 }), agent });
   const answer = await asked.done;
   assert.equal(answer.status, 200);
-  assert.equal(answer.headers.connection, "close");
   assert.deepEqual(JSON.parse(answer.text), { stopped: true });
   assert.equal(answer.text, '{"stopped":true}');
   // By the time the answer is there, the port is closed and the backend gone.
   assert.deepEqual(g.events.slice(0, 3), ["backend started", "backend stopping", "backend exited"]);
   await refused(g.port);
   assert.equal(fs.existsSync(g.tokenFile), false);
-  await until(() => g.events.includes("exit"), "the exit", 2000);
+  // The process is not ended under a caller that still holds the connection
+  // its answer came on: only once the caller has hung up.
+  await pause(300);
+  assert.deepEqual(g.events, ["backend started", "backend stopping", "backend exited"]);
+  agent.destroy();
+  await until(() => g.events.includes("exit"), "the exit", 1500);
   await pause(30);
   assert.deepEqual(g.events, ["backend started", "backend stopping", "backend exited", "exit"]);
   assert.ok(g.logs.some((line) => /stopping at a moment with no request in flight/.test(line)));
+  assert.equal(g.logs.some((line) => /did not close its connection/.test(line)), false);
+});
+
+test("a caller that never hangs up is cut off about two seconds after the answer, and the process is then told to exit", async (t) => {
+  // First a gateway whose caller hangs up as it should: nothing is cut off there, now or later.
+  const orderly = await startGateway(t);
+  assert.equal((await control(orderly, "stop", { waitSeconds: 5 }).done).text, '{"stopped":true}');
+  await until(() => orderly.events.includes("exit"), "the exit of the first gateway", 1500);
+
+  const g = await startGateway(t);
+  const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+  t.after(() => agent.destroy());
+  let closedByGateway = false;
+  agent.on("free", (socket) => socket.once("close", () => { closedByGateway = true; }));
+  const answer = await call(g.port, { method: "POST", target: "/dshproxy/control/stop", headers: { "x-dshproxy-token": g.token(), "content-type": "application/json" }, body: JSON.stringify({ waitSeconds: 5 }), agent }).done;
+  const answered = Date.now();
+  assert.equal(answer.text, '{"stopped":true}');
+  // Well before the five seconds after which an unused connection is closed anyway.
+  await until(() => g.events.includes("exit"), "the exit", 4000);
+  assert.ok(Date.now() - answered >= 1500, `told to exit ${Date.now() - answered} ms after the answer`);
+  await until(() => closedByGateway, "the gateway to close the connection");
+  assert.deepEqual(g.events, ["backend started", "backend stopping", "backend exited", "exit"]);
+  assert.equal(g.logs.filter((line) => /stop when idle: the caller did not close its connection within 2 s of the answer/.test(line)).length, 1);
+  // The first gateway stopped more than two seconds ago by now.
+  assert.equal(orderly.logs.some((line) => /did not close its connection/.test(line)), false);
+});
+
+test("the gateway does not hang up first after its answer, also when the caller asked for the connection to be closed", async (t) => {
+  const g = await startGateway(t);
+  const body = JSON.stringify({ waitSeconds: 5 });
+  const socket = net.connect(g.port, "127.0.0.1");
+  t.after(() => socket.destroy());
+  let text = "";
+  let hungUp = false;
+  socket.on("data", (chunk) => { text += chunk; });
+  socket.on("end", () => { hungUp = true; });
+  socket.on("error", () => { hungUp = true; });
+  socket.write(`POST /dshproxy/control/stop HTTP/1.1\r\nHost: 127.0.0.1:${g.port}\r\nConnection: close\r\nx-dshproxy-token: ${g.token()}\r\ncontent-type: application/json\r\ncontent-length: ${body.length}\r\n\r\n${body}`);
+  await until(() => text.endsWith('{"stopped":true}'), "the answer");
+  // The answer is whole without the connection being closed: its length is given.
+  assert.match(text, /\r\ncontent-length: 16\r\n/i);
+  await pause(300);
+  assert.equal(hungUp, false);
+  assert.deepEqual(g.events, ["backend started", "backend stopping", "backend exited"]);
+  socket.end();
+  await until(() => g.events.includes("exit"), "the exit", 1500);
+  assert.equal(g.logs.some((line) => /did not close its connection/.test(line)), false);
 });
 
 test("the control call waits for a request in flight, and its default wait is 300 seconds", async (t) => {
@@ -711,6 +761,26 @@ test("two stop calls over the control interface are both answered, and the proce
   await pause(40);
   assert.deepEqual(g.events, ["backend started", "backend stopping", "backend exited", "exit"]);
   assert.equal(g.logs.filter((line) => /stopping at a moment with no request in flight/.test(line)).length, 1);
+});
+
+test("a caller that goes away while the backend is still exiting does not keep the process from being told to exit", async (t) => {
+  let gone = null;
+  // The second caller drops its connection in the tick the gateway stops:
+  // too late to call the stop off, and before there is an answer to send.
+  const g = await startGateway(t, { backendExitMs: 300, onBackendStop: () => gone.destroy() });
+  const held = call(g.port, { target: "/v1/models?how=hold&id=a" });
+  await g.backend.held("a");
+  const stays = control(g, "stop", { waitSeconds: 30 });
+  gone = control(g, "stop", { waitSeconds: 30 });
+  await until(() => g.logs.filter((line) => /stop when idle requested/.test(line)).length === 2, "both stop calls to be waiting");
+  (await g.backend.held("a")).finish("whole");
+  assert.equal((await held.done).text, "whole");
+  assert.equal((await stays.done).text, '{"stopped":true}');
+  await assert.rejects(gone.done);
+  await until(() => g.events.includes("exit"), "the exit", 1500);
+  await pause(40);
+  assert.deepEqual(g.events, ["backend started", "backend stopping", "backend exited", "exit"]);
+  assert.equal(g.logs.some((line) => /did not close its connection/.test(line)), false);
 });
 
 test("the control call that runs out of time says what is in flight and leaves the gateway running", async (t) => {  const g = await startGateway(t);
@@ -887,13 +957,24 @@ function cli(home, args) {
 
 // A program on the gateway's port that answers its status and records what the
 // command sends to the control interface. `answer(req, res, body)` replies.
+// `status.error`, when set, says what becomes of a status request: "hold"
+// keeps it unanswered until `answerStatus()`, "drop" cuts its connection, and
+// any other true value answers 500.
 async function fakeGateway(t, { status = { startedAt: "2026-11-22T00:00:00.000Z", backend: { name: "CLIProxyAPI", version: "0.0.0", running: true, pid: 4242 }, lanes: [] }, answer, token = "d".repeat(64) } = {}) {
   const home = fs.mkdtempSync(path.join(sandbox, "home-"));
   const calls = [];
+  const heldStatus = [];
+  const sendStatus = (res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(status));
+  };
   const server = http.createServer((req, res) => {
     if (req.method === "GET" && req.url === "/dshproxy/status") {
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(status));
+      const failing = typeof status.error === "function" && status.error();
+      if (failing === "drop") return void req.socket.destroy();
+      if (failing === "hold") return void heldStatus.push(res);
+      res.writeHead(failing ? 500 : 200, { "content-type": "application/json" });
+      res.end(failing ? "{}" : JSON.stringify(status));
       return;
     }
     const chunks = [];
@@ -901,7 +982,7 @@ async function fakeGateway(t, { status = { startedAt: "2026-11-22T00:00:00.000Z"
     req.on("end", () => {
       const body = Buffer.concat(chunks).toString("utf8");
       calls.push({ method: req.method, url: req.url, token: req.headers["x-dshproxy-token"], origin: req.headers.origin, type: req.headers["content-type"], body });
-      answer(req, res, body);
+      answer(req, res, body, { server, tokenFile: path.join(home, "control.token") });
     });
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -914,7 +995,7 @@ async function fakeGateway(t, { status = { startedAt: "2026-11-22T00:00:00.000Z"
   });
   fs.writeFileSync(path.join(home, "settings.json"), JSON.stringify({ port, backendPort: await sparePort() }));
   if (token !== null) fs.writeFileSync(path.join(home, "control.token"), `${token}\n`);
-  return { home, port, calls, token };
+  return { home, port, calls, token, status, heldStatus, answerStatus: () => heldStatus.splice(0).forEach(sendStatus) };
 }
 const json = (res, status, value) => {
   res.writeHead(status, { "content-type": "application/json" });
@@ -967,16 +1048,49 @@ test("dshproxy stop --when-idle without a running gateway says so and exits 1", 
   }
 });
 
+// A gateway that is busy can take longer over its status than the command
+// waits for it. That is not a gateway that is not running.
+test("dshproxy stop --when-idle asks a gateway to stop all the same when its status comes late or cannot be read, and does not call it not running", async (t) => {
+  // The status is answered only when the stop call has arrived: late.
+  const slow = await fakeGateway(t, { answer: (_req, res) => { slow.answerStatus(); json(res, 200, { stopped: true }); } });
+  slow.status.error = () => "hold";
+  // The status is an answer the command cannot read.
+  const odd = await fakeGateway(t, { answer: (_req, res) => json(res, 200, { stopped: false, inFlight: 2 }) });
+  odd.status.error = () => true;
+  const [late, unreadable] = await Promise.all([cli(slow.home, ["stop", "--when-idle", "--wait", "1"]), cli(odd.home, ["stop", "--when-idle", "--wait", "1"])]);
+  assert.deepEqual([late.status, late.stdout, late.stderr], [0, '{"stopped":true}\n', ""]);
+  assert.deepEqual(slow.calls.map((call) => [call.method, call.url, call.token, call.body]), [["POST", "/dshproxy/control/stop", slow.token, '{"waitSeconds":1}']]);
+  assert.deepEqual([unreadable.status, unreadable.stdout, unreadable.stderr], [2, '{"stopped":false,"inFlight":2}\n', ""]);
+  assert.equal(odd.calls.length, 1);
+});
+
+test("dshproxy stop --when-idle refuses, without calling the gateway not running, when its status comes late and there is no control token to ask it with", async (t) => {
+  for (const token of [null, "not a token"]) {
+    const g = await fakeGateway(t, { token, answer: (_req, res) => json(res, 200, { stopped: true }) });
+    g.status.error = () => "hold";
+    const started = Date.now();
+    const run = await cli(g.home, ["stop", "--when-idle", "--wait", "1"]);
+    const elapsed = Date.now() - started;
+    assert.equal(run.status, 1);
+    assert.equal(run.stdout, "");
+    assert.equal(run.stderr, `DSHProxy: The gateway on http://127.0.0.1:${g.port} did not give its status within 2 seconds; it may be busy. ${path.join(g.home, "control.token")} cannot be read, so it cannot be asked to stop. Nothing was stopped.\n`);
+    // It waited for the status, once, and asked for nothing else.
+    assert.ok(elapsed >= 2000 && elapsed < 15000, `${elapsed} ms`);
+    assert.equal(g.heldStatus.length, 1);
+    assert.deepEqual(g.calls, []);
+  }
+});
+
 test("dshproxy stop --when-idle exits 1 with a reason, and never shows the token, when the gateway cannot be asked or answers something else", async (t) => {
   const cases = [
     ["an older gateway without the call", { answer: (_req, res) => json(res, 404, { error: "No such control call." }) }, /older DSHProxy/],
     ["a gateway that does not accept the token", { answer: (_req, res) => json(res, 401, { error: "Missing or wrong control token." }) }, /did not accept the control token/],
-    ["a gateway that drops the connection", { answer: (req) => req.socket.destroy() }, /connection was lost/],
+    ["a gateway that drops the connection and goes on running", { answer: (req) => req.socket.destroy() }, /^DSHProxy: The connection to the gateway was lost before it answered, and it is still running on http:\/\/127\.0\.0\.1:\d+\. Nothing was stopped\.\n$/],
     ["an answer that is not the documented one", { answer: (_req, res) => json(res, 200, { stopped: "yes" }) }, /did not understand/],
     ["an answer without a count", { answer: (_req, res) => json(res, 200, { stopped: false }) }, /did not understand/],
     ["an answer that is not JSON", { answer: (_req, res) => { res.writeHead(200); res.end("stopped"); } }, /did not understand/],
     ["a refusal that repeats the token", { answer: (req, res) => json(res, 400, { error: `bad call from ${req.headers["x-dshproxy-token"]}` }) }, /HTTP 400/],
-    ["no token file", { token: null, answer: (_req, res) => json(res, 200, { stopped: true }) }, /control\.token cannot be read/]
+    ["no token file", { token: null, answer: (_req, res) => json(res, 200, { stopped: true }) }, /^DSHProxy: \S+control\.token cannot be read, so the running gateway cannot be asked\. Nothing was stopped\.\n$/]
   ];
   for (const [name, options, reason] of cases) {
     const g = await fakeGateway(t, options);
@@ -992,9 +1106,72 @@ test("dshproxy stop --when-idle exits 1 with a reason, and never shows the token
   const g = await fakeGateway(t, { token: "not a token\r\nx-injected: 1", answer: (_req, res) => json(res, 200, { stopped: true }) });
   const run = await cli(g.home, ["stop", "--when-idle"]);
   assert.equal(run.status, 1);
-  assert.match(run.stderr, /control\.token cannot be read/);
+  assert.match(run.stderr, /^DSHProxy: \S+control\.token cannot be read, so the running gateway cannot be asked\. Nothing was stopped\.\n$/);
   assert.equal(run.stderr.includes("not a token"), false);
   assert.deepEqual(g.calls, []);
+});
+
+// The connection that carries the answer can be lost although the gateway did
+// what it was asked: the command then looks at what became of the gateway.
+const dropAndClose = (after = () => {}) => (req, _res, _body, gateway) => {
+  gateway.server.close();
+  gateway.server.closeAllConnections();
+  req.socket.destroy();
+  after(gateway);
+};
+
+test("dshproxy stop --when-idle whose answer is lost finds the gateway stopped: its port is closed and its control token is gone", async (t) => {
+  const g = await fakeGateway(t, { answer: dropAndClose((gateway) => fs.rmSync(gateway.tokenFile)) });
+  const run = await cli(g.home, ["stop", "--when-idle", "--wait", "1"]);
+  assert.deepEqual([run.status, run.stdout, run.stderr], [0, '{"stopped":true}\n', ""]);
+  assert.equal(g.calls.length, 1);
+
+  // A gateway caught in the middle of stopping: the token goes a moment later.
+  const slower = await fakeGateway(t, { answer: dropAndClose((gateway) => setTimeout(() => fs.rmSync(gateway.tokenFile), 700)) });
+  const later = await cli(slower.home, ["stop", "--when-idle", "--wait", "1"]);
+  assert.deepEqual([later.status, later.stdout, later.stderr], [0, '{"stopped":true}\n', ""]);
+});
+
+test("dshproxy stop --when-idle whose answer is lost says that it is not known whether the gateway stopped, after a few seconds at most, when that cannot be established", async (t) => {
+  const unknown = /^DSHProxy: The gateway's answer did not arrive: the connection was lost, and it is not known whether the gateway stopped\. Check with `dshproxy status`\.\n$/;
+  // Its port is closed, but its token is still there: it may have been killed.
+  const closed = await fakeGateway(t, { answer: dropAndClose() });
+  // Something answers on its port, but not with a gateway's status.
+  let dropped = false;
+  const other = await fakeGateway(t, { answer: (req) => { dropped = true; req.socket.destroy(); } });
+  other.status.error = () => dropped;
+  // Its token is gone, and its port takes connections and drops them: a port
+  // that is still open is not a stopped gateway.
+  let droppedToo = false;
+  const tokenless = await fakeGateway(t, { answer: (req, _res, _body, gateway) => { droppedToo = true; fs.rmSync(gateway.tokenFile); req.socket.destroy(); } });
+  tokenless.status.error = () => droppedToo && "drop";
+  const started = Date.now();
+  const runs = await Promise.all([closed, other, tokenless].map((g) => cli(g.home, ["stop", "--when-idle", "--wait", "1"])));
+  const elapsed = Date.now() - started;
+  for (const [index, run] of runs.entries()) {
+    assert.equal(run.status, 1, String(index));
+    assert.equal(run.stdout, "", String(index));
+    assert.match(run.stderr, unknown, String(index));
+  }
+  // It looked for a while, and not for long.
+  assert.ok(elapsed >= 2500 && elapsed < 15000, `${elapsed} ms`);
+  for (const g of [closed, other, tokenless]) assert.equal(runs.map((run) => run.stderr).join("").includes(g.token), false);
+});
+
+test("dshproxy stop --when-idle hangs up by itself once it has read the answer, and ends, when the gateway keeps the connection open", async (t) => {
+  let hungUp = false;
+  // This gateway never closes the connection, as a stopped gateway does not: only the command can.
+  const g = await fakeGateway(t, { answer: (req, res, _body, gateway) => {
+    gateway.server.keepAliveTimeout = 0;
+    req.socket.once("close", () => { hungUp = true; });
+    res.setHeader("connection", "keep-alive");
+    json(res, 200, { stopped: true });
+  } });
+  const started = Date.now();
+  const run = await cli(g.home, ["stop", "--when-idle", "--wait", "1"]);
+  assert.deepEqual([run.status, run.stdout, run.stderr], [0, '{"stopped":true}\n', ""]);
+  assert.ok(Date.now() - started < 20000, "the command did not end by itself");
+  await until(() => hungUp, "the command to close its connection");
 });
 
 test("status --json carries the gateway's count of requests in flight, and null when there is none to ask", async (t) => {
@@ -1128,6 +1305,32 @@ test("a gateway started with dshproxy start exits by itself, with code 0, once s
   assert.equal(fs.existsSync(path.join(g.home, "control.token")), false);
   assert.equal(g.output().includes(token), false);
   assert.match(g.output(), /stopping at a moment with no request in flight/);
+});
+
+// What went wrong on a busy machine: the gateway process ended while the
+// caller had not read the answer yet, Windows reset the connection, and the
+// answer was gone. Here the caller reads nothing until the process has ended.
+// The request is the one the command sends, which asks for the connection to
+// be closed after the answer.
+test("a caller that has not read the answer when the gateway process ends still receives it", async (t) => {
+  const g = await startChildGateway(t);
+  const body = JSON.stringify({ waitSeconds: 5 });
+  const socket = new net.Socket();
+  t.after(() => socket.destroy());
+  socket.pause();
+  const failed = new Promise((resolve) => socket.once("error", (error) => resolve(`failed with ${error.code}`)));
+  await new Promise((resolve) => socket.connect(g.port, "127.0.0.1", resolve));
+  socket.write(`POST /dshproxy/control/stop HTTP/1.1\r\nHost: 127.0.0.1:${g.port}\r\nConnection: close\r\nx-dshproxy-token: ${g.token()}\r\ncontent-type: application/json\r\ncontent-length: ${body.length}\r\n\r\n${body}`);
+  // A caller that neither reads nor hangs up does not keep the process alive.
+  assert.deepEqual(await g.ended(), { code: 0, signal: null });
+
+  let text = "";
+  socket.on("data", (chunk) => { text += chunk; });
+  const whole = new Promise((resolve) => socket.once("end", () => resolve("the whole answer")));
+  socket.resume();
+  assert.equal(await Promise.race([whole, failed]), "the whole answer");
+  assert.match(text, /^HTTP\/1\.1 200 OK\r\n/);
+  assert.ok(text.endsWith('\r\n\r\n{"stopped":true}'), "the answer is not there");
 });
 
 test("a restart after a backend rollback waits for the request in flight, then the gateway serves again", async (t) => {

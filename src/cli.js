@@ -20,6 +20,12 @@ const RESTART_NOTE_MS = 60 * 1000;
 // `dshproxy stop --when-idle` waits this long when it is not told.
 const STOP_WAIT_SECONDS = 300;
 const MAX_STOP_WAIT_SECONDS = 24 * 60 * 60;
+// When the connection that carries the gateway's answer is lost, the command
+// looks at the gateway itself for this long, at these intervals.
+const LOST_ANSWER_MS = 3000;
+const LOST_ANSWER_PAUSE_MS = 150;
+// How long the stop command waits for the gateway's status before it asks.
+const STOP_STATUS_MS = 2000;
 const STOP_USAGE = `Usage: dshproxy stop --when-idle [--wait SECONDS]  (SECONDS: a whole number from 0 to ${MAX_STOP_WAIT_SECONDS}; default ${STOP_WAIT_SECONDS})`;
 
 const HELP = `DeepSeekProxy (dshproxy) ${app.version} - local model gateway for DeepSeek Harness
@@ -127,21 +133,72 @@ async function stopForRestart(gateway, { limitMs = RESTART_WAIT_MS, noteMs = RES
   return { cut };
 }
 
-// Asks the running gateway, over its control interface, to stop at a moment
-// with nothing in flight. Resolves { status, text } of its answer. The token
-// is the one the gateway wrote to its file when it started; it goes into the
-// request header and nowhere else.
-function askToStop(origin, tokenFile, waitSeconds) {
-  let token = "";
-  try {
-    token = fs.readFileSync(tokenFile, "utf8").trim();
-  } catch {
-    // reported below
+// One look at the gateway's address: "running" when its status is answered,
+// "closed" when nothing listens there, "unclear" for anything else: no answer
+// within `waitMs`, or one that is not a gateway's status. A gateway that is
+// busy can be slow to answer, so "unclear" is never taken for "closed".
+function lookAt(origin, waitMs = 1000) {
+  return new Promise((resolve) => {
+    const request = http.get(`${origin}${STATUS_PATH}`, { agent: false, timeout: waitMs }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        let status = null;
+        try {
+          status = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        } catch {
+          // not a gateway's status
+        }
+        resolve(response.statusCode === 200 && status !== null && typeof status === "object" ? "running" : "unclear");
+      });
+      response.on("error", () => resolve("unclear"));
+      response.on("close", () => resolve("unclear"));
+    });
+    request.on("timeout", () => request.destroy());
+    request.on("error", (error) => resolve(error.code === "ECONNREFUSED" ? "closed" : "unclear"));
+  });
+}
+
+// What became of a gateway whose answer to the stop call was lost with its
+// connection. A gateway that stops closes its port and removes its control
+// token before it answers, so both gone means "stopped"; one that answers its
+// status is "running". Looks for a few seconds, because a gateway can be in
+// the middle of stopping, and says "unknown" when neither shows by then.
+async function afterLostAnswer(origin, tokenFile) {
+  const deadline = Date.now() + LOST_ANSWER_MS;
+  for (;;) {
+    const seen = await lookAt(origin);
+    if (seen === "running") return "running";
+    if (seen === "closed" && !fs.existsSync(tokenFile)) return "stopped";
+    if (Date.now() >= deadline) return "unknown";
+    await new Promise((resolve) => setTimeout(resolve, LOST_ANSWER_PAUSE_MS));
   }
-  if (!/^[0-9a-f]{64}$/.test(token)) throw new Error(`${tokenFile} cannot be read, so the running gateway cannot be asked. Nothing was stopped.`);
+}
+
+// The control token the gateway wrote to its file when it started, or null
+// when the file is missing or does not hold one.
+function controlToken(tokenFile) {
+  try {
+    const token = fs.readFileSync(tokenFile, "utf8").trim();
+    return /^[0-9a-f]{64}$/.test(token) ? token : null;
+  } catch {
+    return null;
+  }
+}
+
+// Asks the running gateway, over its control interface, to stop at a moment
+// with nothing in flight. Resolves { status, text } of its answer, and rejects
+// with the code ANSWER_LOST when the connection is lost before the whole
+// answer has arrived. The token goes into the request header and nowhere else.
+//
+// The connection is not kept for another request (`agent: false`), so it is
+// closed from this side once the answer has been read. A gateway that has
+// stopped waits for that before its process ends, and so never ends while its
+// answer is still on the way.
+function askToStop(origin, token, waitSeconds) {
   const body = JSON.stringify({ waitSeconds });
   return new Promise((resolve, reject) => {
-    const lost = () => reject(new Error("The gateway's answer did not arrive: the connection was lost. It may or may not have stopped; check with `dshproxy status`."));
+    const lost = () => reject(Object.assign(new Error("The connection to the gateway was lost before it answered."), { code: "ANSWER_LOST" }));
     const request = http.request(`${origin}${CONTROL_PREFIX}stop`, { method: "POST", agent: false, headers: { "x-dshproxy-token": token, "content-type": "application/json", "content-length": Buffer.byteLength(body) } }, (response) => {
       const chunks = [];
       let size = 0;
@@ -352,8 +409,26 @@ async function main(argv, out = console.log) {
       if (!whenIdle) throw new Error(STOP_USAGE);
       // The gateway is found as `status` finds it: at the address in the settings.
       const origin = settingsFile.origin(settingsFile.load());
-      if (!await runningStatus(origin)) throw new Error(`The gateway is not running on ${origin}. Nothing was stopped.`);
-      const answer = await askToStop(origin, settingsFile.paths().controlToken, wait ?? STOP_WAIT_SECONDS);
+      // Not running is said only when nothing listens there. A gateway that
+      // is slow to give its status, or gives one that cannot be read, is
+      // asked to stop all the same: its answer to that settles it.
+      const seen = await lookAt(origin, STOP_STATUS_MS);
+      if (seen === "closed") throw new Error(`The gateway is not running on ${origin}. Nothing was stopped.`);
+      const tokenFile = settingsFile.paths().controlToken;
+      const token = controlToken(tokenFile);
+      if (!token && seen === "running") throw new Error(`${tokenFile} cannot be read, so the running gateway cannot be asked. Nothing was stopped.`);
+      if (!token) throw new Error(`The gateway on ${origin} did not give its status within ${STOP_STATUS_MS / 1000} seconds; it may be busy. ${tokenFile} cannot be read, so it cannot be asked to stop. Nothing was stopped.`);
+      let answer;
+      try {
+        answer = await askToStop(origin, token, wait ?? STOP_WAIT_SECONDS);
+      } catch (error) {
+        if (error.code !== "ANSWER_LOST") throw error;
+        // No answer does not mean no stop: the gateway itself shows which.
+        const became = await afterLostAnswer(origin, tokenFile);
+        if (became === "stopped") return out(JSON.stringify({ stopped: true }));
+        if (became === "running") throw new Error(`The connection to the gateway was lost before it answered, and it is still running on ${origin}. Nothing was stopped.`);
+        throw new Error("The gateway's answer did not arrive: the connection was lost, and it is not known whether the gateway stopped. Check with `dshproxy status`.");
+      }
       if (answer.status === 404) throw new Error("The running gateway is an older DSHProxy that cannot stop when idle. Nothing was stopped.");
       if (answer.status === 401) throw new Error("The running gateway did not accept the control token; it may use another data folder. Nothing was stopped.");
       if (answer.status !== 200) throw new Error(`The running gateway refused to stop when idle (HTTP ${answer.status}). Nothing was stopped.`);

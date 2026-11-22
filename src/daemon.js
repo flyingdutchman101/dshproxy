@@ -35,6 +35,9 @@ const IDLE_WAIT_SECONDS = 300;
 const MAX_IDLE_WAIT_SECONDS = 24 * 60 * 60;
 // The longest delay a timer can hold.
 const MAX_TIMER_MS = 2 ** 31 - 1;
+// After the answer to a stop call the process ends once the caller has hung
+// up. A caller that keeps the connection open is cut off after this long.
+const HANG_UP_MS = 2000;
 
 // Counts the requests in flight on an HTTP server: those for which
 // `counted(req)` holds, from the moment their head has been read until their
@@ -410,8 +413,9 @@ async function start({ home, print = console.log, restart = null, exit = null, b
       "POST update/rollback": () => updater.rollback(),
       // Stops this gateway at a moment with nothing in flight, waiting at most
       // `waitSeconds` for one. Answers { stopped: true } once the port is
-      // closed and the backend has exited; the process then ends. Answers
-      // { stopped: false, inFlight } when the wait ran out: nothing changed.
+      // closed and the backend has exited; the process ends when the caller
+      // has hung up. Answers { stopped: false, inFlight } when the wait ran
+      // out: nothing changed.
       "POST stop": async ({ waitSeconds = IDLE_WAIT_SECONDS }, _query, { res }) => {
         if (!Number.isInteger(waitSeconds) || waitSeconds < 0 || waitSeconds > MAX_IDLE_WAIT_SECONDS) throw new Error(`waitSeconds must be a whole number from 0 to ${MAX_IDLE_WAIT_SECONDS}.`);
         // A caller that goes away is not waited for: the gateway would stop
@@ -431,16 +435,29 @@ async function start({ home, print = console.log, restart = null, exit = null, b
           log(caller.signal.aborted ? "stop when idle: the caller went away; the gateway keeps running" : `stop when idle: still ${result.inFlight} in flight after ${waitSeconds} s; the gateway keeps running`);
           return result;
         }
-        res.setHeader("connection", "close");
-        const answered = () => {
+        // The process must not end while this connection is open. Windows
+        // resets the connections of a process that ends, and a reset throws
+        // away what the other side has not read yet: a caller that is slow to
+        // read would lose the answer and not know that the gateway stopped.
+        // So the gateway does not hang up after the answer, whatever the
+        // caller asked for: the caller does, once it has read it, and the
+        // process ends when the connection has closed. A caller that does not
+        // hang up is not waited for long.
+        res.setHeader("connection", "keep-alive");
+        const leave = () => {
+          clearTimeout(limit);
           answering.delete(socket);
           if (!answering.size && exit && !exited) {
             exited = true;
             exit();
           }
         };
-        if (res.destroyed) setImmediate(answered);
-        else res.once("close", answered);
+        const limit = setTimeout(() => {
+          log(`stop when idle: the caller did not close its connection within ${HANG_UP_MS / 1000} s of the answer; closing it`);
+          socket.destroy();
+        }, HANG_UP_MS);
+        if (socket.closed) setImmediate(leave);
+        else socket.once("close", leave);
         return result;
       }
     }
