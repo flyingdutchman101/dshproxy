@@ -3,6 +3,7 @@ const app = require("./app");
 const catalog = require("./catalog");
 const daemon = require("./daemon");
 const profile = require("./dsh/profile");
+const bundle = require("./dsh/bundle");
 const settingsFile = require("./settings");
 const { render } = require("./backend/config");
 const { install } = require("./backend/install");
@@ -49,6 +50,8 @@ Usage:
   dshproxy dsh verify                  Check that DeepSeek Harness has every route it needs
   dshproxy dsh status                  Show what DeepSeek Harness currently has
   dshproxy dsh remove [--dry-run]      Remove DSHProxy's routes from DeepSeek Harness
+  dshproxy dsh bundle status [--json]  Show whether the video plugin is installed in DeepSeek Harness (reads only)
+  dshproxy dsh bundle install [--json] Install the video plugin with DeepSeek Harness's own command (quit DeepSeek Harness first)
   dshproxy backend version             Show the CLIProxyAPI version in use
   dshproxy backend rollback            Go back to the previous CLIProxyAPI version
   dshproxy preset list                 Show the routing presets and the active one
@@ -532,6 +535,23 @@ async function main(argv, out = console.log) {
     }
     case "dsh": {
       const [action] = args;
+      // The video plugin in DeepSeek Harness. Neither command reads DSHProxy's
+      // settings, accounts or keys, so they come before the snapshot.
+      if (action === "bundle") {
+        const json = flags.has("--json");
+        if (args[1] === "status") {
+          const found = await bundle.state();
+          out(json ? JSON.stringify(found) : bundle.describe(found));
+          return undefined;
+        }
+        if (args[1] === "install") {
+          const result = await bundle.install();
+          out(json ? JSON.stringify(result) : result.message);
+          if (!result.ok) process.exitCode = 1;
+          return undefined;
+        }
+        throw new Error("Usage: dshproxy dsh bundle status|install [--json]");
+      }
       const state = await app.snapshot();
       if (action === "apply") return reportApply(profile.apply(state.models, state.origin, profile.dshHome(), { dryRun, keepModelPrefixes: state.unreadable, lanes: state.settings.lanes }), dryRun, out);
       if (action === "remove") {
@@ -553,7 +573,7 @@ async function main(argv, out = console.log) {
         for (const item of profile.state(state.origin).profiles) out(`${item.profile}: ${item.error || (item.routes.length ? item.routes.map((route) => `${route.key} ${route.models} models at ${route.baseURL}`).join("; ") : "not applied")}`);
         return undefined;
       }
-      throw new Error("Usage: dshproxy dsh apply|verify|status|remove [--dry-run]");
+      throw new Error("Usage: dshproxy dsh apply|verify|status|remove [--dry-run] | dshproxy dsh bundle status|install [--json]");
     }
     case "backend": {
       // Works without a running gateway, so a version that will not start
