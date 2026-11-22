@@ -547,7 +547,8 @@ namespace DSHProxy
         public override Size GetPreferredSize(Size proposed)
         {
             var text = TextRenderer.MeasureText(Text, Font);
-            return new Size(text.Width + Padding.Horizontal + 28, Math.Max(36, text.Height + 16));
+            // A button given a smallest size keeps it when it sizes itself.
+            return new Size(Math.Max(MinimumSize.Width, text.Width + Padding.Horizontal + 28), Math.Max(Math.Max(36, MinimumSize.Height), text.Height + 16));
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -1539,7 +1540,8 @@ namespace DSHProxy
             if (button.AutoSize)
             {
                 button.Padding = new Padding(8, 0, 8, 0);
-                button.MinimumSize = new Size(0, 36);
+                // At least 36 high; a button asked to be taller stays so.
+                button.MinimumSize = new Size(button.MinimumSize.Width, Math.Max(36, button.MinimumSize.Height));
             }
             else if (button.Height < 36 && button.Image == null)
             {

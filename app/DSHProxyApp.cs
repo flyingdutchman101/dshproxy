@@ -836,6 +836,8 @@ namespace DSHProxy
         private readonly Label lowestLabel = new GlassLabel { AutoSize = true, Margin = new Padding(0, 2, 0, 0) };
         private readonly Button startButton = Skin.Primary(new PillButton { Text = "Start", Width = 104, Height = 40 });
         private readonly Button stopButton = Skin.Danger(new PillButton { Text = "Stop", Width = 104, Height = 40, Margin = new Padding(8, 3, 0, 3) });
+        // In the header, so it is in sight on every page of both workspaces.
+        private readonly Button applyButton = Skin.Primary(new PillButton { Text = "Apply to DeepSeek Harness", AutoSize = true, MinimumSize = new Size(0, 40), Margin = new Padding(0, 3, 8, 3), AccessibleDescription = "Writes the DSHProxy routes into every DeepSeek Harness profile, after asking." });
         private readonly Panel accountsPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(0, 4, 0, 4) };
         private readonly Label limitsNote = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 12, 0, 0) };
         private readonly ListView keysList = new DarkList();
@@ -921,8 +923,9 @@ namespace DSHProxy
             ClientSizeChanged += (s, e) => LayoutColumn();
             // The header is lower in a short window when its two status lines
             // fit side by side, which depends on what they say.
-            detailLabel.TextChanged += (s, e) => { if (shortWindow) LayoutHeader(true, column.Width); };
-            lowestLabel.TextChanged += (s, e) => { if (shortWindow) LayoutHeader(true, column.Width); };
+            // Whether the status lines fit beside the buttons depends on it too.
+            detailLabel.TextChanged += (s, e) => LayoutHeader(shortWindow, column.Width);
+            lowestLabel.TextChanged += (s, e) => LayoutHeader(shortWindow, column.Width);
 
             // Dragging the window edge to a new size: show a stretched snapshot
             // of the window and lay out again when the drag ends. Rebuilding the
@@ -935,6 +938,7 @@ namespace DSHProxy
 
             startButton.Click += (s, e) => StartGateway();
             stopButton.Click += (s, e) => StopRequested();
+            applyButton.Click += (s, e) => ApplyToHarness();
             autostartBox.Checked = Autostart.IsOn();
             autostartBox.CheckedChanged += (s, e) => Autostart.Set(autostartBox.Checked);
 
@@ -998,6 +1002,7 @@ namespace DSHProxy
         private TableLayoutPanel headerPanel;
         private AppMark headerMark;
         private Label nameLabel;
+        private FlowLayoutPanel nameRow;
         private FlowLayoutPanel detailRow;
         private FlowLayoutPanel headerButtons;
         private TableLayoutPanel bottomRow;
@@ -1039,27 +1044,39 @@ namespace DSHProxy
 
         private void LayoutHeader(bool compact, int width)
         {
+            // What the name and the status lines have beside the mark, and
+            // what is left of it beside the buttons.
+            var beside = width - 44 - (compact ? 58 : 76);
+            var room = beside - headerButtons.PreferredSize.Width - 12;
+            var lowest = lowestLabel.Text.Length == 0 ? 0 : lowestLabel.PreferredSize.Width;
+            // Status lines too long to stand beside the buttons go under them,
+            // where they have the whole width: the buttons then stand on the
+            // line of the name.
+            var under = Math.Max(detailLabel.PreferredSize.Width, lowest) > room;
             // In a short window the two status lines share one line when they fit.
-            var inline = false;
-            if (compact)
+            var inline = compact && (lowest == 0 || detailLabel.PreferredSize.Width + 18 + lowest <= (under ? beside : room));
+            var state = (!compact ? 0 : inline ? 2 : 1) + (under ? 3 : 0);
+            if (state != headerState)
             {
-                var room = width - 44 - 58 - headerButtons.PreferredSize.Width - 12;
-                inline = lowestLabel.Text.Length == 0 || detailLabel.PreferredSize.Width + 18 + lowestLabel.PreferredSize.Width <= room;
+                headerState = state;
+                headerPanel.SuspendLayout();
+                headerPanel.Padding = compact ? new Padding(22, 8, 22, 4) : new Padding(22, 18, 22, 8);
+                headerMark.Size = compact ? new Size(44, 44) : new Size(60, 60);
+                headerMark.Margin = compact ? new Padding(0, 2, 14, 0) : new Padding(0, 0, 16, 0);
+                nameLabel.Font = compact ? nameFontShort : nameFont;
+                stateLabel.Margin = compact ? new Padding(12, 6, 0, 0) : new Padding(14, 12, 0, 0);
+                detailRow.FlowDirection = inline ? FlowDirection.LeftToRight : FlowDirection.TopDown;
+                detailLabel.Margin = new Padding(0, 2, inline ? 18 : 0, 0);
+                headerButtons.Margin = new Padding(0, under ? 0 : compact ? 4 : 8, 0, 0);
+                headerPanel.SetRowSpan(headerButtons, under ? 1 : 2);
+                headerPanel.SetColumnSpan(detailRow, under ? 2 : 1);
+                headerPanel.ResumeLayout(true);
             }
-            var state = !compact ? 0 : inline ? 2 : 1;
-            if (state == headerState) return;
-            headerState = state;
-            headerPanel.SuspendLayout();
-            headerPanel.Padding = compact ? new Padding(22, 8, 22, 4) : new Padding(22, 18, 22, 8);
-            headerMark.Size = compact ? new Size(44, 44) : new Size(60, 60);
-            headerMark.Margin = compact ? new Padding(0, 2, 14, 0) : new Padding(0, 0, 16, 0);
-            nameLabel.Font = compact ? nameFontShort : nameFont;
-            stateLabel.Margin = compact ? new Padding(12, 6, 0, 0) : new Padding(14, 12, 0, 0);
-            detailRow.FlowDirection = inline ? FlowDirection.LeftToRight : FlowDirection.TopDown;
-            detailLabel.Margin = new Padding(0, 2, inline ? 18 : 0, 0);
-            headerButtons.Margin = new Padding(0, compact ? 4 : 8, 0, 0);
-            headerPanel.Height = !compact ? 104 : inline ? 62 : 84;
-            headerPanel.ResumeLayout(true);
+            // Under the buttons the header is as tall as the line of the name
+            // and the buttons, and the status lines it has, need.
+            var height = !compact ? 104 : inline ? 62 : 84;
+            if (under) height = headerPanel.Padding.Vertical + Math.Max(nameRow.PreferredSize.Height, headerButtons.PreferredSize.Height) + detailRow.PreferredSize.Height;
+            if (headerPanel.Height != height) headerPanel.Height = height;
         }
 
         // The workspace switch and the section strip, each in the middle of
@@ -1214,25 +1231,32 @@ namespace DSHProxy
             if (big != null) mark.Picture = big.ToBitmapExact(64, Color.Black);
             header.Controls.Add(mark, 0, 0);
 
-            var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0) };
-            var nameRow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+            // Two rows beside the mark: the name, and the status lines under
+            // it. The buttons stand beside both, or beside the name alone
+            // when the status lines need the whole width (see LayoutHeader).
+            header.RowCount = 2;
+            header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            header.SetRowSpan(mark, 2);
+            nameRow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Left, Margin = new Padding(0) };
             nameLabel = new GlassLabel { Text = "DeepSeekProxy", AutoSize = true, Font = nameFont, ForeColor = Theme.Text, Margin = new Padding(0, 0, 0, 0) };
             nameRow.Controls.Add(nameLabel);
             nameRow.Controls.Add(stateLabel);
-            text.Controls.Add(nameRow);
+            header.Controls.Add(nameRow, 1, 0);
             // The two status lines: one under the other, or side by side in a
             // short window (see LayoutHeader).
-            detailRow = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = new Padding(0) };
+            detailRow = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Anchor = AnchorStyles.Left | AnchorStyles.Top, Margin = new Padding(0) };
             detailRow.Controls.Add(detailLabel);
             detailRow.Controls.Add(lowestLabel);
-            text.Controls.Add(detailRow);
-            header.Controls.Add(text, 1, 0);
+            header.Controls.Add(detailRow, 1, 1);
 
             var buttons = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Anchor = AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(0, 8, 0, 0) };
             headerButtons = buttons;
+            buttons.Controls.Add(applyButton);
             buttons.Controls.Add(startButton);
             buttons.Controls.Add(stopButton);
             header.Controls.Add(buttons, 2, 0);
+            header.SetRowSpan(buttons, 2);
             return header;
         }
 
@@ -1382,15 +1406,13 @@ namespace DSHProxy
             profilesList.Dock = DockStyle.Fill;
             var preview = new PillButton { Text = "Preview changes", AutoSize = true };
             preview.Click += (s, e) => RunAndShow(new[] { "dsh", "apply", "--dry-run" }, "Preview", false);
-            var apply = Skin.Primary(new PillButton { Text = "Apply to DeepSeek Harness", AutoSize = true });
-            apply.Click += (s, e) => ApplyToHarness();
             var verify = Skin.Outline(new PillButton { Text = "Verify", AutoSize = true });
             verify.Click += (s, e) => VerifyHarness();
             var remove = Skin.Danger(new PillButton { Text = "Remove from DeepSeek Harness", AutoSize = true });
             remove.Click += (s, e) => RemoveFromHarness();
             tabs.TabPages.Add(Page("DeepSeek Harness", profilesList,
-                Note("Apply writes the DSHProxy routes into every DeepSeek Harness profile and keeps everything else. Verify checks the profiles back: routes, models, default model and credential. Restart DeepSeek Harness after a change."),
-                Row(preview, apply, verify, remove)));
+                Note("Apply to DeepSeek Harness, at the top of the window, writes the DSHProxy routes into every DeepSeek Harness profile and keeps everything else. Preview shows what it would change. Verify checks the profiles back: routes, models, default model and credential. Restart DeepSeek Harness after a change."),
+                Row(preview, verify, remove)));
 
             // Log
             var logPage = new Panel { Text = "Log", Padding = new Padding(22, 8, 22, 14) };
@@ -3225,7 +3247,7 @@ namespace DSHProxy
             videoHarnessList.Items.Add(videoHarnessFiles);
             AddVideoPage("DeepSeek Harness", videoHarnessList,
                 VideoTop("Video in DeepSeek Harness", "Video reaches DeepSeek Harness through a separate bundle, " + VideoBundleFolder + " in the DSHProxy folder, which has to be installed in DeepSeek Harness separately. DSHProxy does not install it, does not open a DeepSeek Harness profile for video, and cannot tell whether the bundle is installed or working there."),
-                Foot("No Preview, Apply or Verify here: this window changes nothing in DeepSeek Harness for video. The bundle reads the enabled settings above; its README says what it can do and how far it has been checked.", 44));
+                Foot("Apply to DeepSeek Harness, at the top of the window, writes the Chat routes only: this window changes nothing in DeepSeek Harness for video. The bundle reads the enabled settings above; its README says what it can do and how far it has been checked.", 44));
 
             SetVideoStatus("Video settings have not been read yet.", Theme.Muted);
             FillVideo();

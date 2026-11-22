@@ -41,7 +41,7 @@ namespace DSHProxy
         private delegate IntPtr HookProc(int code, IntPtr w, IntPtr l);
         private static readonly HookProc NoActivation = (code, w, l) => code == 5 ? (IntPtr)1 : CallNextHookEx(IntPtr.Zero, code, w, l);
 
-        private static readonly string[] CheckNames = { "margins", "inside", "text", "hscroll", "overlap", "columns", "scroll" };
+        private static readonly string[] CheckNames = { "margins", "inside", "text", "hscroll", "overlap", "columns", "scroll", "apply" };
         private static MainForm form;
         private static string outDir;
         private static string only;
@@ -498,6 +498,7 @@ namespace DSHProxy
                 facts = "window " + top.Width + "x" + top.Height + ", client " + top.ClientSize.Width + "x" + top.ClientSize.Height;
                 if (!wanted.IsEmpty && top.Size != wanted) fails["margins"].Add("the window is " + top.Width + "x" + top.Height + ", not the " + wanted.Width + "x" + wanted.Height + " asked for");
                 if (top == form) facts += Margins(fails["margins"]);
+                if (top == form) HeaderApply(fails["apply"]);
                 Walk(top, top, fails, notes);
             });
             // The picture is what the desktop compositor holds of the window,
@@ -645,6 +646,45 @@ namespace DSHProxy
             return ", column " + column.Width + " wide with " + left + " and " + right + " px beside it, content inset " + insetLeft + " and " + insetRight;
         }
 
+        // The button that writes the routes into DeepSeek Harness: one, in the
+        // header at the top of the window, whole, readable and able to be
+        // pressed, on every page of both workspaces; and no second one on a page.
+        private static void HeaderApply(List<string> fails)
+        {
+            var header = G<TableLayoutPanel>("headerPanel");
+            var found = new List<Button>();
+            Action<Control> walk = null;
+            walk = c =>
+            {
+                var button = c as Button;
+                if (button != null && (button.Text ?? "").StartsWith("Apply to", StringComparison.Ordinal)) found.Add(button);
+                foreach (Control child in c.Controls) walk(child);
+            };
+            walk(form);
+            Button apply = null;
+            foreach (var button in found)
+            {
+                var inHeader = false;
+                for (Control at = button; at != null; at = at.Parent) if (at == header) inHeader = true;
+                if (!inHeader) { fails.Add(Where(button, form) + " is on a page, not in the header"); continue; }
+                if (apply != null) fails.Add("the header has more than one button that applies to DeepSeek Harness");
+                apply = button;
+            }
+            if (apply == null) { fails.Add("the header has no button that applies to DeepSeek Harness"); return; }
+            for (Control at = apply; at != null && at != form; at = at.Parent)
+                if (!at.Visible) { fails.Add("\"" + apply.Text + "\" is not shown: " + Where(at, form) + " is hidden"); return; }
+            if (!apply.Enabled) fails.Add("\"" + apply.Text + "\" cannot be pressed");
+            if (apply.Text != "Apply to DeepSeek Harness" && apply.Text != "Apply to Harness") fails.Add("the button says \"" + apply.Text + "\", which does not say what it applies to");
+            var place = In(apply, form);
+            var room = In(header, form);
+            if (!room.Contains(place)) fails.Add("\"" + apply.Text + "\" at " + place.X + "," + place.Y + " " + place.Width + "x" + place.Height + " is not inside the header at " + room.X + "," + room.Y + " " + room.Width + "x" + room.Height);
+            if (!form.ClientRectangle.Contains(place)) fails.Add("\"" + apply.Text + "\" is not inside the window");
+            if (room.Top != 0) fails.Add("the header starts " + room.Top + " px down the window, not at its top");
+            var start = G<Button>("startButton");
+            if (start.Parent != apply.Parent) fails.Add("\"" + apply.Text + "\" does not stand in the row of Start and Stop");
+            else if (Math.Abs((apply.Top + apply.Bottom) - (start.Top + start.Bottom)) > 2) fails.Add("\"" + apply.Text + "\" stands " + Math.Abs((apply.Top + apply.Bottom) - (start.Top + start.Bottom)) / 2.0 + " px off the middle of Start beside it");
+            if (Skin.KindOf(apply) != ButtonKind.Primary) fails.Add("\"" + apply.Text + "\" is not drawn as the main button");
+        }
         private static void Walk(Control c, Control top, Dictionary<string, List<string>> fails, List<string> notes)
         {
             if (c.IsHandleCreated && (GetWindowLong(c.Handle, -16) & 0x00100000) != 0) fails["hscroll"].Add(Where(c, top) + " has a horizontal scroll bar");
