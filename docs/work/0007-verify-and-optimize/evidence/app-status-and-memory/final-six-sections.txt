@@ -1,0 +1,11 @@
+tabs: DSHPROXY_HOME=%TEMP%\dshproxy-final\rig-seam\home
+--- six sections of a preview window: Chat, then Video, then Chat again ---
+ok   section 0: Video shows Video accounts on the same section, and Chat comes back identical (0 differing pixels of 1126400; the Video view differed in 576436)
+ok   section 1: Video shows Video API keys on the same section, and Chat comes back identical (0 differing pixels of 1126400; the Video view differed in 219396)
+ok   section 2: Video shows Video lanes on the same section, and Chat comes back identical (0 differing pixels of 1126400; the Video view differed in 198665)
+ok   section 3: Video shows Video models on the same section, and Chat comes back identical (0 differing pixels of 1126400; the Video view differed in 195089)
+ok   section 4: Video shows Video in DeepSeek Harness on the same section, and Chat comes back identical (0 differing pixels of 1126400; the Video view differed in 195283)
+ok   section 5: Video shows the shared log on the same section, and Chat comes back identical (0 differing pixels of 1126400; the Video view differed in 6126)
+ok   the preview window's status timer is off: it polls nothing
+ok   the window never became the foreground window
+ALL OK

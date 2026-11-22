@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DSHProxy video",
+    "description": "Adds four agent tools for the video models you enabled in DSHProxy. video_options lists them with the billing route chosen for each. video_quote estimates one five-second clip: a dated published estimate for API routes, read offline, or a compute-unit preflight for the Krea workspace route, which sends the prompt to Krea under your existing sign-in. video_submit starts one paid job on the Krea route: it gets a fresh quote, then asks you to approve that exact job, prompt and spending cap, and sends nothing unless you choose Generate once. video_status looks up one job. Jobs on API routes cannot be started here. The approval is a confirmation step, not a security boundary: an agent that can run shell commands can start DSHProxy directly. No tool signs in or changes DSHProxy settings. Turning it off removes all four tools."
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@local/dshproxy-video",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offers the video models enabled in DSHProxy to DeepSeek Harness as tools: list, quote, start one Krea job after the user approves it, and check a job.",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "runner.cjs",
+    "lib",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

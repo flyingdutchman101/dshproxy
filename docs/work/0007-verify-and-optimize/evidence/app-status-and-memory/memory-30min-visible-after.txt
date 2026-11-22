@@ -1,0 +1,57 @@
+run after  exe=%USERPROFILE%\Desktop\Development\DSHProxy\.agents\worktrees\video-routing\.tmp\poll\final\PollRig.exe  pid=19128  hwnd=35460706  visible=True  foreground changed by start: False
+0,visible,9,1422,422,1000,35.5,51.8,496,5,1
+60,visible,13,2406,1000,1406,44.5,61.7,511,26,2
+120,visible,17,3813,1906,1906,46.5,63.8,516,47,3
+180,visible,17,4547,2641,1906,46.8,64.2,512,67,4
+240,visible,21,5563,3109,2453,47.1,64.5,514,88,5
+300,visible,25,6813,3922,2891,47.7,65.5,512,109,6
+303,visible-after-forced-collection-min5,29,7313,3953,3359,47.0,65.0,515,111,6
+360,visible,29,8313,4953,3359,47.4,65.3,517,130,7
+420,visible,33,9500,5578,3922,47.4,65.3,512,151,8
+480,visible,37,10547,6063,4484,48.3,66.3,516,172,9
+540,visible,41,11406,6531,4875,48.5,66.5,516,193,10
+600,visible,45,12219,6953,5266,48.8,66.8,514,214,11
+602,visible-after-forced-collection-min10,49,12625,6969,5656,47.4,65.5,517,216,11
+660,visible,49,13141,7484,5656,47.4,65.5,519,235,12
+720,visible,53,14031,7891,6141,47.4,65.5,514,256,13
+780,visible,57,14828,8344,6484,48.4,66.5,516,277,14
+840,visible,61,15781,8828,6953,48.6,66.7,514,298,15
+900,visible,65,16781,9359,7422,49.0,67.2,516,319,16
+902,visible-after-forced-collection-min15,65,16797,9375,7422,47.4,65.6,515,320,16
+960,visible,69,17578,9781,7797,47.4,65.6,517,340,17
+1020,visible,73,18656,10484,8172,47.4,65.7,516,361,18
+1080,visible,77,19734,11047,8688,48.4,66.7,516,382,19
+1140,visible,81,20672,11563,9109,48.4,66.8,518,403,20
+1200,visible,85,21594,12047,9547,48.9,67.2,520,424,21
+1203,visible-after-forced-collection-min20,85,21609,12063,9547,47.5,65.9,519,425,21
+1260,visible,89,22641,12625,10016,47.5,65.9,521,445,22
+1320,visible,93,23641,13141,10500,47.6,66.0,520,466,23
+1380,visible,97,24734,13750,10984,48.6,66.9,518,487,24
+1440,visible,101,25625,14156,11469,48.6,67.1,518,508,25
+1500,visible,105,26656,14766,11891,49.2,67.6,520,529,26
+1502,visible-after-forced-collection-min25,105,26688,14797,11891,47.6,66.1,519,530,26
+1560,visible,109,27641,15266,12375,47.6,66.1,521,550,27
+1620,visible,113,28531,15672,12859,47.6,66.1,518,571,28
+1680,visible,117,29578,16281,13297,48.6,67.2,518,592,29
+1740,visible,121,30438,16734,13703,48.7,67.4,518,613,30
+1800,visible,125,31344,17188,14156,48.9,67.6,520,634,31
+1802,visible-after-forced-collection-min30,125,31359,17203,14156,47.5,66.3,517,635,31
+1803,visible-end,125,31359,17203,14156,47.5,66.3,517,635,31
+1805,visible-after-forced-collection,125,31359,17203,14156,47.5,66.3,516,635,31
+at exit: job processes ever=125 still active=0
+--- memory report from inside the app ---
+06:34:45 as-is private=48.9MB workingSet=66.8MB managed=7.13MB gen0=4 gen1=1 gen2=0 gdi=43 user=128 handles=512 glassSurfaces=15 controls=197 logChars=77
+06:34:46 after-forced-collection private=47.0MB workingSet=65.0MB managed=2.23MB gen0=6 gen1=3 gen2=2 gdi=43 user=128 handles=511 glassSurfaces=15 controls=197 logChars=77
+06:39:45 as-is private=48.8MB workingSet=66.8MB managed=9.50MB gen0=9 gen1=4 gen2=2 gdi=43 user=128 handles=514 glassSurfaces=15 controls=197 logChars=77
+06:39:45 after-forced-collection private=47.4MB workingSet=65.4MB managed=2.21MB gen0=11 gen1=6 gen2=4 gdi=43 user=128 handles=511 glassSurfaces=15 controls=197 logChars=77
+06:44:45 as-is private=49.0MB workingSet=67.2MB managed=9.73MB gen0=14 gen1=7 gen2=4 gdi=43 user=128 handles=516 glassSurfaces=15 controls=197 logChars=77
+06:44:45 after-forced-collection private=47.4MB workingSet=65.6MB managed=2.19MB gen0=16 gen1=9 gen2=6 gdi=43 user=128 handles=513 glassSurfaces=15 controls=197 logChars=77
+06:49:45 as-is private=48.9MB workingSet=67.2MB managed=9.58MB gen0=19 gen1=10 gen2=6 gdi=43 user=128 handles=520 glassSurfaces=15 controls=197 logChars=77
+06:49:46 after-forced-collection private=47.5MB workingSet=65.9MB managed=2.29MB gen0=21 gen1=12 gen2=8 gdi=43 user=128 handles=517 glassSurfaces=15 controls=197 logChars=77
+06:54:45 as-is private=49.2MB workingSet=67.6MB managed=9.80MB gen0=24 gen1=13 gen2=8 gdi=43 user=128 handles=520 glassSurfaces=15 controls=197 logChars=77
+06:54:45 after-forced-collection private=47.5MB workingSet=66.1MB managed=2.27MB gen0=26 gen1=15 gen2=10 gdi=43 user=128 handles=517 glassSurfaces=15 controls=197 logChars=77
+06:59:45 as-is private=48.9MB workingSet=67.6MB managed=9.51MB gen0=29 gen1=16 gen2=10 gdi=43 user=128 handles=520 glassSurfaces=15 controls=197 logChars=77
+06:59:45 after-forced-collection private=47.5MB workingSet=66.3MB managed=2.25MB gen0=31 gen1=18 gen2=12 gdi=43 user=128 handles=517 glassSurfaces=15 controls=197 logChars=77
+06:59:47 as-is private=47.5MB workingSet=66.3MB managed=2.43MB gen0=31 gen1=18 gen2=12 gdi=43 user=128 handles=517 glassSurfaces=15 controls=197 logChars=77
+06:59:48 after-forced-collection private=47.5MB workingSet=66.3MB managed=2.25MB gen0=33 gen1=20 gen2=14 gdi=43 user=128 handles=516 glassSurfaces=15 controls=197 logChars=77
+foreground window changed during the run by this script: not checked after start

@@ -1,0 +1,22 @@
+The backdrop in the pictures, after the change that draws it again at the real size once a resize has settled (22 Nov 2026).
+
+1. Two runs of the layout check on the same sources, one after the other, compared pixel for pixel (harness/compare.ps1).
+   The pictures in this folder are the first of the two.
+   pictures compared: 231; the same pixel for pixel: 230; different: 1; only in the first set: 0; only in the second: 0
+   dialog-sign-in-waiting-554x549.png : 694 of 304146 pixels differ, in x 399..514, y 206..211
+   The one that differs is a dialog with a moving bar.
+
+2. Is the backdrop in a picture the one drawn at that size? (harness/backdrop-in-pictures.ps1: in the pictures 1920 wide and wider, the two
+   strips of bare backdrop beside the page, 300 px each, against a backdrop drawn by the app's own code at that size.)
+   The pictures in this folder:
+   pictures looked at (1920 wide and wider): 88; both strips equal to a backdrop drawn at that size: 88; not equal: 0
+   The pictures that were in this folder before the change (first lines):
+   pictures looked at (1920 wide and wider): 88; both strips equal to a backdrop drawn at that size: 0; not equal: 88
+   chat-accounts-1920x1040.png: 30257 of 600600 pixels of the two strips differ
+   chat-accounts-limits-arrive-1920x1040.png: 41379 of 600600 pixels of the two strips differ
+   chat-accounts-not-answering-1920x1040.png: 25926 of 600600 pixels of the two strips differ
+   chat-accounts-update-bar-1920x1040.png: 25926 of 600600 pixels of the two strips differ
+
+3. About the check program, not the app: Windows asks a window this far off screen for no painting. The window paints when its picture is
+   taken (PrintWindow). The check now has it painted once before the picture and waits for the app's redraw; without that, a first try of this
+   run saved the stretched bridge in most pictures, and 16 of 231 differed between two runs.

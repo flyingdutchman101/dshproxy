@@ -1,0 +1,14 @@
+--- 300 resizes, each left to settle: objects and memory before and after ---
+     before, at 1280x880, after a collection: GDI objects 44, USER objects 118, handles 353, private bytes 100.3 MB, managed heap 2.2 MB; backdrops kept 1, redraws waiting 0, stretched ones 0
+     after 50: GDI objects 44, USER objects 118, handles 378, private bytes 101.6 MB, managed heap 5.3 MB; backdrops kept 1, redraws waiting 0, stretched ones 0
+     after 100: GDI objects 44, USER objects 118, handles 389, private bytes 102.9 MB, managed heap 5.7 MB; backdrops kept 1, redraws waiting 0, stretched ones 0
+     after 150: GDI objects 44, USER objects 118, handles 408, private bytes 102.2 MB, managed heap 7.8 MB; backdrops kept 1, redraws waiting 0, stretched ones 0
+     after 200: GDI objects 44, USER objects 118, handles 425, private bytes 102.2 MB, managed heap 8.2 MB; backdrops kept 1, redraws waiting 0, stretched ones 0
+     after 250: GDI objects 44, USER objects 118, handles 360, private bytes 103.2 MB, managed heap 3.4 MB; backdrops kept 1, redraws waiting 0, stretched ones 0
+     after 300: GDI objects 44, USER objects 118, handles 379, private bytes 102.6 MB, managed heap 5.6 MB; backdrops kept 1, redraws waiting 0, stretched ones 0
+     300 resizes took 166 s
+     after, at 1280x880, as it stands:        GDI objects 44, USER objects 118, handles 380, private bytes 102.6 MB, managed heap 5.7 MB; backdrops kept 1, redraws waiting 0, stretched ones 0
+     after, at 1280x880, after a collection:  GDI objects 44, USER objects 118, handles 352, private bytes 101.9 MB, managed heap 2.1 MB; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   GDI objects 44 before and 44 after; private bytes +1.6 MB (one backdrop of 2560x1392 is about 14 MB); one backdrop kept, none waiting; 0 pixels differ from a backdrop drawn at that size
+ok   the window never became the foreground window
+ALL OK

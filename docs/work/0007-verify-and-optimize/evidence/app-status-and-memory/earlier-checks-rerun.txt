@@ -1,0 +1,80 @@
+=== video settings seam check ===
+build SeamCheck exit=0
+exit=0  ok=26  FAIL=0  last line: ALL OK
+=== credential pages seam check ===
+build CredCheck exit=0
+exit=0  ok=87  FAIL=0  last line: ALL OK
+=== tab order at 860x600 ===
+build TabOrder2 exit=0
+tab 0, client 844x561
+  DarkList | Video accounts: Krea sign-in state | reachable | 780x170
+  PillButton | Sign in to Krea... | reachable | 147x36
+  PillButton | Sign out of Krea | reachable | 100x36
+  PillButton | Cancel the Krea sign-in | disabled | 90x36
+  NavStrip | Sections | reachable | 844x50
+  SegmentRadio | Video workspace | reachable | 96x34
+  GlassCheck | Start with Windows | reachable | 153x28
+  AppMark |  | reachable | 44x44
+  PillButton | Start | reachable | 104x40
+  PillButton | Stop | reachable | 104x40
+tab 1, client 844x561
+  DarkList | Video API keys: one row for each provider | reachable | 780x170
+  PillButton | Add or replace key... | reachable | 172x36
+  PillButton | Remove key | reachable | 122x36
+  NavStrip | Sections | reachable | 844x50
+  SegmentRadio | Video workspace | reachable | 96x34
+  GlassCheck | Start with Windows | reachable | 153x28
+  AppMark |  | reachable | 44x44
+  PillButton | Start | reachable | 104x40
+  PillButton | Stop | reachable | 104x40
+=== six-tab switch ===
+tab 0 : video heading='Video accounts' hint='Video routing setup. Nothing is generated or charged from this window.' | chat before/after: 0 differing pixels of 1126400
+tab 1 : video heading='Video API keys' hint='Video routing setup. Nothing is generated or charged from this window.' | chat before/after: 0 differing pixels of 1126400
+tab 2 : video heading='Video lanes' hint='Video routing setup. Nothing is generated or charged from this window.' | chat before/after: 0 differing pixels of 1126400
+tab 3 : video heading='Video models' hint='Video routing setup. Nothing is generated or charged from this window.' | chat before/after: 0 differing pixels of 1126400
+tab 4 : video heading='Video in DeepSeek Harness' hint='Video routing setup. Nothing is generated or charged from this window.' | chat before/after: 0 differing pixels of 1126400
+tab 5 : video heading='' hint='The log is shared by the Chat and Video workspaces.' | chat before/after: 0 differing pixels of 1126400
+keyboard: start chat=True video=False
+keyboard: after Right on Chat  chat=True video=False heading=''
+keyboard: after Left on Video  chat=True video=False
+test windows that became the foreground window: 0
+=== layout, five other pages ===
+chat-accounts-860x600      got 860x600 client 844x561 | column 844 margins L0 R0 | page 367 px = 65,4% (body 48,1%) | hscroll 0 clipped 1 overlap 0 | sig 614B9E56
+      clipped by its parent (l0 r1 t0 b0): STATIC '? Active' in Window.8 ''
+chat-accounts back to 860x600 got 860x600 client 844x561 | column 844 margins L0 R0 | page 367 px = 65,4% (body 48,1%) | hscroll 0 clipped 1 overlap 0 | sig 614B9E56
+      clipped by its parent (l0 r1 t0 b0): STATIC '? Active' in Window.8 ''
+layout lines: 30, clean: 28
+=== preview pass, credential pages ===
+video-accounts-default         got 1280x880 client 1264x841 | column 1240 margins L12 R12 | page 587 px = 69,8% | hscroll 0 clipped 0 overlap 0
+video-accounts-860x600         got 860x600 client 844x561 | column 844 margins L0 R0 | page 367 px = 65,4% | hscroll 0 clipped 0 overlap 0
+video-accounts-1280x672        got 1280x672 client 1264x633 | column 1240 margins L12 R12 | page 485 px = 76,6% | hscroll 0 clipped 0 overlap 0
+video-accounts-1920x1040       got 1920x1040 client 1904x1001 | column 1240 margins L332 R332 | page 747 px = 74,6% | hscroll 0 clipped 0 overlap 0
+video-accounts-3440x1392       got 3440x1392 client 3424x1353 | column 1240 margins L1092 R1092 | page 1099 px = 81,2% | hscroll 0 clipped 0 overlap 0
+video-accounts back to 860x600 got 860x600 client 844x561 | column 844 margins L0 R0 | page 367 px = 65,4% | hscroll 0 clipped 0 overlap 0
+      SysListView32  role=list name='Video accounts: Krea sign-in state' checked=False focusable=True children=2 desc=''
+      button 'Sign in to Krea...': role=push button name='Sign in to Krea...' checked=False focusable=True enabled=True
+      button 'Sign out': role=push button name='Sign out of Krea' checked=False focusable=True enabled=True
+      button 'Cancel': role=push button name='Cancel the Krea sign-in' checked=False focusable=True enabled=False
+      child processes of the preview before any action: [end]
+      status: Sample only: no sign-in is started in this preview window.
+      status: Sample only: nothing is signed out in this preview window.
+      windows of the preview after Sign out: 0 (0 = no dialog opened)
+      child processes of the preview after the actions: [end]
+video-keys-default             got 1280x880 client 1264x841 | column 1240 margins L12 R12 | page 587 px = 69,8% | hscroll 0 clipped 0 overlap 0
+video-keys-860x600             got 860x600 client 844x561 | column 844 margins L0 R0 | page 367 px = 65,4% | hscroll 0 clipped 0 overlap 0
+video-keys-1280x672            got 1280x672 client 1264x633 | column 1240 margins L12 R12 | page 485 px = 76,6% | hscroll 0 clipped 0 overlap 0
+video-keys-1920x1040           got 1920x1040 client 1904x1001 | column 1240 margins L332 R332 | page 747 px = 74,6% | hscroll 0 clipped 0 overlap 0
+video-keys-3440x1392           got 3440x1392 client 3424x1353 | column 1240 margins L1092 R1092 | page 1099 px = 81,2% | hscroll 0 clipped 0 overlap 0
+video-keys back to 860x600     got 860x600 client 844x561 | column 844 margins L0 R0 | page 367 px = 65,4% | hscroll 0 clipped 0 overlap 0
+      SysListView32  role=list name='Video API keys: one row for each provider' checked=False focusable=True children=4 desc=''
+      button 'Add or replace key...': role=push button name='Add or replace key...' checked=False focusable=True enabled=False
+      button 'Remove key': role=push button name='Remove key' checked=False focusable=True enabled=False
+      child processes of the preview before any action: [end]
+      button 'Add or replace key...': role=push button name='Add or replace key...' checked=False focusable=True enabled=True
+      button 'Remove key': role=push button name='Remove key' checked=False focusable=True enabled=True
+      status: Sample only: no key is asked for or saved in this preview window.
+      windows of the preview after Add: 0 0 (0 0 = no dialog opened)
+      status: Sample only: no key is removed in this preview window.
+      child processes of the preview after the actions: [end]
+=== leftovers ===
+done

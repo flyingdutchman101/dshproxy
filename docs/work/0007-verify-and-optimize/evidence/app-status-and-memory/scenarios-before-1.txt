@@ -1,0 +1,55 @@
+limits, 60 rounds, window 1280x880, visible True
+round    0: private   33.8 MB  working set   46.6 MB  managed  0.65 MB  gdi   40  user   56  handles  322  glass surfaces  11  backdrops 1  controls 129
+round   20: private   89.9 MB  working set  102.1 MB  managed  4.01 MB  gdi   41  user 1236  handles  335  glass surfaces  91  backdrops 1  controls 187
+round   40: private  137.2 MB  working set  149.1 MB  managed  6.17 MB  gdi   41  user 2416  handles  335  glass surfaces 171  backdrops 1  controls 187
+round   60: private  184.2 MB  working set  195.6 MB  managed  8.36 MB  gdi   41  user 3596  handles  340  glass surfaces 251  backdrops 1  controls 187
+took 18688 ms
+paint, 300 rounds, window 1280x880, visible True
+round    0: private   33.6 MB  working set   46.3 MB  managed  0.65 MB  gdi   40  user   56  handles  316  glass surfaces  11  backdrops 1  controls 129
+round  100: private   38.5 MB  working set   51.6 MB  managed  1.70 MB  gdi   40  user   56  handles  316  glass surfaces  11  backdrops 1  controls 129
+round  200: private   38.5 MB  working set   51.6 MB  managed  1.70 MB  gdi   40  user   56  handles  316  glass surfaces  11  backdrops 1  controls 129
+round  300: private   39.5 MB  working set   52.7 MB  managed  1.70 MB  gdi   40  user   56  handles  316  glass surfaces  11  backdrops 1  controls 129
+took 8540 ms
+switch, 300 rounds, window 1280x880, visible True
+round    0: private   33.8 MB  working set   46.5 MB  managed  0.65 MB  gdi   40  user   56  handles  316  glass surfaces  11  backdrops 1  controls 129
+round  100: private   66.2 MB  working set   82.1 MB  managed  2.09 MB  gdi  152  user  170  handles  360  glass surfaces  11  backdrops 1  controls 129
+round  200: private   66.4 MB  working set   82.4 MB  managed  2.11 MB  gdi  152  user  170  handles  366  glass surfaces  11  backdrops 1  controls 129
+round  300: private   66.4 MB  working set   82.4 MB  managed  2.11 MB  gdi  152  user  170  handles  365  glass surfaces  11  backdrops 1  controls 129
+took 23800 ms
+statusSame, 200 rounds, window 1280x880, visible True
+round    0: private   33.8 MB  working set   46.4 MB  managed  0.65 MB  gdi   40  user   56  handles  316  glass surfaces  11  backdrops 1  controls 129
+round  100: private   43.0 MB  working set   58.3 MB  managed  2.03 MB  gdi   40  user   57  handles  439  glass surfaces  11  backdrops 1  controls 129
+round  200: private   43.0 MB  working set   58.4 MB  managed  2.03 MB  gdi   40  user   57  handles  438  glass surfaces  11  backdrops 1  controls 129
+took 2074 ms
+status, 200 rounds, window 1280x880, visible True
+round    0: private   33.8 MB  working set   46.4 MB  managed  0.65 MB  gdi   40  user   56  handles  316  glass surfaces  11  backdrops 1  controls 129
+round  100: private   42.7 MB  working set   58.2 MB  managed  2.04 MB  gdi   40  user   57  handles  439  glass surfaces  11  backdrops 1  controls 129
+round  200: private   42.8 MB  working set   58.3 MB  managed  2.04 MB  gdi   40  user   57  handles  438  glass surfaces  11  backdrops 1  controls 129
+took 2043 ms
+log, 6000 rounds, window 1280x880, visible True
+round    0: private   33.7 MB  working set   46.3 MB  managed  0.65 MB  gdi   40  user   56  handles  316  glass surfaces  11  backdrops 1  controls 129
+round 2000: private   34.9 MB  working set   47.9 MB  managed  1.71 MB  gdi   42  user   57  handles  316  glass surfaces  11  backdrops 1  controls 129
+round 4000: private   38.8 MB  working set   49.0 MB  managed  1.71 MB  gdi   42  user   57  handles  321  glass surfaces  11  backdrops 1  controls 129
+round 6000: private   38.1 MB  working set   48.3 MB  managed  1.71 MB  gdi   42  user   57  handles  321  glass surfaces  11  backdrops 1  controls 129
+took 672 ms
+resize, 1200 rounds, window 1280x880, visible True
+round    0: private   33.7 MB  working set   46.4 MB  managed  0.65 MB  gdi   40  user   56  handles  315  glass surfaces  11  backdrops 1  controls 129
+round  100: private   38.4 MB  working set   51.4 MB  managed  1.68 MB  gdi   41  user   56  handles  315  glass surfaces  11  backdrops 1  controls 129
+round  200: private   39.5 MB  working set   52.6 MB  managed  1.69 MB  gdi   41  user   56  handles  315  glass surfaces  11  backdrops 1  controls 129
+round  300: private   40.7 MB  working set   53.8 MB  managed  1.69 MB  gdi   41  user   56  handles  317  glass surfaces  11  backdrops 1  controls 129
+round  400: private   37.8 MB  working set   51.0 MB  managed  1.69 MB  gdi   41  user   56  handles  317  glass surfaces  11  backdrops 1  controls 129
+round  500: private   38.7 MB  working set   52.0 MB  managed  1.69 MB  gdi   41  user   56  handles  317  glass surfaces  11  backdrops 1  controls 129
+round  600: private   39.8 MB  working set   53.0 MB  managed  1.69 MB  gdi   41  user   56  handles  317  glass surfaces  11  backdrops 1  controls 129
+round  700: private   38.7 MB  working set   51.9 MB  managed  1.69 MB  gdi   41  user   56  handles  317  glass surfaces  11  backdrops 1  controls 129
+round  800: private   37.2 MB  working set   50.4 MB  managed  1.71 MB  gdi   41  user   56  handles  315  glass surfaces  11  backdrops 1  controls 129
+round  900: private   39.0 MB  working set   52.3 MB  managed  1.71 MB  gdi   41  user   56  handles  315  glass surfaces  11  backdrops 1  controls 129
+round 1000: private   41.5 MB  working set   54.5 MB  managed  1.73 MB  gdi   41  user   56  handles  315  glass surfaces  11  backdrops 1  controls 129
+round 1100: private   40.4 MB  working set   53.5 MB  managed  1.76 MB  gdi   41  user   56  handles  315  glass surfaces  11  backdrops 1  controls 129
+round 1200: private   39.7 MB  working set   52.9 MB  managed  1.76 MB  gdi   41  user   56  handles  313  glass surfaces  11  backdrops 1  controls 129
+took 124601 ms
+message, 60 rounds, window 1280x880, visible True
+round    0: private   33.7 MB  working set   46.4 MB  managed  0.65 MB  gdi   40  user   56  handles  316  glass surfaces  11  backdrops 1  controls 129
+round   20: private   35.0 MB  working set   50.8 MB  managed  1.77 MB  gdi   44  user   66  handles  346  glass surfaces  11  backdrops 1  controls 129
+round   40: private   35.0 MB  working set   50.9 MB  managed  1.77 MB  gdi   44  user   66  handles  346  glass surfaces  11  backdrops 1  controls 129
+round   60: private   36.2 MB  working set   52.1 MB  managed  1.77 MB  gdi   44  user   66  handles  346  glass surfaces  11  backdrops 1  controls 129
+took 5233 ms

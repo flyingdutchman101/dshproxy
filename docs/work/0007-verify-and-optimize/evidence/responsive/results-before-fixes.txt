@@ -1,0 +1,719 @@
+The same pages on the source before any layout change of this batch (app/DSHProxyApp.cs after item A only, app/Skin.cs DB0CA718E57BA958).
+Run with the first version of the check program: it stopped at the third dialog on a mistake of its own (212 captures, not 221), it did not yet
+have the card with limit resets, and it measured a ladder as one line. Kept as the list of what was found; the captures of this run are not kept.
+Lines starting with 'look:' are notes for the eye, not failures.
+
+start size on a 1920x1080 working area: 1280x880; on a 1280x672 working area: 1177x618
+each capture: the six program checks, then what failed, then notes for the eye
+
+chat-accounts-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: TableLayoutPanel > FlowLayoutPanel > GlassLabel "● Active" at 360,5 54x17 is not inside its parent's 413x26
+    FAIL inside: TableLayoutPanel > FlowLayoutPanel > GlassLabel "xfirstname.middlename.lastname@a-l..." at 96,4 414x19 is not inside its parent's 413x26
+    FAIL inside: TableLayoutPanel > FlowLayoutPanel > Chip "Max" at 520,3 53x23 is not inside its parent's 413x26
+    FAIL inside: TableLayoutPanel > FlowLayoutPanel > GlassLabel "● Active" at 581,5 54x17 is not inside its parent's 413x26
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+chat-accounts-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+chat-accounts-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-api-keys-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+chat-api-keys-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+chat-api-keys-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-api-keys-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-api-keys-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-api-keys-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-api-keys-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-api-keys-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-api-keys-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-api-keys-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-lanes-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+    FAIL text: Panel "Lanes" > Panel > DarkList: the ladder of "lane-main" (5 models) needs 824, its column leaves 659
+    FAIL text: Panel "Lanes" > Panel > DarkList: the ladder of "lane-scout" (5 models) needs 824, its column leaves 659
+    FAIL text: Panel "Lanes" > Panel > DarkList: the ladder of "lane-builder" (4 models) needs 672, its column leaves 659
+    FAIL text: Panel "Lanes" > Panel > DarkList: "lane-architect" in column 1 needs 86, the column leaves 78
+    FAIL text: Panel "Lanes" > Panel > DarkList: the ladder of "lane-architect" (5 models) needs 825, its column leaves 659
+    FAIL text: Panel "Lanes" > Panel > DarkList: "lane-reviewer" in column 1 needs 86, the column leaves 78
+    FAIL text: Panel "Lanes" > Panel > DarkList: "lane-google" in column 1 needs 79, the column leaves 78
+    FAIL text: Panel "Lanes" > Panel > DarkList: the ladder of "lane-google" (4 models) needs 748, its column leaves 659
+    look: the wrapped note "A lane tries each model in order until one answers..." ends in a line with the single word "key."
+chat-lanes-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+chat-lanes-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-lanes-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-lanes-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-lanes-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-lanes-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-lanes-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-lanes-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-lanes-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap FAIL; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+    FAIL text: Panel "Models" > Panel > DarkList: "NEW · found automatically" in column 6 needs 175, the column leaves 162
+    FAIL text: Panel "Models" > Panel > DarkList: "gemini-3.8-flash-high" in column 1 needs 131, the column leaves 114
+    FAIL text: Panel "Models" > Panel > DarkList: "gemini-4-carbon-high" in column 1 needs 135, the column leaves 114
+    FAIL text: Panel "Models" > Panel > DarkList: "low, medium, high, xhigh" in column 5 needs 152, the column leaves 128
+    FAIL text: Panel "Models" > Panel > DarkList: "low, medium, high, xhigh" in column 5 needs 152, the column leaves 128
+    FAIL text: Panel "Models" > Panel > DarkList: "minimal, low, medium, high" in column 5 needs 166, the column leaves 128
+    FAIL text: Panel "Models" > Panel > DarkList: "Offered (you switched it on)" in column 6 needs 170, the column leaves 162
+    FAIL text: Panel "Models" > Panel > DarkList: "deepseek/deepseek-flash" in column 1 needs 157, the column leaves 142
+    FAIL text: Panel "Models" > Panel > DarkList: "deepseek/deepseek-v4-pro" in column 1 needs 169, the column leaves 142
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 800x62
+chat-models-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1117x62
+chat-models-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-harness-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+    FAIL text: Panel "DeepSeek Harness" > Panel > DarkList: "work-profile-with-a-long-name" in column 1 needs 187, the column leaves 179
+    FAIL text: Panel "DeepSeek Harness" > Panel > DarkList: "settings.json could not be read: unexpected end of input" in column 4 needs 338, the column leaves 179
+chat-harness-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+    FAIL text: Panel "DeepSeek Harness" > Panel > DarkList: "settings.json could not be read: unexpected end of input" in column 4 needs 338, the column leaves 259
+chat-harness-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    FAIL text: Panel "DeepSeek Harness" > Panel > DarkList: "settings.json could not be read: unexpected end of input" in column 4 needs 338, the column leaves 278
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-harness-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL text: Panel "DeepSeek Harness" > Panel > DarkList: "settings.json could not be read: unexpected end of input" in column 4 needs 338, the column leaves 278
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-harness-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    FAIL text: Panel "DeepSeek Harness" > Panel > DarkList: "settings.json could not be read: unexpected end of input" in column 4 needs 338, the column leaves 278
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-harness-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL text: Panel "DeepSeek Harness" > Panel > DarkList: "settings.json could not be read: unexpected end of input" in column 4 needs 338, the column leaves 278
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-harness-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL text: Panel "DeepSeek Harness" > Panel > DarkList: "settings.json could not be read: unexpected end of input" in column 4 needs 338, the column leaves 278
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-harness-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL text: Panel "DeepSeek Harness" > Panel > DarkList: "settings.json could not be read: unexpected end of input" in column 4 needs 338, the column leaves 278
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-harness-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL text: Panel "DeepSeek Harness" > Panel > DarkList: "settings.json could not be read: unexpected end of input" in column 4 needs 338, the column leaves 278
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-harness-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text FAIL; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL text: Panel "DeepSeek Harness" > Panel > DarkList: "settings.json could not be read: unexpected end of input" in column 4 needs 338, the column leaves 278
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-log-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+    look: the wrapped note "The log is shared by the Chat and Video workspaces..." ends in a line with the single word "workspaces."
+chat-log-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+chat-log-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-log-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-log-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-log-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-log-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-log-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-log-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-log-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-update-bar-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 18 and -125  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends -125 px from its right edge (Panel > FlowLayoutPanel > PillButton "Roll back...")
+    FAIL inside: TableLayoutPanel > FlowLayoutPanel > GlassLabel "● Active" at 360,5 54x17 is not inside its parent's 413x26
+    FAIL inside: TableLayoutPanel > FlowLayoutPanel > GlassLabel "xfirstname.middlename.lastname@a-l..." at 96,4 414x19 is not inside its parent's 413x26
+    FAIL inside: TableLayoutPanel > FlowLayoutPanel > Chip "Max" at 520,3 53x23 is not inside its parent's 413x26
+    FAIL inside: TableLayoutPanel > FlowLayoutPanel > GlassLabel "● Active" at 581,5 54x17 is not inside its parent's 413x26
+    FAIL inside: Panel > FlowLayoutPanel > PillButton "Update..." at 745,11 104x36 is not inside its parent's 844x58
+    FAIL inside: Panel > FlowLayoutPanel > PillButton "Roll back..." at 855,11 114x36 is not inside its parent's 844x58
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+chat-accounts-update-bar-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Accounts" > GlassLabel "Subscription accounts and how much...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+chat-accounts-update-bar-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Accounts" > GlassLabel "Subscription accounts and how much...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-update-bar-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Accounts" > GlassLabel "Subscription accounts and how much...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-update-bar-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Accounts" > GlassLabel "Subscription accounts and how much...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-update-bar-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Accounts" > GlassLabel "Subscription accounts and how much...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-update-bar-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Accounts" > GlassLabel "Subscription accounts and how much...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-update-bar-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Accounts" > GlassLabel "Subscription accounts and how much...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-update-bar-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Accounts" > GlassLabel "Subscription accounts and how much...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-update-bar-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Accounts" > GlassLabel "Subscription accounts and how much...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-update-bar-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 18 and -125  | margins FAIL; inside FAIL; text FAIL; hscroll ok; overlap FAIL; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends -125 px from its right edge (Panel > FlowLayoutPanel > PillButton "Roll back...")
+    FAIL inside: Panel > FlowLayoutPanel > PillButton "Update..." at 745,11 104x36 is not inside its parent's 844x58
+    FAIL inside: Panel > FlowLayoutPanel > PillButton "Roll back..." at 855,11 114x36 is not inside its parent's 844x58
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+    FAIL text: Panel "Models" > Panel > DarkList: "NEW · found automatically" in column 6 needs 175, the column leaves 162
+    FAIL text: Panel "Models" > Panel > DarkList: "gemini-3.8-flash-high" in column 1 needs 131, the column leaves 114
+    FAIL text: Panel "Models" > Panel > DarkList: "gemini-4-carbon-high" in column 1 needs 135, the column leaves 114
+    FAIL text: Panel "Models" > Panel > DarkList: "low, medium, high, xhigh" in column 5 needs 152, the column leaves 128
+    FAIL text: Panel "Models" > Panel > DarkList: "low, medium, high, xhigh" in column 5 needs 152, the column leaves 128
+    FAIL text: Panel "Models" > Panel > DarkList: "minimal, low, medium, high" in column 5 needs 166, the column leaves 128
+    FAIL text: Panel "Models" > Panel > DarkList: "Offered (you switched it on)" in column 6 needs 170, the column leaves 162
+    FAIL text: Panel "Models" > Panel > DarkList: "deepseek/deepseek-flash" in column 1 needs 157, the column leaves 142
+    FAIL text: Panel "Models" > Panel > DarkList: "deepseek/deepseek-v4-pro" in column 1 needs 169, the column leaves 142
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 800x62
+chat-models-update-bar-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Models" > GlassLabel "Ticked models are offered to DeepS...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1117x62
+chat-models-update-bar-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Models" > GlassLabel "Ticked models are offered to DeepS...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-update-bar-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Models" > GlassLabel "Ticked models are offered to DeepS...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-update-bar-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Models" > GlassLabel "Ticked models are offered to DeepS...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-update-bar-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Models" > GlassLabel "Ticked models are offered to DeepS...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-update-bar-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Models" > GlassLabel "Ticked models are offered to DeepS...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-update-bar-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Models" > GlassLabel "Ticked models are offered to DeepS...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-update-bar-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Models" > GlassLabel "Ticked models are offered to DeepS...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-models-update-bar-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 18 and 22  | margins FAIL; inside FAIL; text ok; hscroll ok; overlap FAIL; columns ok;
+    FAIL margins: what is in the column starts 18 px from its left edge (Panel > FlowLayoutPanel > GlassLabel "CLIProxyAPI 8.0.73 is available (y...") and ends 22 px from its right edge (PageHost > Panel "Models" > GlassLabel "Ticked models are offered to DeepS...")
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    FAIL overlap: PageHost > Panel "Models" > FlowLayoutPanel and PageHost > Panel "Models" > Panel overlap by 1196x62
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-not-answering-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+chat-accounts-not-answering-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+chat-accounts-not-answering-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-not-answering-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-not-answering-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-not-answering-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-not-answering-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-not-answering-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-not-answering-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+chat-accounts-not-answering-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-out-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+video-accounts-signed-out-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+    look: the wrapped note "Video has one signed-in service, a Krea workspace...." ends in a line with the single word "build."
+video-accounts-signed-out-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-out-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-out-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-out-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-out-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-out-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-out-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-out-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-waiting-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+video-accounts-waiting-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+    look: the wrapped note "Video has one signed-in service, a Krea workspace...." ends in a line with the single word "build."
+video-accounts-waiting-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-waiting-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-waiting-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-waiting-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-waiting-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-waiting-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-waiting-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-waiting-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-in-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+video-accounts-signed-in-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+    look: the wrapped note "Video has one signed-in service, a Krea workspace...." ends in a line with the single word "build."
+video-accounts-signed-in-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-in-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-in-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-in-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-in-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-in-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-in-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-signed-in-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-error-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+video-accounts-error-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+    look: the wrapped note "Video has one signed-in service, a Krea workspace...." ends in a line with the single word "build."
+video-accounts-error-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-error-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-error-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-error-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-error-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-error-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-error-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-accounts-error-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-none-saved-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+video-api-keys-none-saved-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+    look: the wrapped note "Save the key of a pay-per-use video provider here...." ends in a line with the single word "now."
+video-api-keys-none-saved-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-none-saved-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-none-saved-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-none-saved-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-none-saved-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-none-saved-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-none-saved-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-none-saved-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-some-saved-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+video-api-keys-some-saved-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+    look: the wrapped note "Save the key of a pay-per-use video provider here...." ends in a line with the single word "now."
+video-api-keys-some-saved-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-some-saved-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-some-saved-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-some-saved-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-some-saved-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-some-saved-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-some-saved-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-some-saved-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-from-environment-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+video-api-keys-one-from-environment-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+    look: the wrapped note "Save the key of a pay-per-use video provider here...." ends in a line with the single word "now."
+video-api-keys-one-from-environment-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-from-environment-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-from-environment-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-from-environment-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-from-environment-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-from-environment-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-from-environment-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-from-environment-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-unreadable-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+video-api-keys-one-unreadable-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+    look: the wrapped note "Save the key of a pay-per-use video provider here...." ends in a line with the single word "now."
+video-api-keys-one-unreadable-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-unreadable-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-unreadable-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-unreadable-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-unreadable-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-unreadable-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-unreadable-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-api-keys-one-unreadable-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-lanes-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+video-lanes-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+video-lanes-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-lanes-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-lanes-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-lanes-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-lanes-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-lanes-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-lanes-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-lanes-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-models-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+video-models-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+video-models-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-models-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-models-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-models-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-models-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-models-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-models-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-models-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-harness-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+video-harness-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+video-harness-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "No Preview, Apply or Verify here: this window chan..." ends in a line with the single word "checked."
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-harness-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "No Preview, Apply or Verify here: this window chan..." ends in a line with the single word "checked."
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-harness-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "No Preview, Apply or Verify here: this window chan..." ends in a line with the single word "checked."
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-harness-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "No Preview, Apply or Verify here: this window chan..." ends in a line with the single word "checked."
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-harness-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "No Preview, Apply or Verify here: this window chan..." ends in a line with the single word "checked."
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-harness-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "No Preview, Apply or Verify here: this window chan..." ends in a line with the single word "checked."
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-harness-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "No Preview, Apply or Verify here: this window chan..." ends in a line with the single word "checked."
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-harness-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "No Preview, Apply or Verify here: this window chan..." ends in a line with the single word "checked."
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-log-860x600.png  window 860x600, client 844x561, column 844 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 544x34 is not inside its parent's 844x36
+    look: the wrapped note "The log is shared by the Chat and Video workspaces..." ends in a line with the single word "workspaces."
+video-log-1177x618.png  window 1177x618, client 1161x579, column 1161 wide with 0 and 0 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 903x34 is not inside its parent's 1161x36
+video-log-1280x672.png  window 1280x672, client 1264x633, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-log-1280x880.png  window 1280x880, client 1264x841, column 1240 wide with 12 and 12 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-log-1366x728.png  window 1366x728, client 1350x689, column 1240 wide with 55 and 55 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,6 1004x34 is not inside its parent's 1240x36
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-log-1536x824.png  window 1536x824, client 1520x785, column 1240 wide with 140 and 140 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-log-1920x1040.png  window 1920x1040, client 1904x1001, column 1240 wide with 332 and 332 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-log-2560x1392.png  window 2560x1392, client 2544x1353, column 1240 wide with 652 and 652 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-log-3440x1392.png  window 3440x1392, client 3424x1353, column 1240 wide with 1092 and 1092 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+video-log-5120x1392.png  window 5120x1392, client 5104x1353, column 1240 wide with 1932 and 1932 px beside it, content inset 22 and 22  | margins ok; inside FAIL; text ok; hscroll ok; overlap ok; columns ok;
+    FAIL inside: Panel > TableLayoutPanel > GlassLabel "Data: %USERPROFILE%\AppData\Local..." at 22,13 1004x34 is not inside its parent's 1240x42
+    look: the wrapped note "Data: %USERPROFILE%\AppData\Local\Temp\dshproxy-f..." ends in a line with the single word "0afa72a"
+longest provider label: Kimi API (Moonshot)
+dialog-key-entry-380x159.png  window 380x159, client 374x130  | margins ok; inside ok; text ok; hscroll ok; overlap ok; columns ok;
+dialog-restart-wait-380x159.png  window 380x159, client 374x130  | margins ok; inside ok; text ok; hscroll ok; overlap ok; columns ok;
+
+captures: 212; with every program check passed: 2
+program checks: 1009 of 1272 passed
+  failing lines of kind inside: 222
+  failing lines of kind margins: 20
+  failing lines of kind overlap: 20
+  failing lines of kind text: 37
+notes for the eye (not counted as failures): 187
+the window never became the foreground window
+
+captures: 212; with every program check passed: 2
+program checks: 1009 of 1272 passed

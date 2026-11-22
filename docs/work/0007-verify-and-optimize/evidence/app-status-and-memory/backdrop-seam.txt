@@ -1,0 +1,29 @@
+seam: DSHPROXY_HOME=%TEMP%\dshproxy-final\rig-seam\home
+--- video settings and video keys through the real command line ---
+ok   read on a fresh data folder answers in the agreed shape
+     4 models: seedance-2.5, seedance-2.0, minimax-h3, wan-3.0
+ok   every model starts off, with no route
+ok   every model lists the routes it may use
+ok   set seedance-2.5 videorouter enabled answers with the saved state
+ok   a second process reads it back
+ok   the other models are untouched
+ok   set ... disabled switches it off and keeps the route
+ok   set ... none disabled leaves it off with no route
+ok   a route the model may not use is refused by the command, with a sentence: Unsupported video route for seedance-2.5
+ok   and nothing was saved by the refused command
+ok   the app refuses to build a command from an option, a path or an empty name
+ok   a model cannot be enabled with no route
+ok   answers that are not the agreed shape are refused whole
+ok   the app's own sample parses
+ok   video key list answers in the agreed shape
+ok   no video key is saved on a fresh data folder
+ok   video key set videorouter (key on standard input) answers saved
+ok   the answer does not repeat the key
+ok   a second process lists it as saved and readable, the others as not saved
+ok   the key is in no file of the data folder as plain text (0 places)
+ok   video key remove answers removed
+ok   a second remove answers that none was saved
+ok   key rules: empty, 513 characters, a space, a line break and a non-ASCII letter are refused before anything is sent; 512 printable characters are not
+ok   an error text never carries the key on
+ok   the chat settings kept their ports and the saved Chat key
+ALL OK

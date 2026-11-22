@@ -141,6 +141,9 @@ namespace DSHProxy
     {
         private static readonly Dictionary<Form, Bitmap> Cache = new Dictionary<Form, Bitmap>();
         private static readonly Dictionary<Form, Timer> Pending = new Dictionary<Form, Timer>();
+        // The forms whose cached scene is the previous one stretched: it has
+        // the size of the window, and is not the scene drawn at that size.
+        private static readonly HashSet<Form> Bridged = new HashSet<Form>();
 
         // Bumped whenever the cached scene changes, so glass caches rebuild.
         public static int Version { get; private set; }
@@ -150,7 +153,12 @@ namespace DSHProxy
             var size = form.ClientSize;
             if (size.Width < 1 || size.Height < 1) return null;
             Bitmap bitmap;
-            if (Cache.TryGetValue(form, out bitmap) && bitmap.Size == size) return bitmap;
+            if (Cache.TryGetValue(form, out bitmap) && bitmap.Size == size)
+            {
+                // A bridge whose redraw was put off while nobody could see the window.
+                if (Bridged.Contains(form) && !Pending.ContainsKey(form) && OnScreen(form)) Schedule(form);
+                return bitmap;
+            }
             if (bitmap != null)
             {
                 // Mid-resize: bridge with the previous scene stretched to the new
@@ -159,6 +167,7 @@ namespace DSHProxy
                 var bridge = Scaled(bitmap, size);
                 bitmap.Dispose();
                 Cache[form] = bridge;
+                Bridged.Add(form);
                 Version++;
                 Schedule(form);
                 return bridge;
@@ -169,6 +178,14 @@ namespace DSHProxy
             return bitmap;
         }
 
+        // Visible and not minimised.
+        private static bool OnScreen(Form form)
+        {
+            return !form.IsDisposed && form.Visible && form.WindowState != FormWindowState.Minimized;
+        }
+
+        // Once, 160 ms after the last step of a resize: every step starts the
+        // wait again, so nothing is drawn while the window is being dragged.
         private static void Schedule(Form form)
         {
             Timer timer;
@@ -178,12 +195,18 @@ namespace DSHProxy
             {
                 timer.Stop();
                 Pending.Remove(form);
+                timer.Dispose();
+                // Not for a window nobody sees: the bridge stays, and the
+                // redraw is asked for again when the window is next painted.
+                if (!OnScreen(form)) return;
                 var size = form.ClientSize;
                 if (size.Width < 1 || size.Height < 1) return;
                 Bitmap current;
-                if (Cache.TryGetValue(form, out current) && current.Size == size) return;
+                // Drawn at this size already. A bridge has this size too, and is not that.
+                if (Cache.TryGetValue(form, out current) && current.Size == size && !Bridged.Contains(form)) return;
                 if (current != null) current.Dispose();
                 Cache[form] = Render(size);
+                Bridged.Remove(form);
                 Version++;
                 form.Invalidate(true);
             };
@@ -209,6 +232,7 @@ namespace DSHProxy
             if (Pending.TryGetValue(form, out timer)) { timer.Stop(); timer.Dispose(); Pending.Remove(form); }
             Bitmap bitmap;
             if (Cache.TryGetValue(form, out bitmap)) { bitmap.Dispose(); Cache.Remove(form); Version++; }
+            Bridged.Remove(form);
         }
 
         private static void Blob(Graphics g, float cx, float cy, float rx, float ry, Color color)
@@ -542,7 +566,10 @@ namespace DSHProxy
             {
                 using (var path = Glass.Rounded(r, radius)) using (var fill = new SolidBrush(Color.FromArgb(10, 255, 255, 255))) g.FillPath(fill, path);
                 Glass.Edge(g, r, radius, null, 40);
-                text = Color.FromArgb(110, Theme.Muted);
+                // A solid colour: the text is drawn by GDI, which takes no
+                // transparency, so a see-through grey came out at full
+                // strength and a switched-off button read as the brightest one.
+                text = Color.FromArgb(83, 107, 118);
             }
             else if (kind == ButtonKind.Primary)
             {
@@ -685,6 +712,70 @@ namespace DSHProxy
         }
     }
 
+    // One side of a two-way switch (Chat / Video). It stays a native radio
+    // button, so the arrow keys move between the two and a screen reader
+    // announces them as a radio group; only the drawing is replaced. The
+    // chosen side is a brass pill inside the glass capsule that holds both.
+    internal sealed class SegmentRadio : RadioButton
+    {
+        private bool hover;
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            Glass.PaintBehind(e.Graphics, this, ClientRectangle);
+        }
+
+        public SegmentRadio()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            ForeColor = Theme.Text;
+            Cursor = Cursors.Hand;
+            Margin = new Padding(0);
+            // Both sides are given the same size by whoever places them.
+            AutoSize = false;
+            AccessibleRole = AccessibleRole.RadioButton;
+        }
+
+        public override Size GetPreferredSize(Size proposed)
+        {
+            return new Size(TextRenderer.MeasureText(Text, Font).Width + 44, 34);
+        }
+
+        protected override void OnCheckedChanged(EventArgs e) { Invalidate(); base.OnCheckedChanged(e); }
+        protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+        protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+        protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Glass.PaintBehind(e.Graphics, this, ClientRectangle);
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var r = new Rectangle(0, 0, Width - 1, Height - 1);
+            var radius = r.Height / 2;
+            if (Checked)
+            {
+                using (var path = Glass.Rounded(r, radius))
+                using (var fill = new LinearGradientBrush(new Rectangle(r.X, r.Y - 1, r.Width, r.Height + 2), hover ? Theme.AccentHover : Theme.Accent, Theme.Accent, 90f)) g.FillPath(fill, path);
+                Glass.Edge(g, r, radius, Color.White, 55);
+            }
+            else if (hover)
+            {
+                using (var path = Glass.Rounded(r, radius)) using (var fill = new SolidBrush(Color.FromArgb(22, 255, 255, 255))) g.FillPath(fill, path);
+            }
+            if (Focused && ShowFocusCues)
+            {
+                // Dotted and inset, like the focus ring on the pill buttons.
+                var ring = Rectangle.Inflate(r, -4, -4);
+                using (var path = Glass.Rounded(ring, Math.Max(4, radius - 4)))
+                using (var pen = new Pen(Checked ? Theme.AccentInk : Theme.Accent, 1.3f) { DashStyle = DashStyle.Dot }) g.DrawPath(pen, path);
+            }
+            using (var font = Checked ? new Font(Font, FontStyle.Bold) : (Font)Font.Clone())
+                TextRenderer.DrawText(g, Text, font, r, Checked ? Theme.AccentInk : hover ? Theme.Text : Theme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+    }
+
     // A small glass pill with tinted text: status, plan and similar labels.
     internal sealed class Chip : Label
     {
@@ -777,10 +868,12 @@ namespace DSHProxy
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
             var r = new Rectangle(2, 2, Width - 5, Height - 5);
-            using (var glow = Glass.Rounded(Rectangle.Inflate(r, 1, 1), 16)) using (var pen = new Pen(Color.FromArgb(60, Theme.Accent), 3f)) g.DrawPath(pen, glow);
+            // The corners follow the size: 15 at the full 60 pixels, less when the tile is smaller.
+            var radius = Math.Min(15, Width / 4);
+            using (var glow = Glass.Rounded(Rectangle.Inflate(r, 1, 1), radius + 1)) using (var pen = new Pen(Color.FromArgb(60, Theme.Accent), 3f)) g.DrawPath(pen, glow);
             if (Picture != null)
             {
-                using (var path = Glass.Rounded(r, 15))
+                using (var path = Glass.Rounded(r, radius))
                 {
                     var old = g.Clip;
                     g.SetClip(path, CombineMode.Intersect);
@@ -788,7 +881,7 @@ namespace DSHProxy
                     g.Clip = old;
                 }
             }
-            Glass.Edge(g, r, 15);
+            Glass.Edge(g, r, radius);
         }
     }
 
@@ -870,7 +963,7 @@ namespace DSHProxy
         {
             this.pages = pages;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
-            Dock = DockStyle.Top;
+            // Placed by its owner, which can ask CapsuleWidth how wide it draws.
             Height = 58;
             Font = Theme.Ui(10f);
             TabStop = true;
@@ -881,6 +974,33 @@ namespace DSHProxy
             pages.PagesChanged += (s, e) => Invalidate();
         }
 
+        // The width of each section pill, and of the capsule that holds them.
+        private List<int> Measure(Font bold, out int capsuleWidth)
+        {
+            var widths = new List<int>();
+            var total = 8;
+            for (var i = 0; i < pages.TabPages.Count; i++)
+            {
+                var w = TextRenderer.MeasureText(pages.TabPages[i].Text, bold).Width + 34;
+                widths.Add(w);
+                total += w + 2;
+            }
+            capsuleWidth = total + 6;
+            return widths;
+        }
+
+        // How wide the capsule is, for whoever places this strip. The capsule
+        // is drawn in the middle of whatever width the strip is given.
+        public int CapsuleWidth
+        {
+            get
+            {
+                int width;
+                using (var bold = new Font(Font, FontStyle.Bold)) Measure(bold, out width);
+                return width;
+            }
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             Glass.PaintBehind(e.Graphics, this, ClientRectangle);
@@ -889,15 +1009,10 @@ namespace DSHProxy
             slots.Clear();
             using (var bold = new Font(Font, FontStyle.Bold))
             {
-                var widths = new List<int>();
-                var total = 8;
-                for (var i = 0; i < pages.TabPages.Count; i++)
-                {
-                    var w = TextRenderer.MeasureText(g, pages.TabPages[i].Text, bold).Width + 34;
-                    widths.Add(w);
-                    total += w + 2;
-                }
-                var capsule = new Rectangle(0, 8, total + 6, 42);
+                int capsuleWidth;
+                var widths = Measure(bold, out capsuleWidth);
+                // In the middle of the strip, whatever size it is given.
+                var capsule = new Rectangle(Math.Max(0, (Width - capsuleWidth) / 2), Math.Max(0, (Height - 42) / 2), capsuleWidth, 42);
                 Glass.Draw(g, capsule, capsule.Height / 2, true, true);
                 var x = capsule.X + 5;
                 for (var i = 0; i < pages.TabPages.Count; i++)
@@ -1002,13 +1117,40 @@ namespace DSHProxy
 
     // A ListView that paints the empty area below its last row as glass;
     // Windows would otherwise draw light column lines there.
+    //
+    // Its columns share the width of the list in proportion to the widths they
+    // were given, so a list fills a wide window and still fits a narrow one.
+    // Dragging a column edge changes the proportions from then on.
     internal sealed class DarkList : ListView
     {
         private const int LVM_SETEXTENDEDLISTVIEWSTYLE = 0x1036;
         private const int LVS_EX_DOUBLEBUFFER = 0x00010000;
+        private const int GWL_STYLE = -16;
+        private const int WS_HSCROLL = 0x00100000;
 
         [DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr window, int index);
+
+        // The widths the proportions come from, and the widths last set here.
+        private int[] shares;
+        private int[] fitted;
+        private int fittedFor = -1;
+        private int fittedRows;
+        private bool fitting;
+        private bool fitQueued;
+        // The user dragged a column: the columns then keep the proportions
+        // they were dragged to, whatever their text needs.
+        private bool dragged;
+        // The height of a row that holds a ladder on one line.
+        private int ladderRow;
+        // A column that is left out, at no width, where the columns cannot
+        // all show their text whole: one that says what the row says another
+        // way as well. Not the first and not the last; -1 for none.
+        public int OptionalColumn = -1;
+        private int optionalShare;
 
         protected override void OnHandleCreated(EventArgs e)
         {
@@ -1016,11 +1158,224 @@ namespace DSHProxy
             // Windows' own buffering for the list control. ControlStyles
             // double buffering is what produced half-painted rows on scroll.
             SendMessage(Handle, LVM_SETEXTENDEDLISTVIEWSTYLE, (IntPtr)LVS_EX_DOUBLEBUFFER, (IntPtr)LVS_EX_DOUBLEBUFFER);
+            QueueFit();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            QueueFit();
+        }
+
+        protected override void OnColumnWidthChanged(ColumnWidthChangedEventArgs e)
+        {
+            base.OnColumnWidthChanged(e);
+            // A width that is not the one set here was dragged by the user:
+            // the proportions are taken again from what the columns are now.
+            if (fitting || fitted == null || e.ColumnIndex < 0 || e.ColumnIndex >= fitted.Length || e.ColumnIndex >= Columns.Count) return;
+            if (Columns[e.ColumnIndex].Width != fitted[e.ColumnIndex])
+            {
+                shares = null;
+                dragged = true;
+            }
+        }
+
+        // Changes when the text of the rows does: what the columns and the
+        // ladders need depends on the rows, not only on the width of the list.
+        private int RowStamp()
+        {
+            var stamp = Items.Count;
+            foreach (ListViewItem item in Items)
+                foreach (ListViewItem.ListViewSubItem cell in item.SubItems)
+                    stamp = unchecked(stamp * 31 + (cell.Text ?? "").GetHashCode());
+            return stamp;
+        }
+
+        // Fitted once the list has settled at its new size: fitting it during
+        // the resize left a sideways scroll bar behind when it became narrower.
+        private void QueueFit()
+        {
+            if (fitQueued || !IsHandleCreated || IsDisposed) return;
+            fitQueued = true;
+            try { BeginInvoke(new Action(FitColumns)); }
+            catch (InvalidOperationException) { fitQueued = false; }
+        }
+
+        private void FitColumns()
+        {
+            fitQueued = false;
+            if (IsDisposed || !IsHandleCreated || View != View.Details) return;
+            var count = Columns.Count;
+            var available = ClientSize.Width;
+            if (count == 0 || available <= 0)
+            {
+                fittedFor = available;
+                fittedRows = RowStamp();
+                return;
+            }
+            if (shares == null || shares.Length != count)
+            {
+                shares = new int[count];
+                for (var i = 0; i < count; i++) shares[i] = Math.Max(1, Columns[i].Width);
+                // A column that is left out just now keeps the share it had.
+                if (OptionalColumn > 0 && OptionalColumn < count - 1)
+                {
+                    if (Columns[OptionalColumn].Width == 0 && optionalShare > 0) shares[OptionalColumn] = optionalShare;
+                    else optionalShare = shares[OptionalColumn];
+                }
+            }
+            int[] widths;
+            int sum;
+            // First with every column; then, if their text does not fit,
+            // once more without the optional one.
+            var leftOut = -1;
+            while (true)
+            {
+                long total = 0;
+                for (var i = 0; i < count; i++) if (i != leftOut) total += shares[i];
+                // No column goes below 60% of its share, or below 40 pixels.
+                widths = new int[count];
+                var least = new int[count];
+                sum = 0;
+                for (var i = 0; i < count; i++)
+                {
+                    if (i == leftOut) continue;
+                    least[i] = Math.Min(shares[i], Math.Max(40, shares[i] * 6 / 10));
+                    widths[i] = Math.Max(least[i], (int)(shares[i] * (long)available / total));
+                    sum += widths[i];
+                }
+                // Rounding leaves a few pixels over: the last column takes them, so
+                // the columns end exactly where the list does.
+                if (sum < available) widths[count - 1] += available - sum;
+                for (var i = count - 1; i >= 0 && sum > available; i--)
+                {
+                    var take = Math.Min(widths[i] - least[i], sum - available);
+                    widths[i] -= take;
+                    sum -= take;
+                }
+                if (dragged || count < 2) break;
+                if (FitToText(widths, available, leftOut) || leftOut >= 0 || OptionalColumn <= 0 || OptionalColumn >= count - 1) break;
+                leftOut = OptionalColumn;
+            }
+            fitting = true;
+            try
+            {
+                var changed = false;
+                for (var i = 0; i < count; i++) if (Columns[i].Width != widths[i]) changed = true;
+                if (changed)
+                {
+                    BeginUpdate();
+                    for (var i = 0; i < count; i++) if (Columns[i].Width != widths[i]) Columns[i].Width = widths[i];
+                    EndUpdate();
+                }
+                // The widths can already be right while Windows still shows the
+                // scroll bar it put up half way through a resize; setting a
+                // width again makes it look once more.
+                if (sum <= available && (GetWindowLong(Handle, GWL_STYLE) & WS_HSCROLL) != 0)
+                {
+                    var last = Columns[count - 1];
+                    last.Width = widths[count - 1] - 1;
+                    last.Width = widths[count - 1];
+                }
+                fitted = widths;
+                fittedFor = available;
+                fittedRows = RowStamp();
+                FitLadderRows(widths);
+            }
+            finally { fitting = false; }
+        }
+
+        // The proportions are right while every column shows its text whole.
+        // Where one does not, the text decides. False when there is not room
+        // for all of it. `leftOut`: a column that is not shown, or -1.
+        private bool FitToText(int[] widths, int available, int leftOut)
+        {
+            var count = widths.Length;
+            var need = new int[count];
+            long deficit = 0;
+            long surplus = 0;
+            for (var i = 0; i < count; i++)
+            {
+                if (i == leftOut) continue;
+                need[i] = Skin.ColumnNeed(this, i);
+                if (widths[i] < need[i]) deficit += need[i] - widths[i];
+                else surplus += widths[i] - need[i];
+            }
+            if (deficit == 0) return true;
+            if (surplus >= deficit)
+            {
+                // There is room for all of it: the columns with room to spare
+                // give, each in proportion to what it can spare.
+                var left = (int)deficit;
+                for (var i = count - 1; i >= 0; i--)
+                {
+                    if (widths[i] <= need[i]) continue;
+                    var take = (int)(deficit * (widths[i] - need[i]) / surplus);
+                    widths[i] -= take;
+                    left -= take;
+                }
+                for (var i = count - 1; i >= 0 && left > 0; i--)
+                {
+                    var take = Math.Min(left, Math.Max(0, widths[i] - need[i]));
+                    widths[i] -= take;
+                    left -= take;
+                }
+                for (var i = 0; i < count; i++) if (widths[i] < need[i]) widths[i] = need[i];
+                return true;
+            }
+            // There is not room for all of it. The first column names the
+            // row and is shown whole. The others share the rest: a column
+            // that needs little gets what it needs, and the widest are cut
+            // to one common width, so only the longest texts end in dots.
+            var others = count - 1 - (leftOut > 0 ? 1 : 0);
+            widths[0] = Math.Max(1, Math.Min(need[0], available - 40 * others));
+            var room = available - widths[0];
+            var order = new List<int>();
+            for (var i = 1; i < count; i++) if (i != leftOut) order.Add(i);
+            order.Sort((a, b) => need[a] != need[b] ? need[a] - need[b] : a - b);
+            for (var k = 0; k < order.Count; k++)
+            {
+                var each = Math.Max(1, room / (order.Count - k));
+                var i = order[k];
+                widths[i] = Math.Min(need[i], each);
+                room -= widths[i];
+            }
+            // What rounding left over goes to the widest.
+            if (room > 0) widths[order[order.Count - 1]] += room;
+            return false;
+        }
+
+        // A ladder that does not fit on one line of its column goes on two
+        // or three: every row of the list is then that much taller. The
+        // height of a row is the height of the list's (empty) images.
+        private void FitLadderRows(int[] widths)
+        {
+            var images = SmallImageList;
+            if (images == null || images.ImageSize.Width != 1) return;
+            var lines = 0;
+            foreach (ListViewItem item in Items)
+                for (var i = 1; i < item.SubItems.Count && i < widths.Length; i++)
+                {
+                    var text = item.SubItems[i].Text ?? "";
+                    if (!Skin.IsLadder(this, i, text)) continue;
+                    int needed;
+                    Skin.LadderChips(Font, text.Split('\u0001'), widths[i] - Skin.CellLeft - Skin.CellRight, out needed);
+                    lines = Math.Max(lines, Math.Min(3, needed));
+                }
+            if (lines == 0) return;
+            if (ladderRow == 0) ladderRow = images.ImageSize.Height;
+            var height = ladderRow + (lines - 1) * Skin.LadderLine;
+            if (images.ImageSize.Height == height) return;
+            SmallImageList = new ImageList { ImageSize = new Size(1, height) };
+            images.Dispose();
         }
 
         protected override void WndProc(ref Message m)
         {
             base.WndProc(ref m);
+            // A scroll bar that came or went with the rows changes the width
+            // there is for columns without the list itself changing size.
+            if (m.Msg == 0x000F && View == View.Details && (fittedFor != ClientSize.Width || fittedRows != RowStamp())) QueueFit();
             if (m.Msg != 0x000F || View != View.Details) return; // WM_PAINT
             var top = Items.Count > 0 ? Items[Items.Count - 1].Bounds.Bottom : Font.Height + 12;
             if (top >= ClientSize.Height) return;
@@ -1145,7 +1500,7 @@ namespace DSHProxy
             }
             var combo = control as ComboBox;
             if (combo != null) { StyleCombo(combo); return; }
-            if (control is GlassCheck || control is GlassRadio || control is Chip || control is AppMark || control is NavStrip || control is Marquee) return;
+            if (control is GlassCheck || control is GlassRadio || control is SegmentRadio || control is Chip || control is AppMark || control is NavStrip || control is Marquee) return;
             if (Glass.IsGlass(control)) { DarkScrollbars(control); return; }
             if (control is PillButton) return;
             // Containers paint the backdrop and glass behind them; labels and
@@ -1248,6 +1603,8 @@ namespace DSHProxy
             {
                 Glass.PaintBehind(e.Graphics, list, e.Bounds);
                 using (var line = new Pen(Color.FromArgb(34, 255, 255, 255))) e.Graphics.DrawLine(line, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
+                // A column that is left out has no room for its heading.
+                if (e.Bounds.Width <= 12) return;
                 var bounds = new Rectangle(e.Bounds.X + 10, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height);
                 using (var font = Theme.Ui(8.5f, FontStyle.Bold)) TextRenderer.DrawText(e.Graphics, e.Header.Text.ToUpperInvariant() == e.Header.Text ? e.Header.Text : e.Header.Text, font, bounds, Theme.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
             };
@@ -1270,10 +1627,89 @@ namespace DSHProxy
                 list.Tag = -1;
                 if (last >= 0 && last < list.Items.Count) list.Invalidate(list.Items[last].Bounds);
             };
-            EventHandler fill = (s, e) => { if (list.Columns.Count > 0) list.Columns[list.Columns.Count - 1].Width = -2; };
-            list.Resize += fill;
-            list.HandleCreated += fill;
+            // A DarkList fits all of its columns itself; in any other list the
+            // last column takes the room that is left.
+            if (!(list is DarkList))
+            {
+                EventHandler fill = (s, e) => { if (list.Columns.Count > 0) list.Columns[list.Columns.Count - 1].Width = -2; };
+                list.Resize += fill;
+                list.HandleCreated += fill;
+            }
             DarkScrollbars(list);
+        }
+
+        // The room left and right of the text of a cell.
+        public const int CellLeft = 10;
+        public const int CellRight = 6;
+        // The height one more line of a ladder adds to a row.
+        public const int LadderLine = 28;
+
+        // Where the text of a first-column cell starts: after the tick box and the logo.
+        private static int FirstColumnLeft(ListView list, ListViewItem item)
+        {
+            var x = CellLeft;
+            if (list.CheckBoxes) x = 8 + 18 + 10;
+            // A list with logos keeps the place of the logo in a row that has none.
+            var images = list.SmallImageList;
+            if (images != null && images.ImageSize.Width > 1) x += images.ImageSize.Width + 10;
+            return x;
+        }
+
+        // The width a column needs to show its heading and its longest text
+        // whole. A ladder can go on more lines, so it needs only the room of
+        // its longest model.
+        public static int ColumnNeed(ListView list, int column)
+        {
+            int need;
+            using (var bold = Theme.Ui(8.5f, FontStyle.Bold)) need = TextRenderer.MeasureText(list.Columns[column].Text, bold).Width + 12;
+            foreach (ListViewItem item in list.Items)
+            {
+                if (column >= item.SubItems.Count) continue;
+                var text = item.SubItems[column].Text ?? "";
+                if (text.Length == 0) continue;
+                if (column > 0 && IsLadder(list, column, text))
+                {
+                    int lines;
+                    foreach (var chip in LadderChips(list.Font, text.Split('\u0001'), int.MaxValue / 2, out lines)) need = Math.Max(need, CellLeft + 22 + chip.Width + CellRight);
+                    continue;
+                }
+                var width = TextRenderer.MeasureText(text, item.Font ?? list.Font, Size.Empty, TextFormatFlags.NoPrefix).Width;
+                need = Math.Max(need, (column == 0 ? FirstColumnLeft(list, item) : CellLeft) + width + CellRight);
+            }
+            return need;
+        }
+
+        // A cell that holds a lane ladder rather than text.
+        public static bool IsLadder(ListView list, int column, string text)
+        {
+            return text.IndexOf('\u0001') >= 0 || (column == 1 && list.Columns.Count == 2 && text.Length > 0 && "\u2713\u2717\u23F8".IndexOf(text[0]) >= 0);
+        }
+
+        // Where the chips of a ladder go in a cell of the given width: x and
+        // width of each, with the line it is on as Y. A chip that does not
+        // fit behind the one before it starts the next line; from the second
+        // chip on, each has its arrow in the 22 pixels before it.
+        public static List<Rectangle> LadderChips(Font font, string[] steps, int width, out int lines)
+        {
+            var chips = new List<Rectangle>();
+            var x = 0;
+            var line = 0;
+            foreach (var raw in steps)
+            {
+                var step = raw.Trim();
+                if (step.Length == 0) continue;
+                var chip = TextRenderer.MeasureText(step.Substring(1).Trim(), font, Size.Empty, TextFormatFlags.NoPadding).Width + 30;
+                var arrow = chips.Count == 0 ? 0 : 22;
+                if (chips.Count > 0 && x + arrow + chip > width)
+                {
+                    line++;
+                    x = 0;
+                }
+                chips.Add(new Rectangle(x + arrow, line, chip, 24));
+                x += arrow + chip;
+            }
+            lines = chips.Count == 0 ? 0 : line + 1;
+            return chips;
         }
 
         private static void DrawCell(ListView list, DrawListViewSubItemEventArgs e)
@@ -1281,6 +1717,8 @@ namespace DSHProxy
             var g = e.Graphics;
             var hovered = list.Tag is int && (int)list.Tag == e.ItemIndex;
             var bounds = e.ColumnIndex == 0 ? new Rectangle(e.Bounds.X, e.Bounds.Y, list.Columns[0].Width, e.Bounds.Height) : e.Bounds;
+            // A column that is left out.
+            if (bounds.Width <= 0) return;
             Glass.PaintBehind(g, list, bounds);
             // Selected and hovered rows are a lighter band across the row.
             if (e.Item.Selected || hovered)
@@ -1290,7 +1728,7 @@ namespace DSHProxy
             using (var line = new Pen(Color.FromArgb(18, 255, 255, 255))) g.DrawLine(line, bounds.Left, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
 
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            var x = bounds.X + 10;
+            var x = bounds.X + CellLeft;
             if (e.ColumnIndex == 0)
             {
                 if (list.CheckBoxes)
@@ -1300,43 +1738,56 @@ namespace DSHProxy
                     x = box.Right + 10;
                 }
                 var images = list.SmallImageList;
-                if (images != null && images.ImageSize.Width > 1 && !string.IsNullOrEmpty(e.Item.ImageKey) && images.Images.ContainsKey(e.Item.ImageKey))
+                if (images != null && images.ImageSize.Width > 1)
                 {
+                    // A row without a logo keeps the place of one, so its text
+                    // starts where the text of the other rows does.
                     var size = images.ImageSize;
-                    g.DrawImage(images.Images[e.Item.ImageKey], x, bounds.Y + (bounds.Height - size.Height) / 2, size.Width, size.Height);
+                    if (!string.IsNullOrEmpty(e.Item.ImageKey) && images.Images.ContainsKey(e.Item.ImageKey)) g.DrawImage(images.Images[e.Item.ImageKey], x, bounds.Y + (bounds.Height - size.Height) / 2, size.Width, size.Height);
                     x += size.Width + 10;
                 }
             }
             g.SmoothingMode = SmoothingMode.None;
-            if (e.SubItem.Text.IndexOf('\u0001') >= 0 || (e.ColumnIndex == 1 && list.Columns.Count == 2 && e.SubItem.Text.Length > 0 && "\u2713\u2717\u23F8".IndexOf(e.SubItem.Text[0]) >= 0))
+            if (IsLadder(list, e.ColumnIndex, e.SubItem.Text))
             {
-                DrawLadder(g, list.Font, e.SubItem.Text.Split('\u0001'), new Rectangle(x, bounds.Y, bounds.Right - x, bounds.Height));
+                DrawLadder(g, list.Font, e.SubItem.Text.Split('\u0001'), new Rectangle(x, bounds.Y, bounds.Right - x - CellRight, bounds.Height));
                 return;
             }
             var color = e.Item.ForeColor;
             if (color == list.ForeColor || color.IsEmpty) color = Theme.Text;
             if (e.ColumnIndex > 0 && !e.Item.UseItemStyleForSubItems) color = e.SubItem.ForeColor;
-            var text = new Rectangle(x, bounds.Y, Math.Max(0, bounds.Right - x - 6), bounds.Height);
+            var text = new Rectangle(x, bounds.Y, Math.Max(0, bounds.Right - x - CellRight), bounds.Height);
             TextRenderer.DrawText(g, e.SubItem.Text, e.Item.Font ?? list.Font, text, color, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         }
 
-        // A lane ladder: glass chips joined by arrows.
+        // A lane ladder: glass chips joined by arrows, on as many lines as
+        // the row has room for (DarkList makes the rows tall enough).
         private static void DrawLadder(Graphics g, Font font, string[] steps, Rectangle area)
         {
-            var x = area.X;
+            int lines;
+            var places = LadderChips(font, steps, area.Width, out lines);
+            if (lines == 0) return;
+            // The lines share the height of the row; a row too low for all of them shows the first.
+            var shown = Math.Max(1, Math.Min(lines, area.Height / LadderLine));
+            var band = area.Height / shown;
+            var at = 0;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             for (var i = 0; i < steps.Length; i++)
             {
                 var step = steps[i].Trim();
                 if (step.Length == 0) continue;
+                var place = places[at++];
+                if (place.Y >= shown) break;
                 var mark = step[0];
                 var name = step.Substring(1).Trim();
                 var off = mark == '\u2717';
                 var resting = mark == '\u23F8';
                 var color = off ? Theme.Bad : resting ? Theme.Warn : Theme.Ok;
-                var size = TextRenderer.MeasureText(g, name, font, Size.Empty, TextFormatFlags.NoPadding);
-                var chip = new Rectangle(x, area.Y + (area.Height - 24) / 2, size.Width + 30, 24);
-                if (chip.Right > area.Right) break;
+                var chip = new Rectangle(area.X + place.X, area.Y + place.Y * band + (band - 24) / 2, place.Width, 24);
+                if (at > 1)
+                {
+                    using (var arrow = Theme.Ui(12f)) TextRenderer.DrawText(g, "\u203A", arrow, new Rectangle(chip.X - 22, area.Y + place.Y * band, 22, band), Theme.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter);
+                }
                 using (var path = Glass.Rounded(chip, 12))
                 {
                     using (var fill = new SolidBrush(Color.FromArgb(off ? 8 : 26, 255, 255, 255))) g.FillPath(fill, path);
@@ -1345,12 +1796,6 @@ namespace DSHProxy
                 using (var glow = new SolidBrush(Color.FromArgb(70, color))) g.FillEllipse(glow, chip.X + 7, chip.Y + 7, 10, 10);
                 using (var dot = new SolidBrush(color)) g.FillEllipse(dot, chip.X + 9, chip.Y + 9, 6, 6);
                 TextRenderer.DrawText(g, name, font, new Rectangle(chip.X + 21, chip.Y, chip.Width - 22, chip.Height), off ? Color.FromArgb(150, Theme.Muted) : Theme.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding);
-                x = chip.Right;
-                if (i < steps.Length - 1)
-                {
-                    TextRenderer.DrawText(g, "\u203A", Theme.Ui(12f), new Rectangle(x, area.Y, 22, area.Height), Theme.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter);
-                    x += 22;
-                }
             }
             g.SmoothingMode = SmoothingMode.None;
         }

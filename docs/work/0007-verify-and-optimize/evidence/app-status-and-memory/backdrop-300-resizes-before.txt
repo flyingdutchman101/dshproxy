@@ -1,0 +1,14 @@
+--- 300 resizes, each left to settle: objects and memory before and after ---
+     before, at 1280x880, after a collection: GDI objects 44, USER objects 118, handles 352, private bytes 100.1 MB, managed heap 2.2 MB; backdrops kept 1, redraws waiting 0
+     after 50: GDI objects 44, USER objects 118, handles 377, private bytes 101.9 MB, managed heap 5.0 MB; backdrops kept 1, redraws waiting 0
+     after 100: GDI objects 44, USER objects 118, handles 384, private bytes 103.0 MB, managed heap 5.2 MB; backdrops kept 1, redraws waiting 0
+     after 150: GDI objects 44, USER objects 118, handles 398, private bytes 102.5 MB, managed heap 7.0 MB; backdrops kept 1, redraws waiting 0
+     after 200: GDI objects 44, USER objects 118, handles 414, private bytes 102.3 MB, managed heap 7.2 MB; backdrops kept 1, redraws waiting 0
+     after 250: GDI objects 44, USER objects 118, handles 420, private bytes 103.4 MB, managed heap 9.1 MB; backdrops kept 1, redraws waiting 0
+     after 300: GDI objects 44, USER objects 118, handles 357, private bytes 103.9 MB, managed heap 5.1 MB; backdrops kept 1, redraws waiting 0
+     300 resizes took 160 s
+     after, at 1280x880, as it stands:        GDI objects 44, USER objects 118, handles 358, private bytes 103.9 MB, managed heap 5.2 MB; backdrops kept 1, redraws waiting 0
+     after, at 1280x880, after a collection:  GDI objects 44, USER objects 118, handles 355, private bytes 103.0 MB, managed heap 2.1 MB; backdrops kept 1, redraws waiting 0
+FAIL GDI objects 44 before and 44 after; private bytes +2.8 MB (one backdrop of 2560x1392 is about 14 MB); one backdrop kept, none waiting; 116692 pixels differ from a backdrop drawn at that size
+ok   the window never became the foreground window
+1 FAILED

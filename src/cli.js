@@ -9,12 +9,31 @@ const { install } = require("./backend/install");
 const { STATUS_PATH } = require("./gateway/server");
 const presets = require("./presets");
 const fs = require("fs");
+const http = require("http");
+const { PREFIX: CONTROL_PREFIX } = require("./control");
 const { readLock, compareVersions } = require("./backend/updater");
+
+// A restart after a backend update or rollback waits this long, at most, for
+// a moment with no request in flight, and says so in the log this often.
+const RESTART_WAIT_MS = 15 * 60 * 1000;
+const RESTART_NOTE_MS = 60 * 1000;
+// `dshproxy stop --when-idle` waits this long when it is not told.
+const STOP_WAIT_SECONDS = 300;
+const MAX_STOP_WAIT_SECONDS = 24 * 60 * 60;
+// When the connection that carries the gateway's answer is lost, the command
+// looks at the gateway itself for this long, at these intervals.
+const LOST_ANSWER_MS = 3000;
+const LOST_ANSWER_PAUSE_MS = 150;
+// How long the stop command waits for the gateway's status before it asks.
+const STOP_STATUS_MS = 2000;
+const STOP_USAGE = `Usage: dshproxy stop --when-idle [--wait SECONDS]  (SECONDS: a whole number from 0 to ${MAX_STOP_WAIT_SECONDS}; default ${STOP_WAIT_SECONDS})`;
 
 const HELP = `DeepSeekProxy (dshproxy) ${app.version} - local model gateway for DeepSeek Harness
 
 Usage:
   dshproxy start                       Run the gateway (keep this window open)
+  dshproxy stop --when-idle [--wait SECONDS]
+                                       Stop the running gateway at a moment with no request in flight (default wait 300)
   dshproxy status                      Show accounts, API keys, lanes and the DeepSeek Harness state
   dshproxy login <provider>            Sign in: ${Object.keys(accounts.PROVIDERS).join(", ")}
   dshproxy accounts                    List signed-in accounts
@@ -24,6 +43,7 @@ Usage:
   dshproxy key remove <provider>       Remove a saved API key
   dshproxy key list                    List API-key providers and their regions
   dshproxy key custom add|list|remove   Add a custom OpenAI-compatible endpoint (LiteLLM, One API, ...)
+  dshproxy video help                  Quote benchmark videos, save provider keys, submit once, or check a job
   dshproxy models                      List the models that can be offered right now
   dshproxy dsh apply [--dry-run]       Write the models into every DeepSeek Harness profile
   dshproxy dsh verify                  Check that DeepSeek Harness has every route it needs
@@ -89,6 +109,114 @@ async function runningStatus(origin) {
   }
 }
 
+const requests = (count) => `${count} request${count === 1 ? "" : "s"}`;
+const span = (ms) => (ms >= 60000 && ms % 60000 === 0 ? `${ms / 60000} min` : `${Math.round(ms / 1000)} s`);
+
+// Stops a running gateway (what daemon.start returned) for a restart without
+// cutting requests: it waits for a moment with nothing in flight, noting the
+// wait in the log every `noteMs`. After `limitMs` it stops anyway and logs how
+// many requests that cut. Resolves { cut } once the gateway has stopped.
+async function stopForRestart(gateway, { limitMs = RESTART_WAIT_MS, noteMs = RESTART_NOTE_MS } = {}) {
+  const busy = gateway.inFlight();
+  if (busy) gateway.log(`Restart requested with ${requests(busy)} in flight: waiting for a moment with none, at most ${span(limitMs)}.`);
+  let waited = 0;
+  while (waited < limitMs) {
+    const step = Math.min(noteMs, limitMs - waited);
+    const result = await gateway.stop({ whenIdle: true, waitMs: step });
+    if (result.stopped) return { cut: 0 };
+    waited += step;
+    if (waited < limitMs) gateway.log(`Restart is waiting for ${requests(result.inFlight)} in flight (${span(waited)} so far, at most ${span(limitMs)}).`);
+  }
+  const cut = gateway.inFlight();
+  await gateway.stop();
+  if (cut) gateway.log(`Restarting after waiting ${span(limitMs)}: ${requests(cut)} in flight ${cut === 1 ? "was" : "were"} cut.`);
+  return { cut };
+}
+
+// One look at the gateway's address: "running" when its status is answered,
+// "closed" when nothing listens there, "unclear" for anything else: no answer
+// within `waitMs`, or one that is not a gateway's status. A gateway that is
+// busy can be slow to answer, so "unclear" is never taken for "closed".
+function lookAt(origin, waitMs = 1000) {
+  return new Promise((resolve) => {
+    const request = http.get(`${origin}${STATUS_PATH}`, { agent: false, timeout: waitMs }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        let status = null;
+        try {
+          status = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        } catch {
+          // not a gateway's status
+        }
+        resolve(response.statusCode === 200 && status !== null && typeof status === "object" ? "running" : "unclear");
+      });
+      response.on("error", () => resolve("unclear"));
+      response.on("close", () => resolve("unclear"));
+    });
+    request.on("timeout", () => request.destroy());
+    request.on("error", (error) => resolve(error.code === "ECONNREFUSED" ? "closed" : "unclear"));
+  });
+}
+
+// What became of a gateway whose answer to the stop call was lost with its
+// connection. A gateway that stops closes its port and removes its control
+// token before it answers, so both gone means "stopped"; one that answers its
+// status is "running". Looks for a few seconds, because a gateway can be in
+// the middle of stopping, and says "unknown" when neither shows by then.
+async function afterLostAnswer(origin, tokenFile) {
+  const deadline = Date.now() + LOST_ANSWER_MS;
+  for (;;) {
+    const seen = await lookAt(origin);
+    if (seen === "running") return "running";
+    if (seen === "closed" && !fs.existsSync(tokenFile)) return "stopped";
+    if (Date.now() >= deadline) return "unknown";
+    await new Promise((resolve) => setTimeout(resolve, LOST_ANSWER_PAUSE_MS));
+  }
+}
+
+// The control token the gateway wrote to its file when it started, or null
+// when the file is missing or does not hold one.
+function controlToken(tokenFile) {
+  try {
+    const token = fs.readFileSync(tokenFile, "utf8").trim();
+    return /^[0-9a-f]{64}$/.test(token) ? token : null;
+  } catch {
+    return null;
+  }
+}
+
+// Asks the running gateway, over its control interface, to stop at a moment
+// with nothing in flight. Resolves { status, text } of its answer, and rejects
+// with the code ANSWER_LOST when the connection is lost before the whole
+// answer has arrived. The token goes into the request header and nowhere else.
+//
+// The connection is not kept for another request (`agent: false`), so it is
+// closed from this side once the answer has been read. A gateway that has
+// stopped waits for that before its process ends, and so never ends while its
+// answer is still on the way.
+function askToStop(origin, token, waitSeconds) {
+  const body = JSON.stringify({ waitSeconds });
+  return new Promise((resolve, reject) => {
+    const lost = () => reject(Object.assign(new Error("The connection to the gateway was lost before it answered."), { code: "ANSWER_LOST" }));
+    const request = http.request(`${origin}${CONTROL_PREFIX}stop`, { method: "POST", agent: false, headers: { "x-dshproxy-token": token, "content-type": "application/json", "content-length": Buffer.byteLength(body) } }, (response) => {
+      const chunks = [];
+      let size = 0;
+      response.on("data", (chunk) => {
+        size += chunk.length;
+        if (size <= 64 * 1024) chunks.push(chunk);
+      });
+      response.on("end", () => resolve({ status: response.statusCode, text: Buffer.concat(chunks).toString("utf8") }));
+      response.on("error", lost);
+      response.on("close", lost);
+    });
+    request.on("error", lost);
+    // The gateway answers within the wait, plus the time its backend takes to exit.
+    request.setTimeout((waitSeconds + 60) * 1000, () => request.destroy());
+    request.end(body);
+  });
+}
+
 function printAccounts(state, out) {
   if (!state.accounts.length) {
     out("Accounts: none. Sign in with `dshproxy login <provider>`.");
@@ -102,6 +230,7 @@ async function status(out) {
   const state = await app.snapshot();
   const live = await runningStatus(state.origin);
   out(live ? `Gateway: running on ${state.origin} since ${live.startedAt} (backend ${live.backend.name} ${live.backend.version}, PID ${live.backend.pid})` : `Gateway: not running. Start it with \`dshproxy start\`. It will listen on ${state.origin}.`);
+  if (Number.isInteger(live?.inFlight)) out(`Requests in flight: ${live.inFlight}`);
   printAccounts(state, out);
   const keys = Object.keys(state.readable);
   out(`API keys: ${keys.length ? keys.map((key) => `${key} (${state.readable[key].region})`).join(", ") : "none"}`);
@@ -135,6 +264,9 @@ async function statusJson() {
     running: Boolean(live),
     origin: state.origin,
     startedAt: live?.startedAt ?? null,
+    // Requests the gateway is serving right now; null when it is not running
+    // or is a version that does not count them.
+    inFlight: Number.isInteger(live?.inFlight) ? live.inFlight : null,
     backend: live ? live.backend : { name: lock.name, version: lock.version, running: false, pid: null },
     backendLock: { version: lock.version, publishedAt: lock.publishedAt || null, previous: lock.previous ? lock.previous.version : null },
     update: live?.update || null,
@@ -194,6 +326,9 @@ function rollbackLock(out) {
 }
 
 async function main(argv, out = console.log) {
+  // Offline media quotes must not migrate, read, or modify the user's chat settings.
+  // `video key set` reads its key from standard input, like `key set` below.
+  if (argv[0] === "video") return require("./video/command").run(argv.slice(1), out, { readSecret });
   // Only the default data folder is migrated; a DSHPROXY_HOME the user set is
   // used as given.
   if (!process.env.DSHPROXY_HOME) {
@@ -212,7 +347,7 @@ async function main(argv, out = console.log) {
       // version will not start, go back to the previous one.
       let running = null;
       let restarting = false;
-      const launch = () => daemon.start({ print: out, restart: restartGateway }).then((started) => {
+      const launch = () => daemon.start({ print: out, restart: restartGateway, exit: () => process.exit(0) }).then((started) => {
         running = started;
       });
       const startWithRetries = async () => {
@@ -233,7 +368,8 @@ async function main(argv, out = console.log) {
         restarting = true;
         try {
           out("Restarting the gateway...");
-          await running.stop();
+          // Waits for a moment with no request in flight, so no session is cut.
+          await stopForRestart(running);
           try {
             await startWithRetries();
           } catch (error) {
@@ -256,6 +392,57 @@ async function main(argv, out = console.log) {
       process.on("SIGINT", shutdown);
       process.on("SIGTERM", shutdown);
       return new Promise(() => {});
+    }
+    case "stop": {
+      // Only the stop that waits for an idle moment exists: nothing here stops
+      // a gateway at once.
+      let whenIdle = false;
+      let wait = null;
+      for (let index = 0; index < rest.length; index += 1) {
+        const value = rest[index + 1] || "";
+        if (rest[index] === "--when-idle" && !whenIdle) whenIdle = true;
+        else if (rest[index] === "--wait" && wait === null && /^\d{1,5}$/.test(value) && Number(value) <= MAX_STOP_WAIT_SECONDS) {
+          wait = Number(value);
+          index += 1;
+        } else throw new Error(STOP_USAGE);
+      }
+      if (!whenIdle) throw new Error(STOP_USAGE);
+      // The gateway is found as `status` finds it: at the address in the settings.
+      const origin = settingsFile.origin(settingsFile.load());
+      // Not running is said only when nothing listens there. A gateway that
+      // is slow to give its status, or gives one that cannot be read, is
+      // asked to stop all the same: its answer to that settles it.
+      const seen = await lookAt(origin, STOP_STATUS_MS);
+      if (seen === "closed") throw new Error(`The gateway is not running on ${origin}. Nothing was stopped.`);
+      const tokenFile = settingsFile.paths().controlToken;
+      const token = controlToken(tokenFile);
+      if (!token && seen === "running") throw new Error(`${tokenFile} cannot be read, so the running gateway cannot be asked. Nothing was stopped.`);
+      if (!token) throw new Error(`The gateway on ${origin} did not give its status within ${STOP_STATUS_MS / 1000} seconds; it may be busy. ${tokenFile} cannot be read, so it cannot be asked to stop. Nothing was stopped.`);
+      let answer;
+      try {
+        answer = await askToStop(origin, token, wait ?? STOP_WAIT_SECONDS);
+      } catch (error) {
+        if (error.code !== "ANSWER_LOST") throw error;
+        // No answer does not mean no stop: the gateway itself shows which.
+        const became = await afterLostAnswer(origin, tokenFile);
+        if (became === "stopped") return out(JSON.stringify({ stopped: true }));
+        if (became === "running") throw new Error(`The connection to the gateway was lost before it answered, and it is still running on ${origin}. Nothing was stopped.`);
+        throw new Error("The gateway's answer did not arrive: the connection was lost, and it is not known whether the gateway stopped. Check with `dshproxy status`.");
+      }
+      if (answer.status === 404) throw new Error("The running gateway is an older DSHProxy that cannot stop when idle. Nothing was stopped.");
+      if (answer.status === 401) throw new Error("The running gateway did not accept the control token; it may use another data folder. Nothing was stopped.");
+      if (answer.status !== 200) throw new Error(`The running gateway refused to stop when idle (HTTP ${answer.status}). Nothing was stopped.`);
+      let result = null;
+      try {
+        result = JSON.parse(answer.text);
+      } catch {
+        // reported below
+      }
+      if (result?.stopped === true) return out(JSON.stringify({ stopped: true }));
+      if (result?.stopped !== false || !Number.isInteger(result.inFlight) || result.inFlight < 0) throw new Error("DSHProxy did not understand the gateway's answer, so it is not known whether it stopped. Check with `dshproxy status`.");
+      out(JSON.stringify({ stopped: false, inFlight: result.inFlight }));
+      process.exitCode = 2;
+      return undefined;
     }
     case "status":
       if (flags.has("--json")) return out(JSON.stringify(await statusJson()));
@@ -420,4 +607,4 @@ async function main(argv, out = console.log) {
   }
 }
 
-module.exports = { main };
+module.exports = { main, stopForRestart };

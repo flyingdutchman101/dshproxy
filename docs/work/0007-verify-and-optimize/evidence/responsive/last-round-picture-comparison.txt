@@ -1,0 +1,201 @@
+Pictures of the last round compared pixel for pixel (harness/compare.ps1). The build stamp and the gateway address in the pictures are the same in all sets.
+
+1. The same check program on the sources before this round and on the final sources (two runs, one after the other):
+pictures compared: 231; the same pixel for pixel: 220; different: 11; only in the first set: 0; only in the second: 0
+chat-models-860x600.png : 15539 of 516000 pixels differ, in x 291..790, y 334..470
+chat-models-update-bar-860x600.png : 9181 of 516000 pixels differ, in x 291..790, y 392..469
+dialog-sign-in-code-554x549.png : 591 of 304146 pixels differ, in x 416..514, y 262..267
+video-log-1280x672.png : 65165 of 860160 pixels differ, in x 8..1271, y 31..663
+video-log-1280x880.png : 90651 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-log-1366x728.png : 76825 of 994448 pixels differ, in x 8..1357, y 31..719
+video-log-1536x824.png : 107664 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-log-1920x1040.png : 170585 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-log-2560x1392.png : 326234 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-log-3440x1392.png : 466992 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-log-5120x1392.png : 735608 of 7127040 pixels differ, in x 8..5111, y 31..1383
+
+   The two Models pictures at 860x600 are the change. The sign-in dialog has a moving bar. The video-log pictures differ all over the window: see 3.
+
+2. The pictures kept in this folder before this round against the final run:
+pictures compared: 231; the same pixel for pixel: 62; different: 169; only in the first set: 0; only in the second: 0
+chat-accounts-limits-arrive-1177x618.png : 43881 of 727386 pixels differ, in x 8..1168, y 31..609
+chat-accounts-limits-arrive-1280x672.png : 49881 of 860160 pixels differ, in x 8..1271, y 31..663
+chat-accounts-limits-arrive-1280x880.png : 68585 of 1126400 pixels differ, in x 8..1271, y 31..871
+chat-accounts-limits-arrive-1366x728.png : 59060 of 994448 pixels differ, in x 8..1357, y 31..719
+chat-accounts-limits-arrive-1536x824.png : 84341 of 1265664 pixels differ, in x 8..1527, y 31..815
+chat-accounts-limits-arrive-1920x1040.png : 131276 of 1996800 pixels differ, in x 8..1911, y 31..1031
+chat-accounts-limits-arrive-2560x1392.png : 247506 of 3563520 pixels differ, in x 8..2551, y 31..1383
+chat-accounts-limits-arrive-3440x1392.png : 341130 of 4788480 pixels differ, in x 8..3431, y 31..1383
+chat-accounts-limits-arrive-5120x1392.png : 519424 of 7127040 pixels differ, in x 8..5111, y 31..1383
+chat-accounts-limits-arrive-860x600.png : 33330 of 516000 pixels differ, in x 8..851, y 31..591
+chat-accounts-not-answering-1177x618.png : 58303 of 727386 pixels differ, in x 8..1168, y 31..609
+chat-accounts-not-answering-1280x672.png : 66814 of 860160 pixels differ, in x 8..1271, y 31..663
+chat-accounts-not-answering-1280x880.png : 91557 of 1126400 pixels differ, in x 8..1271, y 31..871
+chat-accounts-not-answering-1366x728.png : 74184 of 994448 pixels differ, in x 8..1357, y 31..719
+chat-accounts-not-answering-1536x824.png : 98199 of 1265664 pixels differ, in x 8..1527, y 31..815
+chat-accounts-not-answering-1920x1040.png : 155305 of 1996800 pixels differ, in x 8..1911, y 31..1031
+chat-accounts-not-answering-2560x1392.png : 282106 of 3563520 pixels differ, in x 8..2551, y 31..1383
+chat-accounts-not-answering-3440x1392.png : 383732 of 4788480 pixels differ, in x 8..3431, y 31..1383
+chat-accounts-not-answering-5120x1392.png : 578193 of 7127040 pixels differ, in x 8..5111, y 31..1383
+chat-accounts-not-answering-860x600.png : 31267 of 516000 pixels differ, in x 8..851, y 31..591
+chat-accounts-update-bar-1177x618.png : 50941 of 727386 pixels differ, in x 8..1168, y 31..609
+chat-accounts-update-bar-1280x672.png : 58799 of 860160 pixels differ, in x 8..1271, y 31..663
+chat-accounts-update-bar-1280x880.png : 82116 of 1126400 pixels differ, in x 8..1271, y 31..871
+chat-accounts-update-bar-1366x728.png : 65030 of 994448 pixels differ, in x 8..1357, y 31..719
+chat-accounts-update-bar-1536x824.png : 84383 of 1265664 pixels differ, in x 8..1527, y 31..815
+chat-accounts-update-bar-1920x1040.png : 133357 of 1996800 pixels differ, in x 8..1911, y 31..1031
+chat-accounts-update-bar-2560x1392.png : 250415 of 3563520 pixels differ, in x 8..2551, y 31..1383
+chat-accounts-update-bar-3440x1392.png : 346155 of 4788480 pixels differ, in x 8..3431, y 31..1383
+chat-accounts-update-bar-5120x1392.png : 527593 of 7127040 pixels differ, in x 8..5111, y 31..1383
+chat-accounts-update-bar-860x600.png : 34560 of 516000 pixels differ, in x 8..851, y 31..591
+chat-log-1280x672.png : 44195 of 860160 pixels differ, in x 8..1271, y 31..663
+chat-log-1280x880.png : 64162 of 1126400 pixels differ, in x 8..1271, y 31..871
+chat-log-1366x728.png : 56298 of 994448 pixels differ, in x 8..1357, y 31..719
+chat-log-1536x824.png : 79754 of 1265664 pixels differ, in x 8..1527, y 31..815
+chat-log-1920x1040.png : 122026 of 1996800 pixels differ, in x 8..1911, y 31..1031
+chat-log-2560x1392.png : 235100 of 3563520 pixels differ, in x 8..2551, y 31..1383
+chat-log-3440x1392.png : 339664 of 4788480 pixels differ, in x 8..3431, y 31..1383
+chat-log-5120x1392.png : 539313 of 7127040 pixels differ, in x 8..5111, y 31..1383
+chat-models-860x600.png : 15539 of 516000 pixels differ, in x 291..790, y 334..470
+chat-models-update-bar-1177x618.png : 43611 of 727386 pixels differ, in x 8..1168, y 31..609
+chat-models-update-bar-1280x672.png : 51375 of 860160 pixels differ, in x 8..1271, y 31..663
+chat-models-update-bar-1280x880.png : 68504 of 1126400 pixels differ, in x 8..1271, y 31..871
+chat-models-update-bar-1366x728.png : 61358 of 994448 pixels differ, in x 8..1357, y 31..719
+chat-models-update-bar-1536x824.png : 80950 of 1265664 pixels differ, in x 8..1527, y 31..815
+chat-models-update-bar-1920x1040.png : 124058 of 1996800 pixels differ, in x 8..1911, y 31..1031
+chat-models-update-bar-2560x1392.png : 226637 of 3563520 pixels differ, in x 8..2551, y 31..1383
+chat-models-update-bar-3440x1392.png : 310624 of 4788480 pixels differ, in x 8..3431, y 31..1383
+chat-models-update-bar-5120x1392.png : 472313 of 7127040 pixels differ, in x 8..5111, y 31..1383
+chat-models-update-bar-860x600.png : 44330 of 516000 pixels differ, in x 8..851, y 31..591
+video-accounts-error-1177x618.png : 39937 of 727386 pixels differ, in x 8..1168, y 31..609
+video-accounts-error-1280x672.png : 48137 of 860160 pixels differ, in x 8..1271, y 31..663
+video-accounts-error-1280x880.png : 64118 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-accounts-error-1366x728.png : 57070 of 994448 pixels differ, in x 8..1357, y 31..719
+video-accounts-error-1536x824.png : 75680 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-accounts-error-1920x1040.png : 124834 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-accounts-error-2560x1392.png : 229842 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-accounts-error-3440x1392.png : 316430 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-accounts-error-5120x1392.png : 482805 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-accounts-error-860x600.png : 30366 of 516000 pixels differ, in x 8..851, y 31..591
+video-accounts-signed-in-1177x618.png : 38670 of 727386 pixels differ, in x 8..1168, y 31..609
+video-accounts-signed-in-1280x672.png : 46917 of 860160 pixels differ, in x 8..1271, y 31..663
+video-accounts-signed-in-1280x880.png : 64349 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-accounts-signed-in-1366x728.png : 55665 of 994448 pixels differ, in x 8..1357, y 31..719
+video-accounts-signed-in-1536x824.png : 74412 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-accounts-signed-in-1920x1040.png : 121715 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-accounts-signed-in-2560x1392.png : 226788 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-accounts-signed-in-3440x1392.png : 313340 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-accounts-signed-in-5120x1392.png : 475717 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-accounts-signed-in-860x600.png : 29777 of 516000 pixels differ, in x 8..851, y 31..591
+video-accounts-signed-out-1177x618.png : 40007 of 727386 pixels differ, in x 8..1168, y 31..609
+video-accounts-signed-out-1280x672.png : 48425 of 860160 pixels differ, in x 8..1271, y 31..663
+video-accounts-signed-out-1280x880.png : 64902 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-accounts-signed-out-1366x728.png : 56369 of 994448 pixels differ, in x 8..1357, y 31..719
+video-accounts-signed-out-1536x824.png : 75766 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-accounts-signed-out-1920x1040.png : 122385 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-accounts-signed-out-2560x1392.png : 224281 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-accounts-signed-out-3440x1392.png : 310374 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-accounts-signed-out-5120x1392.png : 474265 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-accounts-signed-out-860x600.png : 31890 of 516000 pixels differ, in x 8..851, y 31..591
+video-accounts-waiting-1177x618.png : 37495 of 727386 pixels differ, in x 8..1168, y 31..609
+video-accounts-waiting-1280x672.png : 45603 of 860160 pixels differ, in x 8..1271, y 31..663
+video-accounts-waiting-1280x880.png : 63004 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-accounts-waiting-1366x728.png : 54095 of 994448 pixels differ, in x 8..1357, y 31..719
+video-accounts-waiting-1536x824.png : 73600 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-accounts-waiting-1920x1040.png : 119011 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-accounts-waiting-2560x1392.png : 219770 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-accounts-waiting-3440x1392.png : 302890 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-accounts-waiting-5120x1392.png : 461312 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-accounts-waiting-860x600.png : 30121 of 516000 pixels differ, in x 8..851, y 31..591
+video-api-keys-none-saved-1177x618.png : 39395 of 727386 pixels differ, in x 8..1168, y 31..609
+video-api-keys-none-saved-1280x672.png : 49058 of 860160 pixels differ, in x 8..1271, y 31..663
+video-api-keys-none-saved-1280x880.png : 66813 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-api-keys-none-saved-1366x728.png : 58254 of 994448 pixels differ, in x 8..1357, y 31..719
+video-api-keys-none-saved-1536x824.png : 77004 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-api-keys-none-saved-1920x1040.png : 126992 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-api-keys-none-saved-2560x1392.png : 235666 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-api-keys-none-saved-3440x1392.png : 321509 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-api-keys-none-saved-5120x1392.png : 496843 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-api-keys-none-saved-860x600.png : 31451 of 516000 pixels differ, in x 8..851, y 31..591
+video-api-keys-one-from-environment-1177x618.png : 42678 of 727386 pixels differ, in x 8..1168, y 31..609
+video-api-keys-one-from-environment-1280x672.png : 48994 of 860160 pixels differ, in x 8..1271, y 31..663
+video-api-keys-one-from-environment-1280x880.png : 69598 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-api-keys-one-from-environment-1366x728.png : 59669 of 994448 pixels differ, in x 8..1357, y 31..719
+video-api-keys-one-from-environment-1536x824.png : 78306 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-api-keys-one-from-environment-1920x1040.png : 133326 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-api-keys-one-from-environment-2560x1392.png : 241879 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-api-keys-one-from-environment-3440x1392.png : 335711 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-api-keys-one-from-environment-5120x1392.png : 514940 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-api-keys-one-from-environment-860x600.png : 33285 of 516000 pixels differ, in x 8..851, y 31..591
+video-api-keys-one-unreadable-1177x618.png : 43368 of 727386 pixels differ, in x 8..1168, y 31..609
+video-api-keys-one-unreadable-1280x672.png : 50845 of 860160 pixels differ, in x 8..1271, y 31..663
+video-api-keys-one-unreadable-1280x880.png : 71348 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-api-keys-one-unreadable-1366x728.png : 61626 of 994448 pixels differ, in x 8..1357, y 31..719
+video-api-keys-one-unreadable-1536x824.png : 83694 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-api-keys-one-unreadable-1920x1040.png : 136498 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-api-keys-one-unreadable-2560x1392.png : 246320 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-api-keys-one-unreadable-3440x1392.png : 339298 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-api-keys-one-unreadable-5120x1392.png : 521344 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-api-keys-one-unreadable-860x600.png : 33463 of 516000 pixels differ, in x 8..851, y 31..591
+video-api-keys-some-saved-1177x618.png : 41295 of 727386 pixels differ, in x 8..1168, y 31..609
+video-api-keys-some-saved-1280x672.png : 48903 of 860160 pixels differ, in x 8..1271, y 31..663
+video-api-keys-some-saved-1280x880.png : 66826 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-api-keys-some-saved-1366x728.png : 56618 of 994448 pixels differ, in x 8..1357, y 31..719
+video-api-keys-some-saved-1536x824.png : 78886 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-api-keys-some-saved-1920x1040.png : 130203 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-api-keys-some-saved-2560x1392.png : 240145 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-api-keys-some-saved-3440x1392.png : 330990 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-api-keys-some-saved-5120x1392.png : 508265 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-api-keys-some-saved-860x600.png : 31811 of 516000 pixels differ, in x 8..851, y 31..591
+video-harness-1177x618.png : 41867 of 727386 pixels differ, in x 8..1168, y 31..609
+video-harness-1280x672.png : 51457 of 860160 pixels differ, in x 8..1271, y 31..663
+video-harness-1280x880.png : 72269 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-harness-1366x728.png : 61659 of 994448 pixels differ, in x 8..1357, y 31..719
+video-harness-1536x824.png : 82714 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-harness-1920x1040.png : 136861 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-harness-2560x1392.png : 252684 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-harness-3440x1392.png : 351584 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-harness-5120x1392.png : 547247 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-harness-860x600.png : 35739 of 516000 pixels differ, in x 8..851, y 31..591
+video-lanes-1177x618.png : 42670 of 727386 pixels differ, in x 8..1168, y 31..609
+video-lanes-1280x672.png : 51325 of 860160 pixels differ, in x 8..1271, y 31..663
+video-lanes-1280x880.png : 70809 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-lanes-1366x728.png : 62148 of 994448 pixels differ, in x 8..1357, y 31..719
+video-lanes-1536x824.png : 84065 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-lanes-1920x1040.png : 136871 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-lanes-2560x1392.png : 246844 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-lanes-3440x1392.png : 340200 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-lanes-5120x1392.png : 522418 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-lanes-860x600.png : 34644 of 516000 pixels differ, in x 8..851, y 31..591
+video-log-1177x618.png : 39415 of 727386 pixels differ, in x 8..1168, y 31..609
+video-log-1280x672.png : 54600 of 860160 pixels differ, in x 8..1271, y 31..663
+video-log-1280x880.png : 9484 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-log-1366x728.png : 12786 of 994448 pixels differ, in x 8..1357, y 31..719
+video-log-1536x824.png : 18500 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-log-1920x1040.png : 35461 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-log-2560x1392.png : 74291 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-log-3440x1392.png : 106509 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-log-5120x1392.png : 177207 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-log-860x600.png : 34531 of 516000 pixels differ, in x 8..851, y 31..591
+video-models-1177x618.png : 42575 of 727386 pixels differ, in x 8..1168, y 31..609
+video-models-1280x672.png : 52356 of 860160 pixels differ, in x 8..1271, y 31..663
+video-models-1280x880.png : 72000 of 1126400 pixels differ, in x 8..1271, y 31..871
+video-models-1366x728.png : 60927 of 994448 pixels differ, in x 8..1357, y 31..719
+video-models-1536x824.png : 81233 of 1265664 pixels differ, in x 8..1527, y 31..815
+video-models-1920x1040.png : 133042 of 1996800 pixels differ, in x 8..1911, y 31..1031
+video-models-2560x1392.png : 246334 of 3563520 pixels differ, in x 8..2551, y 31..1383
+video-models-3440x1392.png : 342284 of 4788480 pixels differ, in x 8..3431, y 31..1383
+video-models-5120x1392.png : 526444 of 7127040 pixels differ, in x 8..5111, y 31..1383
+video-models-860x600.png : 34665 of 516000 pixels differ, in x 8..851, y 31..591
+
+   Chat > Models from 1177x618 up: 9 of 9 pictures with 0 differing pixels. Everything else in this list but chat-models-860x600 differs all over the window: see 3.
+
+3. Why two runs of the same sources differ all over the window in some pictures. After a resize the app shows its backdrop (night sky, 150 stars)
+   stretched from the size before, and a timer is meant to draw it again at the new size. It does not: the stretched one already has the new size,
+   which is the timer's test for 'nothing to do' (Backdrop.Schedule in app/Skin.cs, in the code since e44910b). The backdrop of a window that has been
+   resized is therefore a copy stretched once per size it was painted at, and which sizes it was painted at on the way depends on timing.
+   Not changed in this round. harness/backdrop-probe.ps1, on a form that is never shown:
+     at 800x600, first use: against a fresh drawing at that size: 0 of 53868 sampled pixels differ
+     resized to 1000x700 and asked for once: a redraw is pending: True
+     1.5 s later: a redraw is pending: False
+     the backdrop the window has now, against a fresh drawing at 1000x700: 1973 of 78156 sampled pixels differ
