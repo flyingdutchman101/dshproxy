@@ -2,9 +2,10 @@
 //
 // The app owns no gateway logic. It starts `node bin/dshproxy.js start` as a
 // hidden child process, reads `dshproxy status --json`, and talks to the
-// running gateway's local control API for sign-in, accounts and limits. Built
-// with the C# compiler that ships with Windows (see app/build.ps1), so the
-// code stays within C# 5.
+// running gateway's local control API for sign-in, accounts and limits. The
+// Video workspace reads and writes its models and billing routes only through
+// `dshproxy video settings` (see VideoSettings). Built with the C# compiler
+// that ships with Windows (see app/build.ps1), so the code stays within C# 5.
 
 using System;
 using System.Collections;
@@ -137,6 +138,20 @@ namespace DSHProxy
             }
             Cache[provider] = image;
             return image;
+        }
+
+        // A logo for a list row: `size` pixels, centred in a slot as tall as
+        // the row, so a list with logos keeps the row height it had without.
+        // Null when there is no logo of that name.
+        public static Image Slot(string provider, int size, int rowHeight)
+        {
+            using (var logo = Sized(provider, size))
+            {
+                if (logo == null) return null;
+                var slot = new Bitmap(size, rowHeight);
+                using (var g = Graphics.FromImage(slot)) g.DrawImage(logo, 0, (rowHeight - size) / 2, size, size);
+                return slot;
+            }
         }
 
         // A copy drawn at `size` pixels, for list views and buttons.
@@ -857,6 +872,9 @@ namespace DSHProxy
             var tabArg = Array.IndexOf(args, "--tab");
             int tabIndex;
             if (tabArg >= 0 && tabArg + 1 < args.Length && int.TryParse(args[tabArg + 1], out tabIndex) && tabIndex >= 0 && tabIndex < tabs.TabPages.Count) tabs.SelectedIndex = tabIndex;
+            // --workspace video: open in the Video workspace (used to check the layout).
+            var workspaceArg = Array.IndexOf(args, "--workspace");
+            if (workspaceArg >= 0 && workspaceArg + 1 < args.Length && args[workspaceArg + 1] == "video") videoSwitch.Checked = true;
             FormClosing += OnClosing;
             accountsPanel.Resize += (s, e) => FitCards();
         }
@@ -877,6 +895,13 @@ namespace DSHProxy
         {
             if (shownOnce) return;
             shownOnce = true;
+            // Opened straight in the Video workspace: its settings are read
+            // now that the window exists to show them.
+            if (videoPending)
+            {
+                videoPending = false;
+                LoadVideoSettings();
+            }
             if (previewLimits != null)
             {
                 Text = "DeepSeekProxy (preview)";
@@ -1103,13 +1128,20 @@ namespace DSHProxy
             logPage.Controls.Add(Row(openLogFolder));
             tabs.TabPages.Add(logPage);
 
+            // The Video workspace: one page for each section above except the
+            // log, which both workspaces share.
+            BuildVideoPages();
+
             tabs.SelectedIndexChanged += (s, e) =>
             {
                 // A control on a hidden page must not keep the focus: WinForms
                 // then scrolls its AutoScroll panel on the way back, which looks
                 // like the page jumping.
                 if (navStrip != null) navStrip.Focus();
-                if (tabs.SelectedIndex == 0)
+                ShowWorkspace();
+                // In the Video workspace the first section is the video
+                // accounts page, which reads nothing.
+                if (tabs.SelectedIndex == 0 && !videoMode)
                 {
                     accountsPanel.AutoScrollPosition = Point.Empty;
                     LoadLimits(false);
@@ -1125,8 +1157,15 @@ namespace DSHProxy
             
             var nav = new NavStrip(tabs);
             navStrip = nav;
-            Controls.Add(tabs);
+            // The chat pages and the video pages share one area; ShowWorkspace
+            // decides which of the two is on screen. They sit in their own
+            // panel so the resize preview, which hides and shows the window's
+            // direct children, cannot bring the hidden one back.
+            content.Controls.Add(tabs);
+            content.Controls.Add(videoHost);
+            Controls.Add(content);
             Controls.Add(nav);
+            Controls.Add(BuildWorkspaceBar());
             Controls.Add(updateBar);
             Controls.Add(bottom);
             Controls.Add(header);
@@ -1715,6 +1754,9 @@ namespace DSHProxy
                 if (dialog.SignedInAs != null)
                 {
                     AppendLog("Signed in: " + dialog.SignedInAs);
+                    // A chat account: show it in the Chat workspace (the tray
+                    // menu can start a sign-in while Video is showing).
+                    chatSwitch.Checked = true;
                     tabs.SelectedIndex = 0;
                     RefreshStatus();
                     LoadLimits(true);
@@ -2116,6 +2158,662 @@ namespace DSHProxy
             });
         }
 
+        // ---------- video workspace ----------
+        //
+        // The Chat / Video switch changes what the sections show; the selected
+        // section stays where it is, and the log is the same in both. The
+        // video pages are a setup surface: nothing here signs in, asks for a
+        // price, or submits a job. Models and billing routes are read and
+        // written through the command line only (see VideoSettings), off the
+        // UI thread. A preview window shows sample data and runs no command.
+
+        private readonly Panel content = new Panel { Dock = DockStyle.Fill };
+        private readonly Panel videoHost = new Panel { Dock = DockStyle.Fill, Visible = false };
+        private readonly List<Panel> videoPages = new List<Panel>();
+        private readonly SegmentRadio chatSwitch = new SegmentRadio { Text = "Chat", Size = new Size(96, 34), Checked = true, AccessibleName = "Chat workspace", AccessibleDescription = "Shows chat accounts, API keys, lanes and models in the sections below." };
+        private readonly SegmentRadio videoSwitch = new SegmentRadio { Text = "Video", Size = new Size(96, 34), AccessibleName = "Video workspace", AccessibleDescription = "Shows video accounts, API keys, lanes and models in the sections below." };
+        private readonly Label workspaceHint = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 13, 0, 0) };
+        private readonly ListView videoModelsList = new DarkList();
+        private readonly ListView videoLanesList = new DarkList();
+        private readonly ListView videoHarnessList = new DarkList();
+        private readonly Label videoModelsStatus = new GlassLabel { ForeColor = Theme.Muted };
+        private readonly Label videoLanesStatus = new GlassLabel { ForeColor = Theme.Muted };
+        private ListViewItem videoHarnessSaved;
+        private ListViewItem videoHarnessUnrouted;
+        private ListViewItem videoHarnessFiles;
+        // Where the DeepSeek Harness video bundle sits in the DSHProxy folder.
+        private const string VideoBundleFolder = "integrations\\dsh-video";
+        // Switched off while a video settings command is running.
+        private readonly List<Button> videoButtons = new List<Button>();
+        // What the command line last reported; null until it has answered.
+        private List<VideoSettings.Model> videoModels;
+        private string videoError;
+        private bool videoMode;
+        private bool videoBusy;
+        private bool videoPending;
+        private bool fillingVideo;
+
+        // A preview window (--preview, --preview-limits) must not read or
+        // change the real configuration, so it works on sample settings.
+        private bool VideoSynthetic
+        {
+            get { return ReadOnly || previewLimits != null; }
+        }
+
+        private System.Windows.Forms.Control BuildWorkspaceBar()
+        {
+            var bar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 50, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(22, 6, 22, 0) };
+            bar.Controls.Add(new GlassLabel { Text = "Workspace", AutoSize = true, Font = Theme.Ui(10f, FontStyle.Bold), Margin = new Padding(0, 11, 12, 0) });
+            var capsule = Glass.Make(new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(4), Margin = new Padding(0, 0, 14, 0), AccessibleRole = AccessibleRole.Grouping, AccessibleName = "Workspace" }, 21, true);
+            capsule.Controls.Add(chatSwitch);
+            capsule.Controls.Add(videoSwitch);
+            bar.Controls.Add(capsule);
+            bar.Controls.Add(workspaceHint);
+            videoSwitch.CheckedChanged += (s, e) => SetWorkspace(videoSwitch.Checked);
+            ShowWorkspace();
+            return bar;
+        }
+
+        private void SetWorkspace(bool video)
+        {
+            if (videoMode == video) return;
+            videoMode = video;
+            ShowWorkspace();
+            if (video)
+            {
+                // Before the window exists there is nowhere to report to.
+                if (IsHandleCreated) LoadVideoSettings();
+                else videoPending = true;
+            }
+            else if (tabs.SelectedIndex == 0)
+            {
+                // Back on the chat accounts: the same refresh as choosing the tab.
+                accountsPanel.AutoScrollPosition = Point.Empty;
+                LoadLimits(false);
+            }
+        }
+
+        // Puts the page for the current workspace and section on screen. The
+        // section index never changes here, so a switch stays on the same tab.
+        private void ShowWorkspace()
+        {
+            var index = tabs.SelectedIndex;
+            var logSelected = index == tabs.TabPages.Count - 1 && tabs.TabPages.Count > 0;
+            var showVideo = videoMode && index < videoPages.Count;
+            content.SuspendLayout();
+            if (showVideo)
+            {
+                // The new page goes up before the old one comes down, so there
+                // is never a blank frame between them.
+                videoPages[index].Visible = true;
+                videoPages[index].BringToFront();
+                for (var i = 0; i < videoPages.Count; i++) if (i != index) videoPages[i].Visible = false;
+                videoHost.Visible = true;
+                videoHost.BringToFront();
+                tabs.Visible = false;
+            }
+            else
+            {
+                tabs.Visible = true;
+                tabs.BringToFront();
+                videoHost.Visible = false;
+            }
+            content.ResumeLayout(true);
+            content.Invalidate(true);
+            SetText(workspaceHint, logSelected ? "The log is shared by the Chat and Video workspaces."
+                : videoMode ? "Video routing setup. Nothing is generated or charged from this window."
+                : "Chat accounts, keys, lanes and models.");
+        }
+
+        // GWL_STYLE (-16) says whether a list is showing a sideways scroll bar (WS_HSCROLL).
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr window, int index);
+
+        private static ListView SetUpVideoList(ListView list, string name, string[] columns, int[] widths)
+        {
+            list.View = View.Details;
+            list.FullRowSelect = true;
+            list.MultiSelect = false;
+            list.HideSelection = false;
+            list.HeaderStyle = ColumnHeaderStyle.Nonclickable;
+            list.Dock = DockStyle.Fill;
+            list.AccessibleName = name;
+            for (var i = 0; i < columns.Length; i++) list.Columns.Add(columns[i], widths[i]);
+            // The last column takes the room that is left. Done once the list
+            // has settled at its new size: fitting it during the resize left a
+            // sideways scroll bar behind when the window was made smaller.
+            EventHandler fit = (s, e) =>
+            {
+                if (!list.IsHandleCreated) return;
+                list.BeginInvoke(new Action(() =>
+                {
+                    if (list.IsDisposed || list.Columns.Count == 0) return;
+                    var used = 0;
+                    for (var i = 0; i < list.Columns.Count - 1; i++) used += list.Columns[i].Width;
+                    var last = Math.Max(120, list.ClientSize.Width - used);
+                    var column = list.Columns[list.Columns.Count - 1];
+                    if (column.Width != last) column.Width = last;
+                    // The width can already be right while Windows still shows
+                    // the scroll bar it put up half way through the resize;
+                    // setting the width again makes it look once more.
+                    else if (used + last <= list.ClientSize.Width && (GetWindowLong(list.Handle, -16) & 0x00100000) != 0)
+                    {
+                        column.Width = last - 1;
+                        column.Width = last;
+                    }
+                }));
+            };
+            list.Resize += fit;
+            list.HandleCreated += fit;
+            return list;
+        }
+
+        // The top of a video page: its name, so the workspace is never in
+        // doubt, and what the page does and does not do.
+        private static System.Windows.Forms.Control VideoTop(string title, string note)
+        {
+            var top = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            top.Controls.Add(new GlassLabel { Text = title, AutoSize = true, Font = Theme.Ui(12f, FontStyle.Bold), ForeColor = Theme.Text, Margin = new Padding(0, 2, 0, 4) }, 0, 0);
+            // Sized by its text and the width it has, so a narrow window gets
+            // the lines it needs and a wide one gives the room to the list.
+            top.Controls.Add(new GlassLabel { Text = note, AutoSize = true, Dock = DockStyle.Fill, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 8) }, 0, 1);
+            return top;
+        }
+
+        private static Label Foot(string text, int height)
+        {
+            return new GlassLabel { Text = text, Dock = DockStyle.Bottom, AutoSize = false, Height = height, ForeColor = Theme.Muted, Padding = new Padding(0, 10, 0, 0) };
+        }
+
+        // The bottom of a video page that changes settings: what happened
+        // last, then the buttons.
+        private static System.Windows.Forms.Control VideoBottom(Label status, params System.Windows.Forms.Control[] buttons)
+        {
+            var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
+            bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            status.AutoSize = true;
+            status.Dock = DockStyle.Fill;
+            status.Margin = new Padding(0, 10, 0, 0);
+            status.AccessibleRole = AccessibleRole.StatusBar;
+            var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, Dock = DockStyle.Top, Margin = new Padding(0), Padding = new Padding(0, 4, 0, 0) };
+            foreach (var button in buttons) row.Controls.Add(button);
+            bottom.Controls.Add(status, 0, 0);
+            bottom.Controls.Add(row, 0, 1);
+            return bottom;
+        }
+
+        private void AddVideoPage(string section, System.Windows.Forms.Control body, System.Windows.Forms.Control top, System.Windows.Forms.Control bottom)
+        {
+            var page = Page(section, body, top, bottom);
+            page.Dock = DockStyle.Fill;
+            page.Visible = false;
+            page.AccessibleName = "Video workspace: " + section;
+            videoPages.Add(page);
+            videoHost.Controls.Add(page);
+        }
+
+        // One video page per section, in the order of the sections. The last
+        // section, the log, has none: both workspaces show the same log.
+        private void BuildVideoPages()
+        {
+            // Accounts. Nothing on this page starts a sign-in or looks one up.
+            var accounts = SetUpVideoList(new DarkList(), "Video accounts", new[] { "Service", "Billed in", "Sign-in", "State" }, new[] { 200, 178, 136, 240 });
+            VideoLogos(accounts, "krea");
+            accounts.Items.Add(new ListViewItem(new[] { VideoSettings.RouteName("krea"), VideoSettings.Units("krea"), "Manual, by you", "Not connected here \u00B7 not checked" }) { ForeColor = Theme.Muted, ImageKey = VideoLogoKey(accounts, "krea") });
+            AddVideoPage("Accounts", accounts,
+                VideoTop("Video accounts", "Video has one signed-in service, a Krea workspace, and its sign-in is manual. This app does not sign in to Krea, does not hold that sign-in and cannot show whether you are signed in. The chat accounts (Claude, ChatGPT, Gemini, Kimi) are not used for video."),
+                Foot("You sign in yourself, in a terminal in the DSHProxy folder, with the separate Krea helper: node bin\\dshproxy-krea.js login. It prints a consent address for you to open. Sign-in with a live Krea workspace has not been verified in this build.", 62));
+
+            // API keys. A table of names only: no key is read, shown or stored.
+            // These services are named in text; the app has no logo for them.
+            var keys = SetUpVideoList(new DarkList(), "Video API keys", new[] { "Billing route", "Environment variable", "Billed in", "State" }, new[] { 290, 190, 130, 150 });
+            foreach (var route in new[] { new[] { "videorouter", "VIDEOROUTER_API_KEY" }, new[] { "videorouter-replicate", "VIDEOROUTER_API_KEY" }, new[] { "kovapi", "KOVAPI_API_KEY" }, new[] { "callirra", "CALLIRRA_API_KEY" } })
+                keys.Items.Add(new ListViewItem(new[] { VideoSettings.RouteName(route[0]), route[1], VideoSettings.Units(route[0]), "Not read by this app" }) { ForeColor = Theme.Muted });
+            AddVideoPage("API keys", keys,
+                VideoTop("Video API keys", "A pay-per-use video route takes its key from an environment variable of the process that runs the video command. These keys are not entered here, not stored by DSHProxy, and not in the encrypted key store on the Chat API keys page. This app does not read or check them."),
+                Foot("Never put a key on a command line. The Krea workspace route uses a sign-in instead of a key: see Accounts.", 44));
+
+            // Lanes: one billing route for each enabled model.
+            SetUpVideoList(videoLanesList, "Video lanes: enabled models and their billing route", new[] { "Model", "Company", "Billing route", "Billed in" }, new[] { 180, 100, 250, 180 });
+            VideoLogos(videoLanesList, VideoSettings.CompanyLogos);
+            videoLanesList.ItemActivate += (s, e) => ChangeVideoRoute();
+            var changeRoute = Skin.Primary(new PillButton { Text = "Change billing route...", AutoSize = true });
+            changeRoute.Click += (s, e) => ChangeVideoRoute();
+            var reloadLanes = new PillButton { Text = "Reload video settings", AutoSize = true };
+            reloadLanes.Click += (s, e) => LoadVideoSettings();
+            videoButtons.Add(changeRoute);
+            videoButtons.Add(reloadLanes);
+            AddVideoPage("Lanes", videoLanesList,
+                VideoTop("Video lanes", "Each enabled model has exactly one billing route. A paid job is never retried automatically, moved to another provider or passed on to another route. A saved route is a setting: it does not prove a sign-in, a key, availability or a price."),
+                VideoBottom(videoLanesStatus, changeRoute, reloadLanes, CompanyNote()));
+
+            // Models: switch exact models on and off.
+            SetUpVideoList(videoModelsList, "Video models: tick to enable", new[] { "Model", "Company", "Billing route", "Billed in", "State" }, new[] { 172, 90, 196, 176, 146 });
+            VideoLogos(videoModelsList, VideoSettings.CompanyLogos);
+            videoModelsList.ItemCheck += (s, e) => OnVideoModelChecked(e);
+            var reloadModels = new PillButton { Text = "Reload video settings", AutoSize = true };
+            reloadModels.Click += (s, e) => LoadVideoSettings();
+            videoButtons.Add(reloadModels);
+            AddVideoPage("Models", videoModelsList,
+                VideoTop("Video models", "Ticked models with a billing route are what the separate DeepSeek Harness video bundle may offer; new models start switched off. A tick is a setting only: it checks no sign-in, key, availability or price, it is not a spending limit, and nothing is generated or charged here. Choose the billing route under Lanes."),
+                VideoBottom(videoModelsStatus, reloadModels, CompanyNote()));
+
+            // DeepSeek Harness: video gets there through a separate bundle that
+            // this app neither installs nor looks for in any profile. The page
+            // says so, shows the settings the bundle would read, and has no
+            // button that could look as if it applied or checked anything.
+            SetUpVideoList(videoHarnessList, "Video in DeepSeek Harness: state", new[] { "What", "State" }, new[] { 300, 470 });
+            // The rows that matter most come first, so they are on screen in the smallest window.
+            videoHarnessList.Items.Add(new ListViewItem(new[] { "Bundle installed in DeepSeek Harness?", "Not known \u00B7 this app cannot tell and does not look" }) { ForeColor = Theme.Warn });
+            videoHarnessSaved = new ListViewItem(new[] { "Enabled, with a billing route", "Not read yet" }) { ForeColor = Theme.Muted };
+            videoHarnessList.Items.Add(videoHarnessSaved);
+            videoHarnessUnrouted = new ListViewItem(new[] { "Enabled, no valid route (not offered)", "Not read yet" }) { ForeColor = Theme.Muted };
+            videoHarnessList.Items.Add(videoHarnessUnrouted);
+            videoHarnessFiles = new ListViewItem(new[] { "Bundle files in this DSHProxy folder", "" }) { ForeColor = Theme.Muted };
+            videoHarnessList.Items.Add(videoHarnessFiles);
+            AddVideoPage("DeepSeek Harness", videoHarnessList,
+                VideoTop("Video in DeepSeek Harness", "Video reaches DeepSeek Harness through a separate bundle, " + VideoBundleFolder + " in the DSHProxy folder, which has to be installed in DeepSeek Harness separately. DSHProxy does not install it, does not open a DeepSeek Harness profile for video, and cannot tell whether the bundle is installed or working there."),
+                Foot("No Preview, Apply or Verify here: this window changes nothing in DeepSeek Harness for video. The bundle reads the enabled settings above; its README says what it can do and how far it has been checked.", 44));
+
+            SetVideoStatus("Video settings have not been read yet.", Theme.Muted);
+            FillVideo();
+        }
+
+        private void SetVideoStatus(string text, Color color)
+        {
+            // The same line is on the Lanes page and on the Models page.
+            var labels = new[] { videoModelsStatus, videoLanesStatus };
+            var changed = false;
+            foreach (var label in labels)
+            {
+                if (label.Text != text) changed = true;
+                SetText(label, text);
+                if (label.ForeColor != color) label.ForeColor = color;
+            }
+            // A screen reader hears the result of a save or a failed read
+            // without having to go looking for this line. It is said once, by
+            // the copy on the video page that is on screen, and not at all
+            // when neither is.
+            var index = tabs.SelectedIndex;
+            if (!changed || !videoMode || index >= videoPages.Count) return;
+            foreach (var label in labels)
+            {
+                if (!videoPages[index].Contains(label) || !label.IsHandleCreated) continue;
+                // Saying it aloud is an extra: it must never get in the way of the setting itself.
+                try { Announce(label, text); }
+                catch (Exception) { }
+                return;
+            }
+        }
+
+        // Kept apart so a Windows without this notification only loses the announcement.
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void Announce(Control control, string text)
+        {
+            control.AccessibilityObject.RaiseAutomationNotification(System.Windows.Forms.Automation.AutomationNotificationKind.Other, System.Windows.Forms.Automation.AutomationNotificationProcessing.MostRecent, text);
+        }
+
+        // A row that says why a list of models is empty: a short title, and
+        // the detail in the wide billing route column.
+        private static ListViewItem VideoPlaceholder(int columns, string title, string detail, Color color)
+        {
+            var cells = new string[columns];
+            for (var i = 0; i < columns; i++) cells[i] = i == 0 ? title : i == 2 ? detail : "";
+            return new ListViewItem(cells) { ForeColor = color };
+        }
+
+        // The image of a row that has no logo: an empty slot, so its text
+        // lines up with the rows that have one.
+        private const string NoLogo = "none";
+
+        // Gives a video list its logos, each in a slot as tall as a row.
+        private static void VideoLogos(ListView list, params string[] names)
+        {
+            var images = new ImageList { ImageSize = new Size(22, 30), ColorDepth = ColorDepth.Depth32Bit };
+            images.Images.Add(NoLogo, new Bitmap(22, 30));
+            foreach (var name in names)
+            {
+                var image = Logos.Slot(name, 22, 30);
+                if (image != null) images.Images.Add(name, image);
+            }
+            list.SmallImageList = images;
+        }
+
+        private static string VideoLogoKey(ListView list, string name)
+        {
+            return name.Length > 0 && list.SmallImageList.Images.ContainsKey(name) ? name : NoLogo;
+        }
+
+        // Says what the logos are, next to the buttons under a list of models.
+        private static Label CompanyNote()
+        {
+            return new GlassLabel { Text = "Logos show the company behind each model, not a model mark.", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(12, 11, 0, 0) };
+        }
+
+        // Redraws the video lists from what the command line last reported.
+        private void FillVideo()
+        {
+            fillingVideo = true;
+            try
+            {
+                // Why there is nothing to list, when there is nothing to list.
+                string emptyTitle = null;
+                var emptyDetail = "";
+                var emptyColor = Theme.Muted;
+                if (videoError != null) { emptyTitle = "Not available"; emptyDetail = videoError; emptyColor = Theme.Bad; }
+                else if (videoModels == null) emptyTitle = videoBusy ? "Reading..." : "Not read yet";
+                else if (videoModels.Count == 0) { emptyTitle = "No video models"; emptyDetail = "DSHProxy lists none"; }
+
+                // Models. The tick boxes are only there when there are models.
+                videoModelsList.Items.Clear();
+                if (videoModelsList.CheckBoxes != (emptyTitle == null)) videoModelsList.CheckBoxes = emptyTitle == null;
+                videoModelsList.BeginUpdate();
+                if (emptyTitle != null) videoModelsList.Items.Add(VideoPlaceholder(5, emptyTitle, emptyDetail, emptyColor));
+                else foreach (var model in videoModels)
+                {
+                    var state = !model.Enabled ? "Off" : model.HasRoute ? "Enabled" : "No valid route";
+                    string logo;
+                    var company = VideoSettings.Company(model.Id, out logo);
+                    videoModelsList.Items.Add(new ListViewItem(new[] { model.Id, company, VideoRouteCell(model), model.HasRoute ? VideoSettings.Units(model.Route) : "", state })
+                    {
+                        Checked = model.Enabled,
+                        Tag = model,
+                        ImageKey = VideoLogoKey(videoModelsList, logo),
+                        ForeColor = !model.Enabled ? Theme.Muted : model.HasRoute ? Theme.Text : Theme.Warn
+                    });
+                }
+                videoModelsList.EndUpdate();
+
+                // Lanes: the enabled models, keeping the selected row.
+                var selected = videoLanesList.SelectedItems.Count > 0 ? videoLanesList.SelectedItems[0].Tag as VideoSettings.Model : null;
+                var selectedId = selected == null ? null : selected.Id;
+                var enabled = new List<string>();
+                var unrouted = new List<string>();
+                var lanes = 0;
+                videoLanesList.BeginUpdate();
+                videoLanesList.Items.Clear();
+                if (emptyTitle != null) videoLanesList.Items.Add(VideoPlaceholder(4, emptyTitle, emptyDetail, emptyColor));
+                else
+                {
+                    foreach (var model in videoModels)
+                    {
+                        if (!model.Enabled) continue;
+                        lanes++;
+                        if (model.HasRoute) enabled.Add(model.Id + " on " + model.Route);
+                        else unrouted.Add(model.Id);
+                        string logo;
+                        var company = VideoSettings.Company(model.Id, out logo);
+                        videoLanesList.Items.Add(new ListViewItem(new[] { model.Id, company, VideoRouteCell(model), model.HasRoute ? VideoSettings.Units(model.Route) : "Choose a billing route" })
+                        {
+                            Tag = model,
+                            ImageKey = VideoLogoKey(videoLanesList, logo),
+                            ForeColor = model.HasRoute ? Theme.Text : Theme.Warn,
+                            Selected = model.Id == selectedId
+                        });
+                    }
+                    if (lanes == 0) videoLanesList.Items.Add(VideoPlaceholder(4, "None enabled", "Tick a model on the Models tab", Theme.Muted));
+                }
+                videoLanesList.EndUpdate();
+
+                // DeepSeek Harness: the settings the bundle would read, said as
+                // no more than that, and whether its files are in this folder.
+                // Only this program's own folder is looked at, never a profile.
+                if (videoHarnessSaved != null)
+                {
+                    var unread = emptyTitle == null ? null : videoError != null ? "Not available" : "Not read yet";
+                    var sample = VideoSynthetic ? "Sample: enabled" : "Enabled";
+                    videoHarnessSaved.Text = sample + ", with a billing route";
+                    videoHarnessSaved.SubItems[1].Text = unread ?? (enabled.Count == 0 ? "None" : string.Join(", ", enabled.ToArray()));
+                    videoHarnessUnrouted.Text = sample + ", no valid route (not offered)";
+                    videoHarnessUnrouted.SubItems[1].Text = unread ?? (unrouted.Count == 0 ? "None" : string.Join(", ", unrouted.ToArray()));
+                    videoHarnessUnrouted.ForeColor = unread == null && unrouted.Count > 0 ? Theme.Warn : Theme.Muted;
+                    if (VideoSynthetic)
+                    {
+                        // A preview window looks at nothing real, this folder included.
+                        videoHarnessFiles.SubItems[1].Text = "Sample only \u00B7 not checked";
+                        videoHarnessFiles.ForeColor = Theme.Muted;
+                    }
+                    else
+                    {
+                        bool found;
+                        try { found = File.Exists(Path.Combine(cli.Root, VideoBundleFolder, "package.json")); }
+                        catch (Exception) { found = false; }
+                        videoHarnessFiles.SubItems[1].Text = (found ? "Found: " : "Not found: ") + VideoBundleFolder;
+                        videoHarnessFiles.ForeColor = found ? Theme.Muted : Theme.Warn;
+                    }
+                }
+            }
+            finally { fillingVideo = false; }
+        }
+
+        // The route of a model as the lists show it. A model without a route,
+        // or with one DSHProxy does not allow for it, is never shown as ready.
+        private static string VideoRouteCell(VideoSettings.Model model)
+        {
+            if (model.Route.Length == 0) return "Not configured";
+            if (!model.HasRoute) return "Not allowed: " + (model.Route.Length > 40 ? model.Route.Substring(0, 39) + "\u2026" : model.Route);
+            return VideoSettings.RouteName(model.Route);
+        }
+
+        // Runs one video settings command off the UI thread. DSHProxy does not
+        // lock the video settings file between processes, so the app never has
+        // two of these running: every caller checks videoBusy first, a read
+        // cannot start while a write is out, and a write cannot start while a
+        // read is. videoBusy is only ever read and written on the UI thread.
+        private void VideoCommand(string[] args, Action<Cli.Result> done)
+        {
+            SetVideoBusy(true);
+            // A chat operation may already be showing the wait cursor; it is
+            // then left for that operation to clear.
+            var alreadyWaiting = UseWaitCursor;
+            UseWaitCursor = true;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                Cli.Result result;
+                try { result = cli.Run(args, null, 20000); }
+                catch (Exception error) { result = new Cli.Result { Code = -1, Out = "", Err = error.Message }; }
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        SetVideoBusy(false);
+                        if (!alreadyWaiting) UseWaitCursor = false;
+                        done(result);
+                    }));
+                }
+                // The window has gone: there is nothing left to report to.
+                catch (InvalidOperationException) { }
+            });
+        }
+
+        // While a command is out, the buttons that would start another are
+        // switched off, and a tick in the Models list is put back.
+        private void SetVideoBusy(bool busy)
+        {
+            videoBusy = busy;
+            foreach (var button in videoButtons) if (button.Enabled == busy) button.Enabled = !busy;
+        }
+
+        // Reads the video settings: `dshproxy video settings`. `notSaved` is
+        // set when this read follows a save that failed: the lists then show
+        // what is really saved, and the line under them still says what went wrong.
+        private void LoadVideoSettings(string notSaved = null)
+        {
+            if (videoBusy) return;
+            if (VideoSynthetic)
+            {
+                videoError = null;
+                videoModels = VideoSettings.Parse(VideoSettings.Sample);
+                SetVideoStatus("Sample video settings for this preview window. Nothing is read from, or saved to, your configuration.", Theme.Accent);
+                FillVideo();
+                return;
+            }
+            SetVideoStatus(notSaved == null ? "Reading video settings..." : notSaved + " Reading what is saved...", notSaved == null ? Theme.Muted : Theme.Bad);
+            VideoCommand(VideoSettings.ReadCommand(), result =>
+            {
+                string failure;
+                var models = VideoSettings.Read(result, out failure);
+                if (models == null)
+                {
+                    // Settings that could not be read are not shown as if they
+                    // were current, and cannot be changed from here.
+                    videoModels = null;
+                    videoError = failure;
+                    SetVideoStatus((notSaved == null ? "" : notSaved + " ") + "Could not read the video settings: " + failure, Theme.Bad);
+                    AppendLog("Video: could not read the video settings: " + failure);
+                }
+                else
+                {
+                    videoModels = models;
+                    videoError = null;
+                    var read = DateTime.Now.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
+                    if (notSaved == null) SetVideoStatus("Video settings read from DSHProxy at " + read + ".", Theme.Muted);
+                    else SetVideoStatus(notSaved + " The lists show what is saved (read again at " + read + ").", Theme.Bad);
+                }
+                FillVideo();
+            });
+            // After VideoCommand, so an empty list says it is being read.
+            if (videoModels == null) { videoError = null; FillVideo(); }
+        }
+
+        private void OnVideoModelChecked(ItemCheckEventArgs e)
+        {
+            if (fillingVideo) return;
+            var model = videoModelsList.Items[e.Index].Tag as VideoSettings.Model;
+            if (model == null)
+            {
+                e.NewValue = e.CurrentValue;
+                return;
+            }
+            var on = e.NewValue == CheckState.Checked;
+            // Windows reports every tick again when it builds the list; only a
+            // real change is acted on.
+            if (on == model.Enabled) return;
+            if (videoBusy)
+            {
+                e.NewValue = e.CurrentValue;
+                return;
+            }
+            // Both paths run after this event: saving redraws the list, which
+            // must not happen while the list is still reporting the tick.
+            if (model.HasRoute)
+            {
+                var route = model.Route;
+                BeginInvoke(new Action(() => SaveVideoModel(model, route, on)));
+                return;
+            }
+            // Switching off needs no route, so a model that is enabled without
+            // a valid one is switched off without a question.
+            if (!on)
+            {
+                BeginInvoke(new Action(() => SaveVideoModel(model, VideoSettings.NoRoute, false)));
+                return;
+            }
+            // No valid billing route is saved for this model, and the app does
+            // not pick one: the tick waits until the user has chosen.
+            e.NewValue = e.CurrentValue;
+            BeginInvoke(new Action(() => ChooseVideoRoute(model, on)));
+        }
+
+        private void ChangeVideoRoute()
+        {
+            if (videoBusy) return;
+            VideoSettings.Model model = null;
+            if (videoLanesList.SelectedItems.Count > 0) model = videoLanesList.SelectedItems[0].Tag as VideoSettings.Model;
+            else if (videoLanesList.Items.Count == 1) model = videoLanesList.Items[0].Tag as VideoSettings.Model;
+            if (model == null)
+            {
+                var any = false;
+                foreach (ListViewItem item in videoLanesList.Items) if (item.Tag is VideoSettings.Model) any = true;
+                Msg.Show(this, any ? "Select a model in the list first." : videoError != null ? "The video settings could not be read. Press \"Reload video settings\"." : "No video model is enabled. Tick one on the Models tab first.", "Video lanes", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            ChooseVideoRoute(model, model.Enabled);
+        }
+
+        // Asks for the one billing route of a model, then saves it together
+        // with whether the model is enabled.
+        private void ChooseVideoRoute(VideoSettings.Model model, bool enabled)
+        {
+            if (videoBusy || videoModels == null || !videoModels.Contains(model)) return;
+            if (model.Routes.Count == 0)
+            {
+                Msg.Show(this, "DSHProxy lists no allowed billing route for " + model.Id + ", so nothing can be saved for it.", "Video", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            var route = RouteDialog.Ask(this, model.Id, model.Routes, model.HasRoute ? model.Route : "", enabled);
+            if (route == null) return;
+            if (model.HasRoute && route == model.Route && enabled == model.Enabled) return;
+            SaveVideoModel(model, route, enabled);
+        }
+
+        // Saves one model: `dshproxy video settings set MODEL ROUTE enabled|disabled`.
+        // The lists then show what the command line reports back, not what was asked for.
+        private void SaveVideoModel(VideoSettings.Model model, string route, bool enabled)
+        {
+            // Only a model and a route the command line itself listed are sent
+            // back to it. The one exception is "no route", and that only ever
+            // switches a model off: nothing is enabled without a listed route.
+            var clearing = route == VideoSettings.NoRoute;
+            if (videoBusy || videoModels == null || !videoModels.Contains(model) || (clearing ? enabled : !model.Routes.Contains(route)))
+            {
+                FillVideo();
+                return;
+            }
+            var id = model.Id;
+            var what = clearing ? id + " switched off, no billing route" : string.Format("{0} {1}, billing route {2}", id, enabled ? "enabled" : "switched off", route);
+            // What the command line should report back for the route.
+            var expected = clearing ? "" : route;
+            if (VideoSynthetic)
+            {
+                model.Enabled = enabled;
+                model.Route = expected;
+                SetVideoStatus("Sample only, nothing saved: " + what + ".", Theme.Accent);
+                FillVideo();
+                return;
+            }
+            SetVideoStatus("Saving: " + what + "...", Theme.Muted);
+            VideoCommand(VideoSettings.SetCommand(id, route, enabled), result =>
+            {
+                if (result.Code != 0)
+                {
+                    // Refused, timed out or failed half way: what is saved is
+                    // read again rather than taken from what the app last saw.
+                    var refused = VideoSettings.Failure(result);
+                    AppendLog("Video: not saved (" + what + "): " + refused);
+                    FillVideo();
+                    LoadVideoSettings("Not saved: " + refused);
+                    Msg.Show(this, "The video setting was not saved.\n\n" + refused + "\n\nThe lists are being read again, so they show what is saved.", "Video", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                string failure;
+                var models = VideoSettings.Read(result, out failure);
+                if (models == null)
+                {
+                    // The command succeeded but its answer cannot be read, so
+                    // what is saved is asked for again rather than assumed.
+                    AppendLog("Video: saved (" + what + "), but the answer could not be read: " + failure);
+                    LoadVideoSettings();
+                    return;
+                }
+                videoModels = models;
+                videoError = null;
+                var saved = models.Find(m => m.Id == id);
+                if (saved != null && saved.Enabled == enabled && saved.Route == expected)
+                {
+                    SetVideoStatus("Saved: " + what + ". This is a setting only; nothing was checked or charged.", Theme.Ok);
+                    AppendLog("Video: " + what + ".");
+                }
+                else
+                {
+                    SetVideoStatus("DSHProxy answered, but " + id + " does not read as asked. The lists show what is saved.", Theme.Warn);
+                    AppendLog("Video: asked for " + what + ", but the saved setting reads differently.");
+                }
+                FillVideo();
+            });
+        }
+
         // ---------- other actions ----------
 
         private void AddKey()
@@ -2240,6 +2938,236 @@ namespace DSHProxy
         public override string ToString()
         {
             return Label;
+        }
+    }
+
+    // The desktop side of the video settings seam. The command line owns the
+    // video settings and where they are kept; the app keeps none of its own. It
+    // runs two commands and shows the JSON that either one prints:
+    //
+    //   dshproxy video settings                                     read
+    //   dshproxy video settings set MODEL ROUTE enabled|disabled    write
+    //   dshproxy video settings set MODEL none disabled             switch off, no route
+    //
+    //   {"models":[{"model":"...","enabled":false,"route":null,"routes":["..."]}]}
+    //
+    // `routes` are the billing routes DSHProxy allows for that model; `route`
+    // is the one saved, or null when none is.
+    internal static class VideoSettings
+    {
+        public sealed class Model
+        {
+            public string Id;
+            public bool Enabled;
+            // "" when no route is saved.
+            public string Route;
+            public List<string> Routes;
+
+            // A saved route counts only if DSHProxy allows it for this model.
+            public bool HasRoute
+            {
+                get { return Route.Length > 0 && Routes.Contains(Route); }
+            }
+        }
+
+        public static string[] ReadCommand()
+        {
+            return new[] { "video", "settings" };
+        }
+
+        // Stands in for "no route" on the command line. It only ever switches a
+        // model off: `set MODEL none disabled`. It is not a billing route, is
+        // never offered as one, and can never be sent with `enabled`.
+        public const string NoRoute = "none";
+
+        public static string[] SetCommand(string model, string route, bool enabled)
+        {
+            if (!IsName(model) || !IsName(route)) throw new ArgumentException("Not a video model or route name.");
+            if (enabled && route == NoRoute) throw new ArgumentException("A video model cannot be enabled without a billing route.");
+            return new[] { "video", "settings", "set", model, route, enabled ? "enabled" : "disabled" };
+        }
+
+        // Switches off a model that has no usable route saved, leaving it with none.
+        public static string[] DisableCommand(string model)
+        {
+            return SetCommand(model, NoRoute, false);
+        }
+
+        // Model and route names go on a command line, so they are plain
+        // tokens: letters, digits, dot, dash and underscore, never an option.
+        public static bool IsName(string value)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length > 64) return false;
+            for (var i = 0; i < value.Length; i++)
+            {
+                var c = value[i];
+                var alnum = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+                if (!alnum && (i == 0 || (c != '.' && c != '-' && c != '_'))) return false;
+            }
+            return true;
+        }
+
+        // Reads the JSON either command prints. Anything that is not the
+        // agreed shape is refused as a whole rather than half shown.
+        public static List<Model> Parse(string json)
+        {
+            object parsed;
+            try { parsed = Json.Serializer.DeserializeObject(json ?? ""); }
+            catch (ArgumentException) { throw new FormatException("DSHProxy did not answer with JSON."); }
+            catch (InvalidOperationException) { throw new FormatException("DSHProxy did not answer with JSON."); }
+            var root = parsed as Dictionary<string, object>;
+            var list = root == null ? null : Json.Get(root, "models");
+            if (!(list is object[]) && !(list is ArrayList)) throw new FormatException("The answer has no list of video models.");
+            var models = new List<Model>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var item in Json.Arr(list))
+            {
+                var entry = item as Dictionary<string, object>;
+                var id = entry == null ? null : Json.Get(entry, "model") as string;
+                if (!IsName(id) || !seen.Add(id)) throw new FormatException("The answer lists a video model without a usable, unique name.");
+                var model = new Model { Id = id, Enabled = Json.Bool(entry, "enabled"), Routes = new List<string>() };
+                foreach (var route in Json.Arr(Json.Get(entry, "routes")))
+                {
+                    var name = route as string;
+                    // "none" is the stand-in for no route, never a route to choose.
+                    if (IsName(name) && name != NoRoute && !model.Routes.Contains(name)) model.Routes.Add(name);
+                }
+                model.Route = Json.Str(Json.Get(entry, "route"));
+                if (model.Route == NoRoute) model.Route = "";
+                models.Add(model);
+            }
+            return models;
+        }
+
+        // The models a finished command reported, or null and why not.
+        public static List<Model> Read(Cli.Result result, out string failure)
+        {
+            failure = null;
+            if (result.Code != 0)
+            {
+                failure = Failure(result);
+                return null;
+            }
+            try { return Parse(result.Out); }
+            catch (FormatException error)
+            {
+                failure = error.Message;
+                return null;
+            }
+        }
+
+        // One line saying why a command failed.
+        public static string Failure(Cli.Result result)
+        {
+            var text = (result.Err ?? "").Trim();
+            if (text.Length == 0) return "The DSHProxy command ended with code " + result.Code.ToString(CultureInfo.InvariantCulture) + ".";
+            var line = text.Split('\n')[0].Trim();
+            if (line.StartsWith("DSHProxy: ", StringComparison.Ordinal)) line = line.Substring(10);
+            return line.Length > 200 ? line.Substring(0, 199) + "\u2026" : line;
+        }
+
+        public static string RouteLabel(string route)
+        {
+            switch (route)
+            {
+                case "krea": return "Krea workspace";
+                case "videorouter": return "VideoRouter";
+                case "videorouter-replicate": return "VideoRouter (Replicate)";
+                case "kovapi": return "KovAPI";
+                case "callirra": return "Callirra";
+                default: return route;
+            }
+        }
+
+        // The label of a route with its exact name, which is what is saved.
+        public static string RouteName(string route)
+        {
+            var label = RouteLabel(route);
+            return label == route ? route : label + " \u00B7 " + route;
+        }
+
+        // The logos Company can name.
+        public static readonly string[] CompanyLogos = { "alibaba", "minimax", "bytedance" };
+
+        // The company behind a model, and the name of its logo in app/logos.
+        // The logo is the mark of the company, not a mark of the model. Both
+        // are "" for a model this app does not know, which is then shown in
+        // text alone.
+        public static string Company(string model, out string logo)
+        {
+            logo = "";
+            if (model == "wan-3.0") { logo = "alibaba"; return "Alibaba"; }
+            if (model == "minimax-h3") { logo = "minimax"; return "MiniMax"; }
+            if (model.StartsWith("seedance-", StringComparison.Ordinal)) { logo = "bytedance"; return "ByteDance"; }
+            return "";
+        }
+
+        // What a route bills in. The app never converts between them.
+        public static string Units(string route)
+        {
+            switch (route)
+            {
+                case "krea": return "workspace compute units";
+                case "callirra": return "plan credits";
+                case "videorouter":
+                case "videorouter-replicate":
+                case "kovapi": return "US dollars";
+                default: return "units not known to this app";
+            }
+        }
+
+        // Made-up settings for a preview window, in the shape the command
+        // line prints. Never read from, or written to, a real configuration.
+        // One model is enabled without a route, so that state can be looked at too.
+        public const string Sample = "{\"models\":["
+            + "{\"model\":\"wan-3.0\",\"enabled\":true,\"route\":\"krea\",\"routes\":[\"videorouter\",\"videorouter-replicate\",\"kovapi\",\"krea\"]},"
+            + "{\"model\":\"minimax-h3\",\"enabled\":true,\"route\":\"callirra\",\"routes\":[\"kovapi\",\"callirra\",\"krea\"]},"
+            + "{\"model\":\"seedance-2.0\",\"enabled\":true,\"route\":null,\"routes\":[\"videorouter\",\"kovapi\",\"krea\"]},"
+            + "{\"model\":\"seedance-2.5\",\"enabled\":false,\"route\":null,\"routes\":[\"videorouter\",\"kovapi\",\"krea\"]}]}";
+    }
+
+    // Asks which one billing route a video model is charged to. Nothing is
+    // preselected for a model that has no route yet: the app never picks one.
+    internal static class RouteDialog
+    {
+        public static string Ask(IWin32Window owner, string model, List<string> routes, string current, bool enabled)
+        {
+            using (var form = new Form())
+            {
+                form.Text = "Video billing route";
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.StartPosition = FormStartPosition.CenterParent;
+                form.MinimizeBox = false;
+                form.MaximizeBox = false;
+                form.ShowInTaskbar = false;
+                form.ClientSize = new Size(500, 248);
+                form.Font = Theme.Ui(9.5f);
+                var label = new GlassLabel { Text = "Charge " + model + " to:", Left = 20, Top = 18, AutoSize = true, Font = Theme.Ui(10.5f, FontStyle.Bold) };
+                var combo = new ComboBox { Left = 20, Top = 50, Width = 460, DropDownStyle = ComboBoxStyle.DropDownList, TabIndex = 0, AccessibleName = "Billing route for " + model };
+                foreach (var route in routes)
+                {
+                    combo.Items.Add(new Choice(route, VideoSettings.RouteName(route) + " \u00B7 billed in " + VideoSettings.Units(route)));
+                    if (route == current) combo.SelectedIndex = combo.Items.Count - 1;
+                }
+                var note = new GlassLabel
+                {
+                    Text = "One route for each model. A paid job is never retried automatically or moved to another route.\r\n\r\nSaving a route does not check a sign-in, a key or a price, and charges nothing."
+                        + (enabled ? "" : " The model stays switched off."),
+                    Left = 20,
+                    Top = 92,
+                    Size = new Size(460, 92),
+                    ForeColor = Theme.Muted
+                };
+                var ok = Skin.Primary(new PillButton { Text = "Save route", Left = 248, Top = 194, Width = 128, Height = 38, DialogResult = DialogResult.OK, TabIndex = 1, Enabled = combo.SelectedIndex >= 0 });
+                var cancel = new PillButton { Text = "Cancel", Left = 388, Top = 194, Width = 92, Height = 38, DialogResult = DialogResult.Cancel, TabIndex = 2 };
+                combo.SelectedIndexChanged += (s, e) => ok.Enabled = combo.SelectedIndex >= 0;
+                form.Controls.AddRange(new System.Windows.Forms.Control[] { label, combo, note, ok, cancel });
+                form.AcceptButton = ok;
+                form.CancelButton = cancel;
+                Skin.Apply(form);
+                var chosen = form.ShowDialog(owner) == DialogResult.OK ? combo.SelectedItem as Choice : null;
+                return chosen == null ? null : chosen.Key;
+            }
         }
     }
 

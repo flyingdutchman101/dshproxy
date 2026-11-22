@@ -35,6 +35,12 @@ test('Callirra is a full-use effective rate, not a per-job USD debit', () => {
   assert.equal(q.credits, 10);
   assert.match(q.assumption, /full use/i);
 });
+test('workspace route choices contain exact supported models and Krea', () => {
+  const {routesFor}=require('../src/video/catalog');
+  assert.deepEqual(routesFor('wan-3.0'),['videorouter','videorouter-replicate','kovapi','krea']);
+  assert.deepEqual(routesFor('minimax-h3'),['kovapi','callirra','krea']);
+  assert.throws(()=>routesFor('__proto__'),/model/);
+});
 test('rejects unsupported pairs, unknown keys and inherited object properties', () => {
   for (const model of ['constructor', '__proto__', 'wan-3.0-prime']) assert.throws(() => quote(model), /model/i);
   for (const route of ['toString', 'krea', null, '', 'callirra']) assert.throws(() => quote('wan-3.0', route), /route/i);

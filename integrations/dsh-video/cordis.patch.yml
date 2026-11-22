@@ -1,0 +1,6 @@
+# Optional settings (all absolute paths): root (DSHProxy folder), node
+# (node.exe), home (DSHProxy data folder), and timeoutMs. See README.md.
+- insert:
+    - id: dshproxy-video
+      name: '@local/dshproxy-video'
+      config: {}

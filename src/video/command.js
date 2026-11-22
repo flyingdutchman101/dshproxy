@@ -1,6 +1,8 @@
 const { quote, models } = require('./catalog');
 
 const help = `dshproxy video list
+  video settings                         List enabled models and billing routes
+  video settings set MODEL ROUTE enabled|disabled
   video quote MODEL [ROUTE]              Show a dated API-route estimate (USD or plan credits)
   video krea MODEL                       Prepare a manual quote-only handoff (offline)
   video quote MODEL krea --prompt "PROMPT"  Preflight in signed-in workspace units
@@ -10,7 +12,8 @@ const help = `dshproxy video list
   video status MODEL ROUTE JOB_ID        Check once, never resubmit
 API routes: videorouter, videorouter-replicate (Wan only), kovapi, callirra (H3 only). Workspace route: krea.
 Five seconds, 16:9, text only. Caps check the API estimate or workspace preflight, not the final bill.
-Credentials: VIDEOROUTER_API_KEY, KOVAPI_API_KEY or CALLIRRA_API_KEY. Never pass keys on the command line.`;
+Credentials: VIDEOROUTER_API_KEY, KOVAPI_API_KEY or CALLIRRA_API_KEY. Never pass keys on the command line.
+Video settings control what an integration offers, not what the direct video CLI can submit or a spending limit.`;
 
 const keyNames = {videorouter:'VIDEOROUTER_API_KEY', 'videorouter-replicate':'VIDEOROUTER_API_KEY', kovapi:'KOVAPI_API_KEY', callirra:'CALLIRRA_API_KEY'};
 
@@ -25,6 +28,18 @@ async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, work
   const emit = (data) => out(JSON.stringify(data, null, 2));
   if (!args.length || (args.length === 1 && ['help','--help','-h'].includes(action))) return out(help);
   if (action === 'list' && args.length === 1) return emit(models);
+  if (action === 'settings') {
+    const settings = require('./settings');
+    const {routesFor} = require('./catalog');
+    const home = env.DSHPROXY_HOME || undefined;
+    let current;
+    if (args.length === 1) current = await settings.read(home);
+    else if (args.length === 5 && model === 'set' && ['enabled','disabled'].includes(args[4])) {
+      if (args[3] === 'none' && args[4] !== 'disabled') throw new Error('Choose a billing route before enabling a video model.');
+      current = await settings.write(home, {models:{[route]:{route:args[3] === 'none' ? null : args[3],enabled:args[4] === 'enabled'}}});
+    } else throw new Error('Use video settings, or video settings set MODEL ROUTE enabled|disabled.');
+    return emit({models:models.map(name=>({model:name,...current.models[name],routes:routesFor(name)}))});
+  }
   if (route === 'krea' && ['quote','submit','status'].includes(action)) {
     if (!models.includes(model)) throw new Error('Unknown video model');
     const client = require('./workspace');

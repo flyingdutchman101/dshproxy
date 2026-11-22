@@ -685,6 +685,70 @@ namespace DSHProxy
         }
     }
 
+    // One side of a two-way switch (Chat / Video). It stays a native radio
+    // button, so the arrow keys move between the two and a screen reader
+    // announces them as a radio group; only the drawing is replaced. The
+    // chosen side is a brass pill inside the glass capsule that holds both.
+    internal sealed class SegmentRadio : RadioButton
+    {
+        private bool hover;
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            Glass.PaintBehind(e.Graphics, this, ClientRectangle);
+        }
+
+        public SegmentRadio()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            ForeColor = Theme.Text;
+            Cursor = Cursors.Hand;
+            Margin = new Padding(0);
+            // Both sides are given the same size by whoever places them.
+            AutoSize = false;
+            AccessibleRole = AccessibleRole.RadioButton;
+        }
+
+        public override Size GetPreferredSize(Size proposed)
+        {
+            return new Size(TextRenderer.MeasureText(Text, Font).Width + 44, 34);
+        }
+
+        protected override void OnCheckedChanged(EventArgs e) { Invalidate(); base.OnCheckedChanged(e); }
+        protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+        protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+        protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Glass.PaintBehind(e.Graphics, this, ClientRectangle);
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var r = new Rectangle(0, 0, Width - 1, Height - 1);
+            var radius = r.Height / 2;
+            if (Checked)
+            {
+                using (var path = Glass.Rounded(r, radius))
+                using (var fill = new LinearGradientBrush(new Rectangle(r.X, r.Y - 1, r.Width, r.Height + 2), hover ? Theme.AccentHover : Theme.Accent, Theme.Accent, 90f)) g.FillPath(fill, path);
+                Glass.Edge(g, r, radius, Color.White, 55);
+            }
+            else if (hover)
+            {
+                using (var path = Glass.Rounded(r, radius)) using (var fill = new SolidBrush(Color.FromArgb(22, 255, 255, 255))) g.FillPath(fill, path);
+            }
+            if (Focused && ShowFocusCues)
+            {
+                // Dotted and inset, like the focus ring on the pill buttons.
+                var ring = Rectangle.Inflate(r, -4, -4);
+                using (var path = Glass.Rounded(ring, Math.Max(4, radius - 4)))
+                using (var pen = new Pen(Checked ? Theme.AccentInk : Theme.Accent, 1.3f) { DashStyle = DashStyle.Dot }) g.DrawPath(pen, path);
+            }
+            using (var font = Checked ? new Font(Font, FontStyle.Bold) : (Font)Font.Clone())
+                TextRenderer.DrawText(g, Text, font, r, Checked ? Theme.AccentInk : hover ? Theme.Text : Theme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+    }
+
     // A small glass pill with tinted text: status, plan and similar labels.
     internal sealed class Chip : Label
     {
@@ -1145,7 +1209,7 @@ namespace DSHProxy
             }
             var combo = control as ComboBox;
             if (combo != null) { StyleCombo(combo); return; }
-            if (control is GlassCheck || control is GlassRadio || control is Chip || control is AppMark || control is NavStrip || control is Marquee) return;
+            if (control is GlassCheck || control is GlassRadio || control is SegmentRadio || control is Chip || control is AppMark || control is NavStrip || control is Marquee) return;
             if (Glass.IsGlass(control)) { DarkScrollbars(control); return; }
             if (control is PillButton) return;
             // Containers paint the backdrop and glass behind them; labels and

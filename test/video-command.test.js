@@ -17,6 +17,15 @@ test('an explicit approved request submits once and retains its origin for statu
   await command(['status',printed.model,printed.route,printed.id],out,deps);
   assert.deepEqual(calls,[['https://videorouter.sh/api/v1/videos','POST'],['https://videorouter.sh/api/v1/videos/video_123','GET']]);
 });
+test('disabled video workspace settings are not a direct CLI spend lock', async () => {
+  const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
+  const home=await fs.mkdtemp(path.join(os.tmpdir(),'dshproxy-direct-video-'));
+  try {
+    const {run: command}=require('../src/video/command'); let calls=0, output;
+    await command(['submit','wan-3.0','videorouter','--max-usd','0.226013','--confirm-charge','Test'],s=>output=JSON.parse(s),{env:{DSHPROXY_HOME:home,VIDEOROUTER_API_KEY:'fixture'},fetchImpl:async()=>{calls++;return Response.json({id:'job-1',status:'queued'});}});
+    assert.equal(calls,1);assert.equal(output.id,'job-1');
+  } finally {await fs.rm(home,{recursive:true,force:true});}
+});
 test('a Callirra credit approval cannot borrow another provider credential', async () => {
   const {run: command} = require('../src/video/command');
   const args = ['submit', 'minimax-h3', 'callirra', '--max-credits', '10', '--confirm-charge', 'A calm sea'];
@@ -57,6 +66,24 @@ test('real workspace helper with an empty temporary profile never starts login o
     await assert.rejects(runChild(process.execPath,[path.resolve(__dirname,'../bin/dshproxy.js'),'video','quote','wan-3.0','krea','--prompt','Rain'],{env:{SystemRoot:process.env.SystemRoot,LOCALAPPDATA:dir,HOME:dir,USERPROFILE:dir,TEMP:dir,TMP:dir,NODE_PATH:process.env.NODE_PATH},timeout:10000}),e=>{assert.match(e.stderr,process.platform==='win32'?/sign-in required/i:/refused/i);assert.equal(e.stdout,'');return true;});
     assert.deepEqual(await fs.readdir(dir),[]);
   } finally {await fs.rmdir(dir);}
+});
+test('video workspace settings persist explicit route choices without network access', async () => {
+  const fs=require('node:fs/promises'), os=require('node:os'), path=require('node:path');
+  const {run: command}=require('../src/video/command');
+  const home=await fs.mkdtemp(path.join(os.tmpdir(),'dshproxy-video-settings-'));
+  try {
+    const env={DSHPROXY_HOME:home}; let data;
+    const exec=async (...args)=>{await command(args,s=>{data=JSON.parse(s)},{env,fetchImpl:()=>{throw Error('network is forbidden')}});return data;};
+    assert.equal((await exec('settings')).models.find(m=>m.model==='wan-3.0').enabled,false);
+    await exec('settings','set','wan-3.0','none','disabled');
+    assert.equal((await exec('settings')).models.find(m=>m.model==='wan-3.0').route,null);
+    await assert.rejects(exec('settings','set','wan-3.0','none','enabled'));
+    await exec('settings','set','wan-3.0','krea','enabled');
+    const row=(await exec('settings')).models.find(m=>m.model==='wan-3.0');
+    assert.equal(row.enabled,true);assert.equal(row.route,'krea');assert.ok(row.routes.includes('krea'));
+    await assert.rejects(exec('settings','set','wan-3.0','callirra','enabled'));
+    assert.equal((await exec('settings')).models.find(m=>m.model==='wan-3.0').route,'krea');
+  } finally {await fs.rm(home,{recursive:true,force:true});}
 });
 test('a Callirra quote states its native billing amount, not just effective USD', async () => {
   const q = await run('quote', 'minimax-h3', 'callirra');

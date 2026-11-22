@@ -38,4 +38,8 @@ function quote(model, route) {
   return { model, route, resolution, durationSeconds: 5, aspectRatio: '16:9', verifiedOn: '2026-11-21',
     priceBasis: 'published', ...details, sourceUrls: [...sourceUrls] };
 }
-module.exports = { models, quote };
+function routesFor(model) {
+  if (!models.includes(model)) throw new Error('Unknown video model');
+  return [...Object.keys(catalog[model].routes), 'krea'];
+}
+module.exports = { models, quote, routesFor };
