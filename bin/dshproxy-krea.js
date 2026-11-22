@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // Dedicated process: DSHProxy does not import this module or gain access to tokens.
-const {access,login,windowsStore}=require('../src/krea-helper/oauth');
+const {access,login,status,windowsStore}=require('../src/krea-helper/oauth');
 const codes=new Set(['KREA_LOGIN_REQUIRED','KREA_UNCERTAIN','KREA_REFUSED']);
 function refuse(){throw Error('KREA_REFUSED');}
 async function readRequest(stream) {
@@ -14,6 +14,8 @@ async function main({args=process.argv.slice(2),input=process.stdin,output=s=>pr
     await login({clientId:args[2],store:makeStore(),showUrl:output});return;
   }
   if(args.length===1 && args[0]==='logout'){await makeStore().clear();return;}
+  // One line, {"signedIn":true,"expiresAt":<ms>} or {"signedIn":false}, and success either way.
+  if(args.length===1 && args[0]==='status'){let state={signedIn:false};try{state=await status(makeStore());}catch{}output(JSON.stringify(state));return;}
   if(args.length)refuse();const request=await readRequest(input);const token=await access(makeStore());
   let result;try{result=await run(request,token);}catch(e){const c=e?.code||e?.message;if(codes.has(c))throw Error(c);throw Error(request.action==='submit'?'KREA_UNCERTAIN':'KREA_REFUSED');}
   const unsafe=()=>{throw Error(request.action==='submit'?'KREA_UNCERTAIN':'KREA_REFUSED')};

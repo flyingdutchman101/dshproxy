@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
+const { createIfAbsent } = require("./filelock");
 
 const VERSION = Buffer.from("dg1");
 const NONCE_BYTES = 12;
@@ -69,23 +70,30 @@ async function unwrap(blob) {
   return Buffer.from(masked.map((byte, index) => byte ^ mask[index]));
 }
 
+async function unlockMasterKey(file) {
+  const key = await unwrap(fs.readFileSync(file, "utf8").trim());
+  if (!key) throw new Error(`Windows could not unlock ${file}. Saved API keys cannot be read from this account.`);
+  return key;
+}
+
 // Returns the master key. With `create`, a missing key file is created; without
 // it a missing file returns null. An existing file that Windows will not unlock
 // is an error and is never replaced, because replacing it would make every
 // saved API key unreadable for good.
+//
+// Several commands can find the file missing at the same moment. Each makes a
+// key, but only one file is put in place, whole and in one step, and it is
+// never written again: the others drop their key and use the one in the file.
+// Otherwise each would encrypt with a key that the next one overwrites.
 async function loadMasterKey(file, { create = false } = {}) {
-  if (fs.existsSync(file)) {
-    const key = await unwrap(fs.readFileSync(file, "utf8").trim());
-    if (!key) throw new Error(`Windows could not unlock ${file}. Saved API keys cannot be read from this account.`);
-    return key;
-  }
+  if (fs.existsSync(file)) return unlockMasterKey(file);
   if (!create) return null;
   const key = crypto.randomBytes(KEY_BYTES);
   const blob = await powershell(PROTECT_SCRIPT, { DSHPROXY_DPAPI_KEY: key.toString("base64") });
   if (!blob) throw new Error("Windows could not protect a new key, so nothing was saved.");
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${blob}\n`);
-  return key;
+  if (createIfAbsent(file, `${blob}\n`)) return key;
+  return unlockMasterKey(file);
 }
 
 module.exports = { encryptWithKey, decryptWithKey, loadMasterKey };

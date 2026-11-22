@@ -35,6 +35,25 @@ test("a call with the right token reaches its route with the body and query", as
   assert.deepEqual(seen, [{ body: { provider: "claude" }, query: { x: "1" } }]);
 });
 
+test("a route is given the request and the response of its call", async (t) => {
+  const seen = [];
+  const base = await start(t, {
+    "POST stop": async (_body, _query, call) => {
+      seen.push([call.req.method, call.req.url, call.req.socket === call.res.socket]);
+      call.res.setHeader("connection", "close");
+      return { ok: true };
+    },
+    "GET plain": async () => ({ ok: true })
+  });
+  const closing = await fetch(`${base}stop`, { method: "POST", headers: { "x-dshproxy-token": TOKEN } });
+  assert.deepEqual(await closing.json(), { ok: true });
+  assert.equal(closing.headers.get("connection"), "close");
+  assert.equal(closing.headers.get("content-type"), "application/json");
+  assert.deepEqual(seen, [["POST", "/dshproxy/control/stop", true]]);
+  const plain = await fetch(`${base}plain`, { headers: { "x-dshproxy-token": TOKEN } });
+  assert.notEqual(plain.headers.get("connection"), "close");
+});
+
 test("a call without the token, or with a wrong one, is refused before any route runs", async (t) => {
   let ran = false;
   const base = await start(t, { "POST login/start": async () => { ran = true; return {}; } });

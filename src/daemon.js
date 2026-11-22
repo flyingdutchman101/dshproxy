@@ -8,9 +8,9 @@ const { render } = require("./backend/config");
 const { install } = require("./backend/install");
 const { createManagement } = require("./backend/management");
 const { createSupervisor } = require("./backend/supervisor");
-const { createControl, newToken, writeToken } = require("./control");
+const { PREFIX: CONTROL_PREFIX, createControl, newToken, writeToken } = require("./control");
 const { createFailover } = require("./gateway/failover");
-const { createGateway } = require("./gateway/server");
+const { createGateway, STATUS_PATH } = require("./gateway/server");
 const { createSessions } = require("./gateway/sessions");
 const { createResolver, describe, availability } = require("./lanes");
 const { createLimits } = require("./limits");
@@ -29,6 +29,44 @@ const ACCOUNT_CACHE_MS = 5000;
 const DISCOVERY_MS = 3 * 60 * 60 * 1000;
 // GitHub is asked for a newer backend this often.
 const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000;
+// How long a stop waits for a moment with nothing in flight when it is not
+// told, and the longest wait the control interface accepts.
+const IDLE_WAIT_SECONDS = 300;
+const MAX_IDLE_WAIT_SECONDS = 24 * 60 * 60;
+// The longest delay a timer can hold.
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+// Counts the requests in flight on an HTTP server: those for which
+// `counted(req)` holds, from the moment their head has been read until their
+// answer has ended. `ended(count)` is called each time one ends.
+//
+// The count rises in the server's "request" event itself, before the handler
+// has done anything, so a request the server has taken is never missed. It
+// falls when the response closes or the connection does, whichever comes
+// first: a response that ends normally, a client that goes away, a backend
+// that fails and a connection that is destroyed all end in one of the two. A
+// request waiting behind another on the same connection has no response
+// stream of its own yet, so only the connection tells when it is over.
+function countRequests(server, counted, ended) {
+  let count = 0;
+  server.prependListener("request", (req, res) => {
+    const socket = req.socket;
+    if (!counted(req) || !socket || socket.closed) return;
+    count += 1;
+    let over = false;
+    const end = () => {
+      if (over) return;
+      over = true;
+      res.removeListener("close", end);
+      socket.removeListener("close", end);
+      count -= 1;
+      ended(count);
+    };
+    res.once("close", end);
+    socket.once("close", end);
+  });
+  return () => count;
+}
 
 // The model IDs and figures DeepSeek Harness is given, for comparing two lists.
 function fingerprint(models) {
@@ -37,7 +75,13 @@ function fingerprint(models) {
 
 // `restart()` stops this gateway and starts it again (on the backend version
 // now in the lock file). The Windows app and the CLI supply it.
-async function start({ home, print = console.log, restart = null } = {}) {
+// `exit()` ends the process; it is called once, after a stop that was asked
+// for over the control interface has been answered.
+// `backend` replaces how the backend program is installed and run. Only tests
+// supply it: they must never download or start the real program.
+async function start({ home, print = console.log, restart = null, exit = null, backend: backendProgram = {} } = {}) {
+  const installBackend = backendProgram.install || install;
+  const superviseBackend = backendProgram.createSupervisor || createSupervisor;
   let state = await app.snapshot(home);
   const { settings, paths } = state;
   const log = (line) => {
@@ -46,7 +90,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
   };
   const lock = app.currentLock(state.home);
 
-  const backend = await install(lock, paths.binDir, { log });
+  const backend = await installBackend(lock, paths.binDir, { log });
   fs.mkdirSync(state.authDir, { recursive: true });
   // A new Management API key every start. Only this process knows it; the
   // backend stores a hash of it.
@@ -54,7 +98,7 @@ async function start({ home, print = console.log, restart = null } = {}) {
   fs.writeFileSync(paths.config, render({ host: settings.host, port: settings.backendPort, authDir: state.authDir, providers: state.readable, custom: state.custom, managementKey }));
   if (state.unreadable.length) log(`Saved API key cannot be read for: ${state.unreadable.join(", ")}. Enter it again with \`dshproxy key set\`.`);
 
-  const supervisor = createSupervisor({ binary: backend.path, configPath: paths.config, host: settings.host, port: settings.backendPort, pidFile: paths.backendPid, log });
+  const supervisor = superviseBackend({ binary: backend.path, configPath: paths.config, host: settings.host, port: settings.backendPort, pidFile: paths.backendPid, log });
   await supervisor.start();
 
   // Accounts can be added while the gateway runs, so they are re-read, but not
@@ -191,10 +235,13 @@ async function start({ home, print = console.log, restart = null } = {}) {
 
   const failover = createFailover({ cooldownMs: settings.cooldownMinutes * 60 * 1000, threshold: settings.failureThreshold });
   const startedAt = new Date().toISOString();
+  // Requests in flight; set once the gateway exists.
+  let inFlight = () => 0;
   const status = () => ({
     version: app.version,
     startedAt,
     origin: state.origin,
+    inFlight: inFlight(),
     backend: { name: lock.name, version: lock.version, port: settings.backendPort, ...supervisor.state() },
     routing: presets.describe(settings.lanes),
     update,
@@ -360,7 +407,42 @@ async function start({ home, print = console.log, restart = null } = {}) {
         if (!found?.available) throw new Error(found?.error || "No update is available.");
         return updater.apply(found.lock);
       },
-      "POST update/rollback": () => updater.rollback()
+      "POST update/rollback": () => updater.rollback(),
+      // Stops this gateway at a moment with nothing in flight, waiting at most
+      // `waitSeconds` for one. Answers { stopped: true } once the port is
+      // closed and the backend has exited; the process then ends. Answers
+      // { stopped: false, inFlight } when the wait ran out: nothing changed.
+      "POST stop": async ({ waitSeconds = IDLE_WAIT_SECONDS }, _query, { res }) => {
+        if (!Number.isInteger(waitSeconds) || waitSeconds < 0 || waitSeconds > MAX_IDLE_WAIT_SECONDS) throw new Error(`waitSeconds must be a whole number from 0 to ${MAX_IDLE_WAIT_SECONDS}.`);
+        // A caller that goes away is not waited for: the gateway would stop
+        // later with nobody there to start it again.
+        const caller = new AbortController();
+        const gone = () => caller.abort();
+        if (res.destroyed) caller.abort();
+        else res.once("close", gone);
+        // The stop closes every connection but this one, which carries the answer.
+        const socket = res.socket;
+        answering.add(socket);
+        if (inFlight()) log(`stop when idle requested: waiting up to ${waitSeconds} s (${inFlight()} in flight)`);
+        const result = await stop({ whenIdle: true, waitMs: waitSeconds * 1000, signal: caller.signal });
+        res.removeListener("close", gone);
+        if (!result.stopped) {
+          answering.delete(socket);
+          log(caller.signal.aborted ? "stop when idle: the caller went away; the gateway keeps running" : `stop when idle: still ${result.inFlight} in flight after ${waitSeconds} s; the gateway keeps running`);
+          return result;
+        }
+        res.setHeader("connection", "close");
+        const answered = () => {
+          answering.delete(socket);
+          if (!answering.size && exit && !exited) {
+            exited = true;
+            exit();
+          }
+        };
+        if (res.destroyed) setImmediate(answered);
+        else res.once("close", answered);
+        return result;
+      }
     }
   });
 
@@ -390,6 +472,30 @@ async function start({ home, print = console.log, restart = null } = {}) {
     control
   });
 
+  // ---- Requests in flight, and stopping when there are none ----
+  // Everything the gateway forwards is counted. What it answers itself is
+  // not: its status and the control calls.
+  const ownRequest = (req) => (req.method === "GET" && req.url === STATUS_PATH) || req.url.startsWith(CONTROL_PREFIX);
+  inFlight = countRequests(gateway, (req) => !ownRequest(req), (count) => {
+    // The moment a stop is waiting for. The port is closed before this tick
+    // ends, so no request can be taken between the count and the stop.
+    if (count === 0 && waiting.size && !stopping) {
+      log("stopping at a moment with no request in flight");
+      stopNow();
+    }
+  });
+  const connections = new Set();
+  gateway.on("connection", (socket) => {
+    connections.add(socket);
+    socket.once("close", () => connections.delete(socket));
+  });
+  // Stops that wait for an idle moment; the connections of the control calls
+  // among them, which outlive the stop until they are answered.
+  const waiting = new Set();
+  const answering = new Set();
+  let stopping = null;
+  let exited = false;
+
   try {
     await new Promise((resolve, reject) => {
       gateway.once("error", (error) => reject(new Error(error.code === "EADDRINUSE" ? `Port ${settings.port} is already in use. Stop the program using it or change "port" in settings.json.` : error.message)));
@@ -412,18 +518,60 @@ async function start({ home, print = console.log, restart = null } = {}) {
     setInterval(() => checkUpdate(), UPDATE_CHECK_MS)
   ];
 
-  // Resolves once the gateway port is closed and the backend has exited.
-  const stop = () => {
+  // Stops at once, cutting whatever is in flight. Resolves once the gateway
+  // port is closed and the backend has exited. Asked again, it gives the same
+  // answer: there is one stop.
+  function stopNow() {
+    if (stopping) return stopping;
     for (const timer of timers) clearTimeout(timer);
     order.stop();
     clearTimeout(changeTimer);
     logins.closeAll();
     fs.rmSync(paths.controlToken, { force: true });
-    const closed = new Promise((resolve) => gateway.close(() => resolve()));
-    gateway.closeAllConnections();
-    return Promise.all([closed, supervisor.stop()]);
-  };
-  return { origin: state.origin, status, stop };
+    // The port stops accepting here, not later.
+    gateway.close();
+    const closed = [...connections].filter((socket) => !answering.has(socket)).map((socket) => new Promise((resolve) => {
+      socket.once("close", resolve);
+      socket.destroy();
+    }));
+    stopping = Promise.all([Promise.all(closed), supervisor.stop()]);
+    for (const wait of [...waiting]) wait.settle(stopping.then(() => ({ stopped: true })));
+    return stopping;
+  }
+
+  // Keeps serving until a moment with nothing in flight and stops then.
+  // Resolves { stopped: true } once stopped, or { stopped: false, inFlight }
+  // when `waitMs` passed, or `signal` was aborted, first: nothing changed then.
+  function stopWhenIdle(waitMs, signal = null) {
+    const stopped = () => ({ stopped: true });
+    if (stopping) return stopping.then(stopped);
+    if (signal?.aborted) return Promise.resolve({ stopped: false, inFlight: inFlight() });
+    if (inFlight() === 0) {
+      log("stopping at a moment with no request in flight");
+      return stopNow().then(stopped);
+    }
+    if (!(waitMs > 0)) return Promise.resolve({ stopped: false, inFlight: inFlight() });
+    return new Promise((resolve) => {
+      const wait = {
+        settle(value) {
+          clearTimeout(timer);
+          if (signal) signal.removeEventListener("abort", giveUp);
+          waiting.delete(wait);
+          resolve(value);
+        }
+      };
+      const giveUp = () => wait.settle({ stopped: false, inFlight: inFlight() });
+      const timer = setTimeout(giveUp, Math.min(waitMs, MAX_TIMER_MS));
+      if (signal) signal.addEventListener("abort", giveUp, { once: true });
+      waiting.add(wait);
+    });
+  }
+
+  // `stop()` stops at once. `stop({ whenIdle: true, waitMs, signal })` waits
+  // for an idle moment, for `waitMs` at most (five minutes when not given);
+  // aborting `signal` calls the wait off.
+  const stop = (options) => (options?.whenIdle ? stopWhenIdle(options.waitMs === undefined ? IDLE_WAIT_SECONDS * 1000 : Number(options.waitMs), options.signal || null) : stopNow());
+  return { origin: state.origin, status, stop, inFlight, log };
 }
 
 module.exports = { start };

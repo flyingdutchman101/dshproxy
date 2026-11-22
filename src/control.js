@@ -60,7 +60,9 @@ function send(res, status, value) {
   res.end(text);
 }
 
-// `routes` maps "METHOD name" to async (body, query) => result.
+// `routes` maps "METHOD name" to async (body, query, { req, res }) => result.
+// A route that needs to know when its caller goes away, or to close the
+// connection after its answer, uses the third argument.
 function createControl({ token, routes }) {
   return async function handle(req, res) {
     if (!req.url.startsWith(PREFIX)) return false;
@@ -80,7 +82,7 @@ function createControl({ token, routes }) {
     }
     try {
       const body = req.method === "GET" ? {} : await readBody(req);
-      send(res, 200, await route(body, Object.fromEntries(url.searchParams)));
+      send(res, 200, await route(body, Object.fromEntries(url.searchParams), { req, res }));
     } catch (error) {
       send(res, error.status || 400, { error: error.message });
     }

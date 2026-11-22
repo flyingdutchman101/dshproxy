@@ -97,7 +97,17 @@ function windowsStore() {
     const key=await dpapi('Unprotect',wrapped);try{const decipher=crypto.createDecipheriv('aes-256-gcm',key,iv);decipher.setAuthTag(tag);return JSON.parse(Buffer.concat([decipher.update(data),decipher.final()]).toString('utf8'));}finally{key.fill(0)}
   },async clear(){await fs.rm(file,{force:true});}};
 }
-async function access(store,now=Date.now) {
-  try{const s=await store.load();check(s.resource===resource && validToken(s.accessToken) && Number.isSafeInteger(s.expiresAt) && s.expiresAt>now()+30000);return s.accessToken;}catch{throw Error('KREA_LOGIN_REQUIRED');}
+// The one rule for a usable sign-in: a stored session for the Krea resource
+// with a well-formed token and more than 30 seconds left.
+async function usable(store,now) {
+  const s=await store.load();check(s.resource===resource && validToken(s.accessToken) && Number.isSafeInteger(s.expiresAt) && s.expiresAt>now()+30000);return s;
 }
-module.exports={login,access,windowsStore};
+async function access(store,now=Date.now) {
+  try{return (await usable(store,now)).accessToken;}catch{throw Error('KREA_LOGIN_REQUIRED');}
+}
+// Whether a request would find a sign-in, and until when. Never the token.
+// Any failure to read the store counts as signed out. Contacts nothing.
+async function status(store,now=Date.now) {
+  try{return {signedIn:true,expiresAt:(await usable(store,now)).expiresAt};}catch{return {signedIn:false};}
+}
+module.exports={login,access,status,windowsStore};

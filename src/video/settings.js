@@ -9,7 +9,9 @@
 // ignored when read, so no credential can be stored here or come back out.
 const fs = require('node:fs');
 const path = require('node:path');
+const { isDeepStrictEqual } = require('node:util');
 const { models, quote, routesFor } = require('./catalog');
+const { withLock, replaceFile } = require('../filelock');
 const { homeDir } = require('../settings');
 
 const FILE_NAME = 'video-settings.json';
@@ -118,20 +120,6 @@ function load(home) {
   return state;
 }
 
-// Written to a temporary file first, so an interrupted save cannot leave a
-// half-written file.
-function save(home, state) {
-  const target = file(home);
-  const temporary = `${target}.${process.pid}.tmp`;
-  fs.mkdirSync(folder(home), { recursive: true });
-  try {
-    fs.writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`);
-    fs.renameSync(temporary, target);
-  } catch (error) {
-    fs.rmSync(temporary, { force: true });
-    throw error;
-  }
-}
 
 // Every catalog model, in catalog order: { models: { MODEL: { enabled, route } } }.
 // An enabled model whose route is null is not usable yet; see offered().
@@ -143,15 +131,24 @@ async function read(home) {
 // state. Only the named fields change. One invalid part refuses the whole
 // change and nothing is written.
 //
-// No step here waits, so two changes started together in one process cannot
-// both start from the same saved state and lose one of them.
-async function write(home, config) {
+// Several commands can change the settings at the same moment, so the read,
+// the change and the write run under the file's lock: otherwise two of them
+// start from the same saved state and the later write drops the earlier
+// change. The new state is returned only once the file, read back, holds it.
+// `io` is for tests (see src/filelock.js).
+async function write(home, config, { io = {} } = {}) {
   const dir = folder(home);
   const wanted = changes(config);
-  const state = load(dir);
-  for (const [model, change] of wanted) Object.assign(state.models[model], change);
-  save(dir, state);
-  return state;
+  const target = file(dir);
+  return withLock(target, async () => {
+    const state = load(dir);
+    for (const [model, change] of wanted) Object.assign(state.models[model], change);
+    // Put in place as a whole, so a reader never sees a half-written file.
+    await replaceFile(target, `${JSON.stringify(state, null, 2)}\n`, io);
+    const saved = load(dir);
+    if (!isDeepStrictEqual(saved, state)) throw new Error(`The change to ${target} could not be confirmed: reading the file back did not show it. Run the command again.`);
+    return saved;
+  }, io);
 }
 
 // What may be offered for generation: models that are enabled and have a

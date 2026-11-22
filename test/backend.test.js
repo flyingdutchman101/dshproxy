@@ -252,6 +252,47 @@ test("a master key file Windows cannot unlock is an error and is left in place",
   assert.equal(fs.readFileSync(file, "utf8"), "bm90IGEgZHBhcGkgYmxvYg==\n");
 });
 
+test("master keys asked for at the same moment in a fresh folder are one and the same key", async (t) => {
+  const dir = path.join(tempDir(t), "not-created-yet");
+  const file = path.join(dir, "master.key");
+  // Every call has ended before anything is checked or cleaned up.
+  const ended = await Promise.allSettled([1, 2, 3].map(() => secrets.loadMasterKey(file, { create: true })));
+  assert.deepEqual(ended.map((call) => call.status), ["fulfilled", "fulfilled", "fulfilled"]);
+  const made = ended.map((call) => call.value);
+  for (const key of made) assert.equal(key.length, 32);
+  assert.ok(made[1].equals(made[0]) && made[2].equals(made[0]), "the callers were given different keys");
+  // And it is the key in the file, which is the only file there.
+  assert.ok((await secrets.loadMasterKey(file)).equals(made[0]));
+  assert.deepEqual(fs.readdirSync(dir), ["master.key"]);
+  assert.equal(fs.statSync(file).nlink, 1);
+});
+
+test("a master key file that appears while a new key is being protected is used and never replaced", async (t) => {
+  const dir = tempDir(t);
+  const other = path.join(dir, "other", "master.key");
+  const theirs = await secrets.loadMasterKey(other, { create: true });
+  const blob = fs.readFileSync(other, "utf8");
+
+  // The other process is faster: its file is there before ours is written.
+  const file = path.join(dir, "master.key");
+  const pending = secrets.loadMasterKey(file, { create: true });
+  assert.equal(fs.existsSync(file), false);
+  fs.writeFileSync(file, blob);
+  assert.ok((await pending).equals(theirs));
+  assert.equal(fs.readFileSync(file, "utf8"), blob);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["master.key", "other"]);
+});
+
+test("a master key file that appears meanwhile and cannot be unlocked is an error and is left in place", async (t) => {
+  const dir = tempDir(t);
+  const file = path.join(dir, "master.key");
+  const pending = secrets.loadMasterKey(file, { create: true });
+  fs.writeFileSync(file, "bm90IGEgZHBhcGkgYmxvYg==\n");
+  await assert.rejects(pending, /could not unlock/);
+  assert.equal(fs.readFileSync(file, "utf8"), "bm90IGEgZHBhcGkgYmxvYg==\n");
+  assert.deepEqual(fs.readdirSync(dir), ["master.key"]);
+});
+
 test("accounts are listed from the credential files without their tokens", (t) => {
   const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, "claude-a.json"), JSON.stringify({ type: "claude", email: "a@example.com", access_token: "tok-1", refresh_token: "tok-2", expired: "2026-12-01T00:00:00Z" }));

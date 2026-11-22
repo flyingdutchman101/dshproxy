@@ -10,12 +10,15 @@ const help = `dshproxy video list
   video submit MODEL ROUTE --max-usd AMOUNT --confirm-charge "PROMPT"
   video submit minimax-h3 callirra --max-credits COUNT --confirm-charge "PROMPT"
   video status MODEL ROUTE JOB_ID        Check once, never resubmit
+  video key list                         Show which provider keys are saved or set (never a key)
+  video key set PROVIDER                 Save or replace a provider key, read from standard input
+  video key remove PROVIDER              Remove a saved provider key
 API routes: videorouter, videorouter-replicate (Wan only), kovapi, callirra (H3 only). Workspace route: krea.
 Five seconds, 16:9, text only. Caps check the API estimate or workspace preflight, not the final bill.
-Credentials: VIDEOROUTER_API_KEY, KOVAPI_API_KEY or CALLIRRA_API_KEY. Never pass keys on the command line.
+Credentials: a key saved with video key set (providers videorouter, kovapi, callirra), stored encrypted like the chat API keys,
+or VIDEOROUTER_API_KEY, KOVAPI_API_KEY or CALLIRRA_API_KEY, which wins when set. Never pass keys on the command line.
 Video settings control what an integration offers, not what the direct video CLI can submit or a spending limit.`;
 
-const keyNames = {videorouter:'VIDEOROUTER_API_KEY', 'videorouter-replicate':'VIDEOROUTER_API_KEY', kovapi:'KOVAPI_API_KEY', callirra:'CALLIRRA_API_KEY'};
 
 function budgetMicros(value) {
   if (!/^\d{1,6}(?:\.\d{1,6})?$/.test(value)) throw new Error('Invalid USD budget: use a positive decimal, up to six decimal places.');
@@ -23,7 +26,10 @@ function budgetMicros(value) {
   return Number(dollars) * 1000000 + Number(cents.padEnd(6, '0'));
 }
 
-async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, workspace}={}) {
+// `readSecret(prompt)` gives the text of standard input for `key set`; only
+// the program that owns standard input can provide it. `loadMasterKey` stands
+// in for the Windows-protected master key of src/secrets.js.
+async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, workspace, readSecret, loadMasterKey}={}) {
   const [action, model, route] = args;
   const emit = (data) => out(JSON.stringify(data, null, 2));
   if (!args.length || (args.length === 1 && ['help','--help','-h'].includes(action))) return out(help);
@@ -39,6 +45,20 @@ async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, work
       current = await settings.write(home, {models:{[route]:{route:args[3] === 'none' ? null : args[3],enabled:args[4] === 'enabled'}}});
     } else throw new Error('Use video settings, or video settings set MODEL ROUTE enabled|disabled.');
     return emit({models:models.map(name=>({model:name,...current.models[name],routes:routesFor(name)}))});
+  }
+  if (action === 'key') {
+    const keys = require('./keys');
+    const usage = `Use video key list, video key set PROVIDER (the key is read from standard input, never from the command line), or video key remove PROVIDER. Providers: ${keys.providers.join(', ')}.`;
+    const home = env.DSHPROXY_HOME || undefined;
+    // model and route hold the subcommand and the provider here. Neither is
+    // repeated in a message: a key typed in the wrong place must not be echoed.
+    if (model === 'list' && args.length === 2) return emit({providers:await keys.list(home, {env, loadMasterKey})});
+    if (!['set','remove'].includes(model) || args.length !== 3) throw new Error(usage);
+    if (!keys.providers.includes(route)) throw new Error(`Unknown video key provider. ${usage}`);
+    if (model === 'remove') return emit(await keys.remove(home, route));
+    const secret = typeof readSecret === 'function' ? await readSecret(`API key for ${route}: `) : '';
+    if (typeof secret !== 'string' || !secret.trim()) throw new Error(`No key was given on standard input. ${usage}`);
+    return emit(await keys.set(home, route, secret, {loadMasterKey}));
   }
   if (route === 'krea' && ['quote','submit','status'].includes(action)) {
     if (!models.includes(model)) throw new Error('Unknown video model');
@@ -71,8 +91,9 @@ async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, work
       if (!/^\d{1,6}$/.test(args[4]) || Number(args[4]) < q.credits) throw new Error('Insufficient credit budget; no job submitted.');
     } else if (budgetMicros(args[4]) < q.usdMicros) throw new Error('The quote exceeds --max-usd; no job submitted.');
   } else if (args.length !== 4) throw new Error(help);
-  const key = env[keyNames[route]];
-  if (!key?.trim()) throw new Error(`Set ${keyNames[route]} for this provider. No request sent.`);
+  // The provider's environment variable when set, otherwise the saved key;
+  // with neither, or a saved key that cannot be read, this throws and nothing is sent.
+  const key = await require('./keys').resolve(env.DSHPROXY_HOME || undefined, route, {env, loadMasterKey});
   const transport = require('./transport');
   const options = {route, modelId:q.modelId, key, fetchImpl};
   const result = submitting ? await transport.submit({...options, prompt:args[6]}) : await transport.status({...options, jobId:args[3]});
