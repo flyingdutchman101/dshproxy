@@ -24,6 +24,10 @@ It is a standalone project. It shares no code or git history with DroidProxy or 
 - **DeepSeek Harness**: preview, apply or remove the routes.
 - **Log**: live gateway output.
 
+A switch at the top changes between the **Chat** workspace above and a **Video** workspace with the same sections: **Accounts** signs in to or out of a Krea workspace in your browser, **API keys** saves, replaces or removes the key of a pay-per-use video provider, **Lanes** sets the billing route of each video model, and **Models** switches video models on or off. See [Video routing](#video-routing-cli).
+
+The window keeps its content in one centered column and fits itself to the screen it opens on; the smallest size is 860 by 600.
+
 Provider logos are from [LobeHub Icons](https://github.com/lobehub/lobe-icons) (MIT) and are trademarks of their owners; see [app/logos/SOURCE.md](app/logos/SOURCE.md). They are built into the program, so it works offline.
 
 Closing the window keeps the gateway running in the tray; quit from the tray menu. "Start with Windows" starts it hidden in the tray at sign-in.
@@ -73,7 +77,8 @@ The first `start` or `login` downloads the CLIProxyAPI release named in [backend
 | Command | What it does |
 |---|---|
 | `start` | Runs the gateway on `127.0.0.1:8417` and the backend on `127.0.0.1:8418` |
-| `status` | Shows accounts, API keys, each lane's ladder and the DeepSeek Harness state |
+| `stop --when-idle [--wait SECONDS]` | Stops the running gateway at a moment with no request in flight. If none comes within the wait (300 seconds unless given), the gateway keeps running and the command exits with code 2 |
+| `status` | Shows accounts, API keys, each lane's ladder, requests in flight and the DeepSeek Harness state |
 | `login <provider>` | Signs in to a subscription with CLIProxyAPI's own login |
 | `accounts` | Lists signed-in accounts |
 | `key set <provider> [region]` | Saves an API key, encrypted |
@@ -190,7 +195,7 @@ Once the ladders have been edited by hand (in settings.json), the tab shows **Cu
 **Backend updates.** Every 6 hours DSHProxy asks GitHub for the latest CLIProxyAPI release (no drafts or pre-releases). When one is newer, the app shows **Update...**. Updating:
 1. downloads the release's Windows zip and checks it against the `checksums.txt` that release publishes (addresses outside the official release path are refused);
 2. starts it on a spare loopback port with your accounts and sends one short request per signed-in service (an out-of-quota answer does not count against it);
-3. only if that passes, switches `~/.dshproxy/backend.lock.json` to it, keeps the version it replaces, and restarts the gateway (a few seconds offline).
+3. only if that passes, switches `~/.dshproxy/backend.lock.json` to it, keeps the version it replaces, and restarts the gateway (a few seconds offline). The restart waits for a moment with no request in flight; if none comes within 15 minutes it restarts anyway and the log says how many requests were cut.
 
 If the new version will not start, DSHProxy goes back to the previous one by itself. **Roll back...** in the app, or `dshproxy backend rollback` with the gateway stopped, returns to the previous version. The version shipped in the repo's `backend.lock.json` is the floor: an older update is ignored.
 
@@ -220,6 +225,8 @@ The Windows app reaches these through a control API on the gateway (`/dshproxy/c
 - Two conversations that begin with the same first user message, and send no session ID, count as one conversation for the purpose of staying on a rung.
 - An installed backend is not checked again after the first install.
 - Starting two gateways at the same moment for the first time can make one of the installs fail.
+- A stop that waits for an idle moment never cuts a request the gateway has started to read. A connection that is open but has not sent its request at that moment is closed without an answer, and the client has to send the request again.
+- Video keys, video settings and the first creation of `master.key` are safe when several commands run at the same moment. The chat `settings.json`, the DeepSeek Harness profile files and `backend.lock.json` are not locked: of two changes made at the same moment, one can be lost.
 
 ## Updating the backend
 
@@ -242,7 +249,11 @@ From a source checkout, `node bin/dshproxy.js video help` works without starting
 - `video submit MODEL krea --max-units COUNT --confirm-charge "PROMPT"` requests a fresh preflight before one generation call. The cap limits the quoted amount, not the final debit. `video status MODEL krea JOB_ID` checks the original job. After an uncertain submission check the workspace; never retry blindly.
 - `video krea MODEL` remains an **offline manual handoff** for another OAuth-capable client. No workspace command falls back to API billing. Real OAuth issuer compatibility, model availability and actual charges require live verification before production use.
 
-For an explicitly paid run, use `video submit MODEL ROUTE --max-usd AMOUNT --confirm-charge "PROMPT"`, with the corresponding provider key already in the environment. For Callirra, use `--max-credits 10` instead of a dollar budget: the provider bills credits. The limit checks the local estimate per submission, **not** the provider's final debit or a cumulative budget. Rates may change. Save the returned model, route and job ID; use `video status MODEL ROUTE JOB_ID` to check progress. Nothing automatically retries a submission or changes hosts. After an ambiguous failure, check the provider dashboard before trying again. Output URLs may be short-lived and private; do not share job output or paste secrets into prompts. This release has no new desktop controls or chat models.
+**Provider keys.** `video key set PROVIDER` saves the key of a pay-per-use provider (`videorouter`, `kovapi`, `callirra`). The key is read from standard input, never from the command line, and is stored in `video-keys.json` in the data folder, encrypted with the same master key as the chat API keys. `video key list` shows which providers have a saved key and whether one is set in the environment; `video key remove PROVIDER` deletes it. A key in the provider's environment variable (`VIDEOROUTER_API_KEY`, `KOVAPI_API_KEY`, `CALLIRRA_API_KEY`) is used instead of a saved one. A saved key is not checked against the provider.
+
+For an explicitly paid run, use `video submit MODEL ROUTE --max-usd AMOUNT --confirm-charge "PROMPT"`, with the provider key saved or in the environment. For Callirra, use `--max-credits 10` instead of a dollar budget: the provider bills credits. The limit checks the local estimate per submission, **not** the provider's final debit or a cumulative budget. Rates may change. Save the returned model, route and job ID; use `video status MODEL ROUTE JOB_ID` to check progress. Nothing automatically retries a submission or changes hosts. After an ambiguous failure, check the provider dashboard before trying again. Output URLs may be short-lived and private; do not share job output or paste secrets into prompts.
+
+The Windows app's **Video** workspace edits the same settings: which models are on, the billing route of each, the provider keys, and the Krea sign-in. Nothing is generated or charged from the window, and video models are not chat models.
 
 ## Not included
 

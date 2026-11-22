@@ -121,6 +121,29 @@ namespace DSHProxy
         }
     }
 
+    // Controls.Clear only takes the children off a panel: their windows, and the
+    // glass and bitmaps kept for them, would stay until the program ends. This
+    // takes them off and releases them. The release happens a moment later, on
+    // the same thread, because the caller may be inside a click on one of them.
+    internal static class Children
+    {
+        public static void Release(Control parent)
+        {
+            if (parent.Controls.Count == 0) return;
+            var old = new Control[parent.Controls.Count];
+            parent.Controls.CopyTo(old, 0);
+            parent.Controls.Clear();
+            var context = SynchronizationContext.Current;
+            if (context is WindowsFormsSynchronizationContext) context.Post(_ => Dispose(old), null);
+            else Dispose(old);
+        }
+
+        private static void Dispose(Control[] controls)
+        {
+            foreach (var control in controls) control.Dispose();
+        }
+    }
+
     // Provider logos embedded in the program (see app/logos). Unknown names
     // get null, and callers leave the space empty.
     internal static class Logos
@@ -300,7 +323,14 @@ namespace DSHProxy
 
         private ProcessStartInfo Info(string[] args)
         {
-            var parts = new List<string> { Quote(Path.Combine(Root, "bin", "dshproxy.js")) };
+            return Info(Path.Combine(Root, "bin", "dshproxy.js"), args);
+        }
+
+        // Node running one script of the DSHProxy folder, hidden, with its
+        // standard streams in this program's hands.
+        private ProcessStartInfo Info(string script, string[] args)
+        {
+            var parts = new List<string> { Quote(script) };
             foreach (var arg in args) parts.Add(Quote(arg));
             return new ProcessStartInfo(Node, string.Join(" ", parts.ToArray()))
             {
@@ -326,7 +356,12 @@ namespace DSHProxy
         // which is how API keys are passed: never on the command line.
         public Result Run(string[] args, string input, int timeoutMs)
         {
-            using (var process = Process.Start(Info(args)))
+            return Run(Info(args), input, timeoutMs);
+        }
+
+        private static Result Run(ProcessStartInfo info, string input, int timeoutMs)
+        {
+            using (var process = Process.Start(info))
             {
                 var output = process.StandardOutput.ReadToEndAsync();
                 var errors = process.StandardError.ReadToEndAsync();
@@ -341,12 +376,39 @@ namespace DSHProxy
             }
         }
 
+        // Starts a command and hands its process over, for one that waits and
+        // can be cancelled.
+        public Process Start(string[] args)
+        {
+            return Process.Start(Info(args));
+        }
+
         // Starts the long-running gateway, hidden.
         public Process StartHidden(string[] args)
         {
             var info = Info(args);
             info.RedirectStandardInput = false;
             return Process.Start(info);
+        }
+
+        // The separate Krea helper. It is started directly, never through
+        // dshproxy.js: the sign-in it keeps stays out of the routing command
+        // line, and out of this program.
+        private string KreaScript
+        {
+            get { return Path.Combine(Root, "bin", "dshproxy-krea.js"); }
+        }
+
+        // Runs a short helper command (status, logout) to its end.
+        public Result RunKrea(string[] args, int timeoutMs)
+        {
+            return Run(Info(KreaScript, args), null, timeoutMs);
+        }
+
+        // Starts a helper command that waits (login) and hands the process over.
+        public Process StartKrea(string[] args)
+        {
+            return Process.Start(Info(KreaScript, args));
         }
     }
 
@@ -516,8 +578,12 @@ namespace DSHProxy
 
         private void Reset(params Button[] actions)
         {
-            body.Controls.Clear();
-            buttons.Controls.Clear();
+            // The default buttons belong to the contents that go now. The next
+            // contents name their own, where they have one.
+            AcceptButton = null;
+            CancelButton = null;
+            Children.Release(body);
+            Children.Release(buttons);
             foreach (var action in actions) buttons.Controls.Add(action);
         }
 
@@ -639,7 +705,7 @@ namespace DSHProxy
             if (device && code.Length > 0)
             {
                 var codeRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 56, FlowDirection = FlowDirection.LeftToRight };
-                var codeLabel = new GlassLabel { Text = code, AutoSize = true, Font = Theme.Mono(22f, FontStyle.Bold), ForeColor = Theme.Accent, Margin = new Padding(0, 4, 16, 0) };
+                var codeLabel = new GlassLabel { Text = code, AutoSize = true, Font = Theme.Mono(22f, FontStyle.Bold), ForeColor = Theme.Accent, Margin = new Padding(0, 10, 16, 0) };
                 var copyCode = Skin.Outline(new PillButton { Text = "Copy code", Width = 104, Height = 32, Margin = new Padding(0, 12, 0, 0) });
                 copyCode.Click += (s, e) => Clipboard.SetText(code);
                 codeRow.Controls.Add(codeLabel);
@@ -755,7 +821,6 @@ namespace DSHProxy
         private readonly System.Windows.Forms.Timer limitsTimer = new System.Windows.Forms.Timer();
         private Process gateway;
         private bool quitting;
-        private bool refreshing;
         private bool loadingLimits;
         private bool balloonShown;
         private bool running;
@@ -772,16 +837,16 @@ namespace DSHProxy
         private readonly Button startButton = Skin.Primary(new PillButton { Text = "Start", Width = 104, Height = 40 });
         private readonly Button stopButton = Skin.Danger(new PillButton { Text = "Stop", Width = 104, Height = 40, Margin = new Padding(8, 3, 0, 3) });
         private readonly Panel accountsPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(0, 4, 0, 4) };
-        private readonly Label limitsNote = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
+        private readonly Label limitsNote = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 12, 0, 0) };
         private readonly ListView keysList = new DarkList();
-        private readonly ComboBox keyProviderCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
-        private readonly ComboBox keyRegionCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
+        private readonly ComboBox keyProviderCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Margin = new Padding(0, 6, 3, 3) };
+        private readonly ComboBox keyRegionCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220, Margin = new Padding(3, 6, 3, 3) };
         private readonly ListView lanesList = new DarkList();
         private readonly ListView modelsList = new DarkList();
-        private readonly Label modelsNote = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 8, 0, 0) };
-        private readonly FlowLayoutPanel suggestionsPanel = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(14, 8, 14, 8), Margin = new Padding(0, 0, 0, 8), Visible = false };
-        private readonly FlowLayoutPanel updateBar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(18, 8, 18, 8), Visible = false };
-        private readonly Label updateLabel = new GlassLabel { AutoSize = true, Margin = new Padding(0, 8, 12, 0) };
+        private readonly Label modelsNote = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 12, 0, 0) };
+        private readonly FlowLayoutPanel suggestionsPanel = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(0, 8, 0, 8), Margin = new Padding(0, 0, 0, 8), Visible = false };
+        private readonly FlowLayoutPanel updateBar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(22, 8, 19, 8), Visible = false };
+        private readonly Label updateLabel = new GlassLabel { AutoSize = false, Margin = new Padding(0, 8, 12, 0) };
         private readonly Button updateButton = Skin.Primary(new PillButton { Text = "Update...", AutoSize = true });
         private readonly Button rollbackButton = new PillButton { Text = "Roll back...", AutoSize = true };
         private ArrayList modelRows = new ArrayList();
@@ -869,12 +934,15 @@ namespace DSHProxy
             Resize += (s, e) => { if (resizePreview != null) { resizeWatchdog.Stop(); resizeWatchdog.Start(); } };
 
             startButton.Click += (s, e) => StartGateway();
-            stopButton.Click += (s, e) => StopGateway();
+            stopButton.Click += (s, e) => StopRequested();
             autostartBox.Checked = Autostart.IsOn();
             autostartBox.CheckedChanged += (s, e) => Autostart.Set(autostartBox.Checked);
 
-            timer.Interval = 3000;
-            timer.Tick += (s, e) => RefreshStatus();
+            timer.Interval = WatchedCheckMs;
+            timer.Tick += (s, e) => StatusTick();
+            // Shown, hidden, minimised or restored: the checks keep pace with it.
+            VisibleChanged += (s, e) => WatchChanged();
+            Resize += (s, e) => WatchChanged();
             limitsTimer.Interval = 60000;
             limitsTimer.Tick += (s, e) => LoadLimits(false);
             Shown += (s, e) => OnShownOnce();
@@ -952,10 +1020,18 @@ namespace DSHProxy
             if (column.Bounds != bounds) column.Bounds = bounds;
             LayoutHeader(shortWindow, width);
             LayoutSwitchRow(shortWindow, width);
-            var bottomHeight = shortWindow ? 36 : 42;
-            if (bottomRow.Height != bottomHeight)
+            // The bottom row is as tall as its line of text at the width it
+            // has: one line in a wide window, more in a narrow one or with
+            // long folder names.
+            var bottomPadding = shortWindow ? new Padding(22, 1, 22, 1) : new Padding(22, 8, 22, 8);
+            var footerRoom = width - bottomPadding.Horizontal - autostartBox.Width - autostartBox.Margin.Horizontal - footer.Margin.Horizontal;
+            var footerHeight = footer.Text.Length == 0 || footerRoom <= 0 ? 0 : footer.GetPreferredSize(new Size(footerRoom, 0)).Height;
+            // Two lines in a short window: a little air under the second one.
+            if (shortWindow && footerHeight > footer.Font.Height + 6) bottomPadding.Bottom = 5;
+            var bottomHeight = Math.Max(shortWindow ? 36 : 42, footerHeight + footer.Margin.Vertical + bottomPadding.Vertical);
+            if (bottomRow.Height != bottomHeight || bottomRow.Padding != bottomPadding)
             {
-                bottomRow.Padding = shortWindow ? new Padding(22, 1, 22, 1) : new Padding(22, 8, 22, 8);
+                bottomRow.Padding = bottomPadding;
                 bottomRow.Height = bottomHeight;
             }
             column.ResumeLayout(true);
@@ -1053,6 +1129,7 @@ namespace DSHProxy
             {
                 videoPending = false;
                 LoadVideoSettings();
+                EnterVideoPage();
             }
             if (previewLimits != null)
             {
@@ -1067,14 +1144,13 @@ namespace DSHProxy
             if (ReadOnly)
             {
                 tray.Visible = false;
-                BeginInvoke(new Action(() => { RefreshStatus(); timer.Start(); }));
+                BeginInvoke(new Action(StartStatusChecks));
                 return;
             }
             BeginInvoke(new Action(() =>
             {
                 StartGateway();
-                RefreshStatus();
-                timer.Start();
+                StartStatusChecks();
                 limitsTimer.Start();
             }));
         }
@@ -1092,7 +1168,7 @@ namespace DSHProxy
         // line in a wide window, two in a narrow one.
         private static Label Note(string text)
         {
-            var note = new GlassLabel { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 40, ForeColor = Theme.Muted, Padding = new Padding(0, 2, 0, 0) };
+            var note = new GlassLabel { Text = Tied(text), Dock = DockStyle.Top, AutoSize = false, Height = 40, ForeColor = Theme.Muted, Padding = new Padding(0, 2, 0, 0) };
             EventHandler fit = (s, e) =>
             {
                 if (note.Width <= 0) return;
@@ -1167,6 +1243,23 @@ namespace DSHProxy
             if (stateLabel.Tint != color) stateLabel.Tint = color;
         }
 
+        // The bottom line. When it wraps, a name stays with what it names,
+        // and the build is not left with one word on a line of its own. A
+        // folder name with spaces in it can still be broken at them, so a
+        // long one does not run out of the window.
+        private static string FooterText(string home, string root, string stamp)
+        {
+            return "Data:\u00A0" + home + "    Program:\u00A0" + root + "    " + ("Build: " + stamp).Replace(' ', '\u00A0');
+        }
+
+        // A note that wraps does not end in a line with a single word on it:
+        // its last two words stay together.
+        private static string Tied(string text)
+        {
+            var at = text.LastIndexOf(' ');
+            return at <= 0 ? text : text.Substring(0, at) + "\u00A0" + text.Substring(at + 1);
+        }
+
         // Assigning the same string still invalidates the control, so a status
         // refresh every three seconds repainted the whole window for nothing.
         private static void SetText(Control control, string text)
@@ -1184,6 +1277,7 @@ namespace DSHProxy
             updateBar.Controls.Add(rollbackButton);
             updateButton.Click += (s, e) => ApplyUpdate();
             rollbackButton.Click += (s, e) => Rollback();
+            updateBar.Resize += (s, e) => FitUpdateBar();
 
             // Accounts and limits
             var addAccount = Skin.Primary(new PillButton { Text = "+ Add account", AutoSize = true });
@@ -1243,7 +1337,7 @@ namespace DSHProxy
             lanesTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             // In a table the row follows a label that sizes itself, which a
             // Note (it sets its own height) does not get; the spacing is the same.
-            lanesTop.Controls.Add(new GlassLabel { Text = "A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key.", AutoSize = true, Dock = DockStyle.Fill, ForeColor = Theme.Muted, Margin = new Padding(0, 2, 0, 4) }, 0, 0);
+            lanesTop.Controls.Add(new GlassLabel { Text = Tied("A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key."), AutoSize = true, Dock = DockStyle.Fill, ForeColor = Theme.Muted, Margin = new Padding(0, 2, 0, 4) }, 0, 0);
             lanesTop.Controls.Add(presetRow, 0, 1);
             lanesTop.Controls.Add(presetNote, 0, 2);
             tabs.TabPages.Add(Page("Lanes", lanesList, lanesTop, Row(editLanes)));
@@ -1255,6 +1349,11 @@ namespace DSHProxy
             foreach (var c in new[] { new object[] { "Model", 210 }, new object[] { "Service", 140 }, new object[] { "Context", 80 }, new object[] { "Output", 75 }, new object[] { "Reasoning", 165 }, new object[] { "Status", 200 } }) modelsList.Columns.Add((string)c[0], (int)c[1]);
             modelsList.FullRowSelect = true;
             modelsList.Dock = DockStyle.Fill;
+            // Where the six columns cannot all show their text, Service is the
+            // one left out: the logo before the name says it, and so does the
+            // tip of the row.
+            ((DarkList)modelsList).OptionalColumn = 1;
+            modelsList.ShowItemToolTips = true;
             var modelLogos = new ImageList { ImageSize = new Size(18, 18), ColorDepth = ColorDepth.Depth32Bit };
             foreach (var name in new[] { "claude", "codex", "antigravity", "kimi" })
             {
@@ -1272,12 +1371,13 @@ namespace DSHProxy
                 Row(checkModels, showAll, modelsNote));
             modelsPage.Controls.Add(suggestionsPanel);
             suggestionsPanel.BringToFront();
-            modelsList.BringToFront();
+            // The list sits in a frame; the frame is what fills the page.
+            modelsList.Parent.BringToFront();
             tabs.TabPages.Add(modelsPage);
 
             // DeepSeek Harness
             profilesList.View = View.Details;
-            foreach (var c in new[] { "Profile", "Routes", "Models", "Points at this gateway" }) profilesList.Columns.Add(c, 200);
+            foreach (var c in new[] { new object[] { "Profile", 220 }, new object[] { "Routes", 90 }, new object[] { "Models", 90 }, new object[] { "Points at this gateway", 400 } }) profilesList.Columns.Add((string)c[0], (int)c[1]);
             profilesList.FullRowSelect = true;
             profilesList.Dock = DockStyle.Fill;
             var preview = new PillButton { Text = "Preview changes", AutoSize = true };
@@ -1312,8 +1412,9 @@ namespace DSHProxy
                 // like the page jumping.
                 if (navStrip != null) navStrip.Focus();
                 ShowWorkspace();
+                EnterVideoPage();
                 // In the Video workspace the first section is the video
-                // accounts page, which reads nothing.
+                // accounts page, which reads its own state (EnterVideoPage).
                 if (tabs.SelectedIndex == 0 && !videoMode)
                 {
                     accountsPanel.AutoScrollPosition = Point.Empty;
@@ -1328,6 +1429,7 @@ namespace DSHProxy
             footer.Margin = new Padding(0, 5, 0, 0);
             bottom.Controls.Add(footer, 0, 0);
             bottom.Controls.Add(autostartBox, 1, 0);
+            footer.TextChanged += (s, e) => LayoutColumn();
             
             var nav = new NavStrip(tabs);
             navStrip = nav;
@@ -1359,7 +1461,7 @@ namespace DSHProxy
             menu.Items.Add("Add account...", null, (s, e) => { ShowWindow(); AddAccount(); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Start gateway", null, (s, e) => StartGateway());
-            menu.Items.Add("Stop gateway", null, (s, e) => StopGateway());
+            menu.Items.Add("Stop gateway", null, (s, e) => StopRequested());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Quit", null, (s, e) => Quit());
             tray.ContextMenuStrip = menu;
@@ -1448,6 +1550,23 @@ namespace DSHProxy
 
         private void Quit()
         {
+            if (!ConfirmCut(true)) return;
+            // A sign-in left waiting for the browser, and a restart left waiting
+            // for an idle moment, end with the app. Stopping their helper can
+            // take seconds, so it is not done here: the window goes at once, and
+            // a thread the process waits for stops them before the process ends.
+            var login = kreaLogin;
+            var waiting = idleStop;
+            if (login != null || waiting != null)
+            {
+                var ending = new Thread(() =>
+                {
+                    if (waiting != null) waiting.Cancel();
+                    if (login != null) login.Cancel();
+                });
+                ending.IsBackground = false;
+                ending.Start();
+            }
             quitting = true;
             timer.Stop();
             limitsTimer.Stop();
@@ -1472,44 +1591,113 @@ namespace DSHProxy
 
         private bool GatewayAnswers()
         {
+            return GatewayAnswers(lastOrigin);
+        }
+
+        // Takes up to a second and a half. It touches nothing of the window,
+        // so a thread other than the window's can ask it.
+        private static bool GatewayAnswers(string origin)
+        {
             try
             {
-                var request = (HttpWebRequest)WebRequest.Create(lastOrigin + "/dshproxy/status");
+                var request = (HttpWebRequest)WebRequest.Create(origin + "/dshproxy/status");
                 request.Timeout = 1500;
                 using (var response = (HttpWebResponse)request.GetResponse()) return (int)response.StatusCode == 200;
             }
             catch (WebException) { return false; }
         }
 
-        private void StartGateway()
+        // True when a gateway process was started here.
+        private bool StartGateway()
         {
-            if (ReadOnly) return;
-            if (gateway != null && !gateway.HasExited) return;
-            if (GatewayAnswers())
+            return StartGatewayKnowing(null);
+        }
+
+        // `answers`: whether a gateway answers at the address already, when
+        // the caller has asked that on another thread; null to ask it here.
+        private bool StartGatewayKnowing(bool? answers)
+        {
+            if (ReadOnly) return false;
+            if (gateway != null && !gateway.HasExited) return false;
+            // A start from here ends the watch for a gateway that stops late.
+            lateStopWatch = null;
+            // A count from before this start says nothing about what is in flight now.
+            ForgetInFlight();
+            if (answers ?? GatewayAnswers())
             {
                 AppendLog("A gateway is already running on " + lastOrigin + "; showing its status.");
-                return;
+                return false;
             }
             try
             {
-                gateway = cli.StartHidden(new[] { "start" });
-                gateway.EnableRaisingEvents = true;
-                gateway.OutputDataReceived += (s, e) => AppendLog(e.Data);
-                gateway.ErrorDataReceived += (s, e) => AppendLog(e.Data);
-                gateway.Exited += (s, e) => AppendLog("Gateway stopped.");
-                gateway.BeginOutputReadLine();
-                gateway.BeginErrorReadLine();
+                var started = cli.StartHidden(new[] { "start" });
+                gateway = started;
+                gatewayStartedAt = DateTime.UtcNow;
+                started.EnableRaisingEvents = true;
+                started.OutputDataReceived += (s, e) => AppendLog(e.Data);
+                started.ErrorDataReceived += (s, e) => AppendLog(e.Data);
+                started.Exited += (s, e) =>
+                {
+                    AppendLog("Gateway stopped.");
+                    GatewayExited(started);
+                };
+                started.BeginOutputReadLine();
+                started.BeginErrorReadLine();
                 AppendLog("Starting the gateway...");
+                // A live process that has not answered yet: Starting, Stop on, Start off.
+                ShowGateway(false);
+                CheckQuickly();
+                return true;
             }
             catch (System.ComponentModel.Win32Exception error)
             {
                 AppendLog("Could not start the gateway: " + error.Message);
+                return false;
             }
+        }
+
+        // The process of a gateway started here has ended: nothing is in flight in it.
+        private void GatewayExited(Process ended)
+        {
+            if (InvokeRequired)
+            {
+                try { BeginInvoke(new Action<Process>(GatewayExited), ended); }
+                catch (InvalidOperationException) { }
+                return;
+            }
+            if (gateway != ended || quitting) return;
+            ForgetInFlight();
+            // It was starting or not answering: now there is no process. A
+            // gateway that was answering is seen to be gone by the checks.
+            if (shownAs != GatewayShown.Running) ShowGateway(false);
+        }
+
+        // The gateway this window started is still a live process.
+        private bool OwnGatewayAlive
+        {
+            get
+            {
+                var mine = gateway;
+                try { return mine != null && !mine.HasExited; }
+                catch (InvalidOperationException) { return false; }
+                catch (System.ComponentModel.Win32Exception) { return false; }
+            }
+        }
+
+        // The header says Not answering: the gateway this window started is a
+        // live process that does not answer. It may be busy, not gone. One
+        // missed check is not that: the header still says Running then, and
+        // Stop, Quit and a restart ask what they ask of a gateway that answers.
+        private bool Unanswered
+        {
+            get { return shownAs == GatewayShown.NotAnswering && OwnGatewayAlive; }
         }
 
         private void StopGateway()
         {
             if (ReadOnly) return;
+            // Stopped from here: a gateway that then ends is not started again.
+            lateStopWatch = null;
             if (gateway == null || gateway.HasExited)
             {
                 if (GatewayAnswers()) AppendLog("The running gateway was not started by this window. Stop it from the window it was started in.");
@@ -1518,47 +1706,359 @@ namespace DSHProxy
             // Stops the gateway and the backend it started.
             try
             {
-                var kill = Process.Start(new ProcessStartInfo("taskkill.exe", "/PID " + gateway.Id + " /T /F") { CreateNoWindow = true, UseShellExecute = false });
-                kill.WaitForExit(10000);
+                using (var kill = Process.Start(new ProcessStartInfo("taskkill.exe", "/PID " + gateway.Id + " /T /F") { CreateNoWindow = true, UseShellExecute = false })) kill.WaitForExit(10000);
             }
             catch (System.ComponentModel.Win32Exception error)
             {
                 AppendLog("Could not stop the gateway: " + error.Message);
             }
             gateway = null;
+            ForgetInFlight();
+            // Stopped while it was starting or not answering: the header says Stopped now.
+            if (shownAs != GatewayShown.Running && !quitting) ShowGateway(false);
+            CheckQuickly();
             try { File.Delete(Path.Combine(GatewayControl.Home(), "control.token")); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
 
-        // ---------- status ----------
+        // The count of requests in flight is no longer known: it is 0 until the
+        // gateway reports one again.
+        private void ForgetInFlight()
+        {
+            inFlight = 0;
+            fastInFlight = 0;
+            gatewayAnswered = false;
+            // The next answer is read afresh, even if it is the same text.
+            fastBody = null;
+        }
 
-        private void RefreshStatus()
+        // ---------- status ----------
+        //
+        // Two readings. The fast check asks the gateway itself over HTTP (GET
+        // <origin>/dshproxy/status): it starts no process, and says whether
+        // the gateway answers and how many requests are in flight. The full
+        // status is the command line's `status --json`. That one starts four
+        // processes and uses half a second of CPU, so it runs only when there
+        // is something to learn: at start, when the fast answer changes in
+        // anything but the in-flight count, after an action of this window,
+        // when the window comes back on screen, and now and then to notice
+        // what was changed outside the app. Neither waits for the other, and
+        // there is never more than one of each.
+
+        private const int WatchedCheckMs = 3000;
+        private const int UnwatchedCheckMs = 15000;
+        // After a missed check, and for a moment after Start or Stop.
+        private const int QuickCheckMs = 250;
+        private const int WatchedFullSeconds = 60;
+        private const int UnwatchedFullSeconds = 600;
+
+        private bool fullRunning;
+        private bool fullWanted;
+        // A full status failed: it is tried again at the next check.
+        private bool fullRetry;
+        private DateTime fullAt = DateTime.MinValue;
+        // A wanted full status that is not urgent waits until then.
+        private DateTime fullNotBefore = DateTime.MinValue;
+        // The address of the gateway has been read from the settings, by a full status.
+        private bool originKnown;
+        private bool fastRunning;
+        private bool fastUp;
+        private int fastMisses;
+        private string fastBody;
+        // The last fast answer without its in-flight count, and that count.
+        private string fastPrint;
+        private int fastInFlight;
+        private DateTime quickUntil = DateTime.MinValue;
+        private bool watched;
+        // The gateway this window started has answered a fast check since its start.
+        private bool gatewayAnswered;
+        // When it was started, and how long the header says Starting while it has not answered.
+        private DateTime gatewayStartedAt = DateTime.MinValue;
+        private const int StartingSeconds = 30;
+
+        // On screen: visible and not minimised.
+        private bool Watched
+        {
+            get { return Visible && WindowState != FormWindowState.Minimized; }
+        }
+
+        private void StartStatusChecks()
+        {
+            watched = Watched;
+            RefreshStatus();
+            PaceStatusChecks();
+            timer.Start();
+        }
+
+        // The window was shown, hidden, minimised or restored.
+        private void WatchChanged()
+        {
+            var now = Watched;
+            if (now == watched) return;
+            watched = now;
+            if (!timer.Enabled) return;
+            PaceStatusChecks();
+            if (!now) return;
+            // Back on screen: it shows what is true now, not what was true when it went.
+            RefreshStatus();
+            FastCheck();
+        }
+
+        private void PaceStatusChecks()
+        {
+            var quick = (fastMisses > 0 && fastMisses < 3) || DateTime.UtcNow < quickUntil;
+            var ms = quick ? QuickCheckMs : watched ? WatchedCheckMs : UnwatchedCheckMs;
+            if (timer.Interval != ms) timer.Interval = ms;
+        }
+
+        // The gateway was just started or stopped from here: look sooner for a while.
+        private void CheckQuickly()
+        {
+            quickUntil = DateTime.UtcNow.AddSeconds(10);
+            if (timer.Enabled) PaceStatusChecks();
+        }
+
+        private void StatusTick()
         {
             Dbg.Write("tick start");
-            RefreshStatusCore();
+            var now = DateTime.UtcNow;
+            var age = (now - fullAt).TotalSeconds;
+            // A command line that keeps failing is not started every few seconds.
+            var retry = fullRetry && (failedPolls < 3 || age >= 15);
+            if ((fullWanted && now >= fullNotBefore) || retry || age >= (watched ? WatchedFullSeconds : UnwatchedFullSeconds)) FullStatus();
+            FastCheck();
+            PaceStatusChecks();
             Dbg.Write("tick end");
         }
 
-        private void RefreshStatusCore()
+        // Asks for a full status: now, or straight after the one that is running.
+        private void RefreshStatus()
         {
-            if (refreshing) return;
-            refreshing = true;
+            fullWanted = true;
+            fullNotBefore = DateTime.MinValue;
+            FullStatus();
+        }
+
+        // Asks for one too, but no sooner than ten seconds after the last one
+        // started. For a disagreement between the two readings, which must not
+        // start a process on every check if it does not go away. One that is
+        // running now will settle it.
+        private void RefreshStatusSoon()
+        {
+            if (fullRunning || fullWanted) return;
+            var earliest = fullAt.AddSeconds(10);
+            if (DateTime.UtcNow >= earliest)
+            {
+                RefreshStatus();
+                return;
+            }
+            fullWanted = true;
+            fullNotBefore = earliest;
+        }
+
+        private void FullStatus()
+        {
+            // One at a time; a request made meanwhile stays wanted.
+            if (fullRunning) return;
+            fullRunning = true;
+            fullWanted = false;
+            fullRetry = false;
+            fullAt = DateTime.UtcNow;
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 Cli.Result result;
                 try { result = cli.Run(new[] { "status", "--json" }, null, 20000); }
                 catch (Exception error) { result = new Cli.Result { Code = -1, Out = "", Err = error.Message }; }
-                try { BeginInvoke(new Action(() => { refreshing = false; ShowStatus(result); })); }
-                catch (InvalidOperationException) { refreshing = false; }
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        fullRunning = false;
+                        ShowStatus(result);
+                        if (fullWanted && !quitting && DateTime.UtcNow >= fullNotBefore) FullStatus();
+                    }));
+                }
+                catch (InvalidOperationException) { fullRunning = false; }
             });
+        }
+
+        private void FastCheck()
+        {
+            // Not before the settings have said where the gateway is.
+            if (fastRunning || !originKnown) return;
+            fastRunning = true;
+            var origin = lastOrigin;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                var body = GatewayStatus.Read(origin, 2000);
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        fastRunning = false;
+                        if (!quitting) ShowFastCheck(origin, body);
+                    }));
+                }
+                catch (InvalidOperationException) { fastRunning = false; }
+            });
+        }
+
+        // `body` is what the gateway at `origin` answered, or null when it did not.
+        private void ShowFastCheck(string origin, string body)
+        {
+            // The address changed while the question was out.
+            if (origin != lastOrigin) return;
+            int count = 0;
+            string print = null;
+            // An answer already seen needs no reading again.
+            var same = body != null && body == fastBody;
+            if (body != null && !same && !GatewayStatus.Parse(body, out count, out print)) body = null;
+            if (body == null)
+            {
+                // One slow answer does not flip the display: three in a row do.
+                if (fastMisses < 3) fastMisses++;
+                if (fastMisses >= 3)
+                {
+                    fastUp = false;
+                    fastBody = null;
+                    fastPrint = null;
+                    // A gateway started here that is still a live process may only
+                    // be slow to answer: its last count stands, and Stop and Quit
+                    // ask before they cut. The count goes when the process does.
+                    if (!OwnGatewayAlive)
+                    {
+                        fastInFlight = 0;
+                        inFlight = 0;
+                    }
+                    if (running || shownAs == GatewayShown.Running)
+                    {
+                        ShowGatewayDown();
+                        RefreshStatusSoon();
+                    }
+                }
+                // Still no first answer from a gateway started here: the header
+                // says Starting for half a minute, not for as long as it is silent.
+                if (shownAs == GatewayShown.Starting) ShowGateway(false);
+                PaceStatusChecks();
+                return;
+            }
+            var wasUp = fastUp;
+            fastUp = true;
+            fastMisses = 0;
+            if (OwnGatewayAlive) gatewayAnswered = true;
+            if (!same)
+            {
+                fastBody = body;
+                fastInFlight = count;
+                // The first answer is what later ones are compared with. The
+                // full status that gave the address is as new as it is.
+                if (fastPrint == null) fastPrint = print;
+                else if (print != fastPrint)
+                {
+                    fastPrint = print;
+                    RefreshStatus();
+                }
+            }
+            inFlight = fastInFlight;
+            if (restartDialog != null) restartDialog.SetCount(inFlight);
+            // A gateway this window started answers, and the header said
+            // Starting or Not answering: it says Running at once. The pages
+            // follow: the limits are read, and a full status is asked for now.
+            if (shownAs != GatewayShown.Running && OwnGatewayAlive)
+            {
+                ShowGateway(true);
+                running = true;
+                LoadLimits(false);
+                RefreshStatus();
+            }
+            // It answers, and the window says it is stopped.
+            if (!running)
+            {
+                if (!wasUp) RefreshStatus();
+                else RefreshStatusSoon();
+            }
+            PaceStatusChecks();
+        }
+
+        // The gateway stopped answering. Said at once; the full status follows.
+        private void ShowGatewayDown()
+        {
+            ShowGateway(false);
+        }
+
+        // What the header says about the gateway.
+        private enum GatewayShown { Nothing, Running, Starting, NotAnswering, Stopped }
+        private GatewayShown shownAs = GatewayShown.Nothing;
+        // The second header line of a gateway that answers, from the last full status.
+        private string runningDetail;
+
+        // Four states. Running: the gateway answers. Starting and Not
+        // answering: a gateway this window started is a live process that
+        // has not answered yet, or has stopped answering; Stop stays on
+        // (it asks before it cuts) and Start stays off. Stopped, with Start
+        // on: no gateway process of this window is alive and nothing answers.
+        private void ShowGateway(bool answers)
+        {
+            var before = shownAs;
+            var alive = !answers && OwnGatewayAlive;
+            // Half a minute without a first answer is not starting any more:
+            // the process hangs, or another program has the address.
+            var late = alive && !gatewayAnswered && (DateTime.UtcNow - gatewayStartedAt).TotalSeconds >= StartingSeconds;
+            shownAs = answers ? GatewayShown.Running : !alive ? GatewayShown.Stopped : gatewayAnswered || late ? GatewayShown.NotAnswering : GatewayShown.Starting;
+            if (!answers) running = false;
+            switch (shownAs)
+            {
+                case GatewayShown.Running:
+                    ShowState("\u25CF Running", Theme.Ok);
+                    SetText(detailLabel, runningDetail ?? lastOrigin);
+                    tray.Text = "DSHProxy: running";
+                    break;
+                case GatewayShown.Starting:
+                    ShowState("\u25CF Starting", Theme.Warn);
+                    SetText(detailLabel, "The gateway is starting.");
+                    tray.Text = "DSHProxy: starting";
+                    break;
+                case GatewayShown.NotAnswering:
+                    ShowState("\u25CF Not answering", Theme.Warn);
+                    SetText(detailLabel, "The gateway process is running but does not answer. Stop asks before it cuts anything.");
+                    tray.Text = "DSHProxy: not answering";
+                    break;
+                default:
+                    ShowState("\u25CF Stopped", Theme.Bad);
+                    SetText(detailLabel, "The gateway is not running. Press Start.");
+                    tray.Text = "DSHProxy: stopped";
+                    break;
+            }
+            var startOn = shownAs == GatewayShown.Stopped;
+            if (startButton.Enabled != startOn) startButton.Enabled = startOn;
+            if (stopButton.Enabled == startOn) stopButton.Enabled = !startOn;
+            if (shownAs == before) return;
+            // In a short window the two status lines share one line only
+            // while they fit: a longer sentence is given its own.
+            headerState = -1;
+            LayoutColumn();
+            // The accounts page says why it has nothing to show. Not on every
+            // reading: replacing the cards each time was a flash. And not
+            // while a gateway that was running is being started again: its
+            // cards stay until the new ones are read.
+            var says = shownAs == GatewayShown.Stopped && before != GatewayShown.Nothing ? "The gateway is not running. Press Start to see accounts and limits."
+                : shownAs == GatewayShown.NotAnswering ? "The gateway is not answering. Accounts and limits are shown again when it does."
+                : shownAs == GatewayShown.Starting && before == GatewayShown.Stopped ? "The gateway is starting. Accounts and limits are shown when it answers."
+                : null;
+            if (says == null) return;
+            // The cards are built again from the next limits, also when those
+            // are the same as the last ones.
+            accountsKey = "";
+            ShowAccountsMessage(says, Theme.Muted);
         }
 
         private void ShowStatus(Cli.Result result)
         {
             if (result.Code != 0)
             {
-                // A single slow or failed poll must not wipe the window: doing so
+                // A single slow or failed read must not wipe the window: doing so
                 // made the cards and lists flash every few seconds.
                 failedPolls++;
+                fullRetry = true;
                 if (failedPolls < 3) return;
                 ShowState("Status unavailable", Theme.Bad);
                 SetText(detailLabel, result.Err.Trim());
@@ -1569,27 +2069,46 @@ namespace DSHProxy
             try { status = Json.Obj(Json.Serializer.DeserializeObject(result.Out)); }
             catch (ArgumentException) { return; }
 
+            var origin = Json.Str(Json.Get(status, "origin"));
+            // The command line gives the gateway two seconds, once. When the
+            // gateway has just answered this window, one slow answer there
+            // does not flip the display: the checks decide, three misses in a
+            // row, and a full status is read again.
+            if (!Json.Bool(status, "running") && fastUp && origin == lastOrigin)
+            {
+                RefreshStatusSoon();
+                return;
+            }
             var wasRunning = running;
             running = Json.Bool(status, "running");
-            lastOrigin = Json.Str(Json.Get(status, "origin"));
+            if (origin != lastOrigin)
+            {
+                // Another address: what the fast check knew was about the old one.
+                fastUp = false;
+                fastMisses = 0;
+                fastBody = null;
+                fastPrint = null;
+                fastInFlight = 0;
+                inFlight = 0;
+            }
+            lastOrigin = origin;
+            originKnown = origin.Length > 0;
+            // The fast check has the newer count once the gateway answers it. A
+            // status that found no gateway says nothing about the count of one
+            // started here that is still a live process.
+            if (!fastUp && (running || !OwnGatewayAlive)) inFlight = InFlight.Count(status);
             var backend = Json.Obj(Json.Get(status, "backend"));
             var models = Json.Arr(Json.Get(status, "models"));
             var accountCount = Json.Arr(Json.Get(status, "accounts")).Count;
 
-            ShowState(running ? "\u25CF Running" : "\u25CF Stopped", running ? Theme.Ok : Theme.Bad);
-            SetText(detailLabel, running
-                ? string.Format("{0}  \u00B7  {1} {2}  \u00B7  {3} account{4}  \u00B7  {5} models offered", lastOrigin, Json.Str(Json.Get(backend, "name")), Json.Str(Json.Get(backend, "version")), accountCount, accountCount == 1 ? "" : "s", models.Count)
-                : "The gateway is not running. Press Start.");
-            startButton.Enabled = !running;
-            stopButton.Enabled = running;
-            tray.Text = running ? "DSHProxy: running" : "DSHProxy: stopped";
-            SetText(footer, "Data: " + Json.Str(Json.Get(status, "home")) + "    Program: " + cli.Root + "    Build: " + BuildInfo.Stamp);
+            if (running) runningDetail = string.Format("{0}  \u00B7  {1} {2}  \u00B7  {3} account{4}  \u00B7  {5} models offered", lastOrigin, Json.Str(Json.Get(backend, "name")), Json.Str(Json.Get(backend, "version")), accountCount, accountCount == 1 ? "" : "s", models.Count);
+            ShowGateway(running);
+            SetText(footer, FooterText(Json.Str(Json.Get(status, "home")), cli.Root, BuildInfo.Stamp));
             loginProviders = Json.Arr(Json.Get(status, "loginProviders"));
 
             if (running && !wasRunning) LoadLimits(false);
-            // Only speak up when the gateway actually went down, not on every
-            // poll that reports it: replacing the cards each tick was a flash.
-            if (!running && wasRunning) ShowAccountsMessage("The gateway is not running. Press Start to see accounts and limits.", Theme.Muted);
+            // That the gateway went down is said on the accounts page by
+            // ShowGateway, once, when the header changes.
 
             // API keys
             var keys = Json.Obj(Json.Get(status, "apiKeys"));
@@ -1712,8 +2231,10 @@ namespace DSHProxy
 
         private void ShowAccountsMessage(string text, Color color)
         {
-            accountsPanel.Controls.Clear();
-            accountsPanel.Controls.Add(new GlassLabel { Text = text, Dock = DockStyle.Top, Height = 60, ForeColor = color, TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Ui(10f) });
+            Children.Release(accountsPanel);
+            var message = new GlassLabel { Text = text, Dock = DockStyle.Top, Height = 60, ForeColor = color, TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Ui(10f) };
+            message.Disposed += (s, e) => message.Font.Dispose();
+            accountsPanel.Controls.Add(message);
         }
 
         private void LoadLimits(bool force)
@@ -1756,22 +2277,28 @@ namespace DSHProxy
             if (print == accountsKey && accountsPanel.Controls.Count > 0) return;
             accountsKey = print;
             accountsPanel.SuspendLayout();
-            accountsPanel.Controls.Clear();
+            Children.Release(accountsPanel);
             if (accounts.Count == 0)
             {
                 ShowAccountsMessage("No accounts yet. Press \"+ Add account\" to sign in to Claude, ChatGPT, Gemini or Kimi.", Theme.Muted);
-                lowestLabel.Text = "";
+                SetLowest("", Theme.Muted);
                 accountsPanel.ResumeLayout();
                 return;
             }
             string lowestText = null;
             double lowest = 101;
+            var cards = new List<TableLayoutPanel>();
+            var widestThird = 0;
             // Docked to the top, so they are added last-first.
             for (var index = accounts.Count - 1; index >= 0; index -= 1)
             {
                 var account = Json.Obj(accounts[index]);
                 accountsPanel.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 14 });
-                accountsPanel.Controls.Add(BuildCard(account));
+                int third;
+                var built = BuildCard(account, out third);
+                cards.Add(built);
+                widestThird = Math.Max(widestThird, third);
+                accountsPanel.Controls.Add(built);
                 foreach (var item in Json.Arr(Json.Get(account, "windows")))
                 {
                     var w = Json.Obj(item);
@@ -1783,14 +2310,29 @@ namespace DSHProxy
                     }
                 }
             }
-            lowestLabel.Text = lowestText ?? "";
-            lowestLabel.ForeColor = lowestText == null ? Theme.Muted : Theme.ForLeft(lowest);
+            // The third column is the same width in every card, so the bars
+            // end at one line down the page whatever buttons a card has.
+            foreach (var built in cards) built.ColumnStyles[2] = new ColumnStyle(SizeType.Absolute, widestThird);
+            SetLowest(lowestText ?? "", lowestText == null ? Theme.Muted : Theme.ForLeft(lowest));
             // The cards are docked, so they are as wide as the page: the
             // column keeps them from stretching across a wide monitor.
             accountsPanel.ResumeLayout();
         }
 
-        private TableLayoutPanel BuildCard(Dictionary<string, object> account)
+        // The second status line of the header. In a short window it shares a
+        // line with the first one only while both fit, so the header is laid
+        // out again when the text changes, not only when the window is resized.
+        private void SetLowest(string text, Color color)
+        {
+            if (lowestLabel.ForeColor != color) lowestLabel.ForeColor = color;
+            if (lowestLabel.Text == text) return;
+            lowestLabel.Text = text;
+            headerState = -1;
+            LayoutColumn();
+        }
+
+        // thirdNeed: the width the card's third column needs, for its buttons and its widest line.
+        private TableLayoutPanel BuildCard(Dictionary<string, object> account, out int thirdNeed)
         {
             var file = Json.Str(Json.Get(account, "file"));
             var label = Json.Str(Json.Get(account, "label"));
@@ -1813,12 +2355,27 @@ namespace DSHProxy
             card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
             card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             card.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            // The cards are rebuilt whenever a limit moves: the logo copy and the
+            // fonts a card made for itself are released with it.
+            var labelFont = Theme.Ui(11f, FontStyle.Bold);
+            var emailFont = Theme.Ui(10f);
+            var windowFont = Theme.Ui(9.5f);
 
             var title = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
             var logo = Logos.Sized(Json.Str(Json.Get(account, "provider")), 24);
+            card.Disposed += (s, e) =>
+            {
+                if (logo != null) logo.Dispose();
+                labelFont.Dispose();
+                emailFont.Dispose();
+                windowFont.Dispose();
+            };
             if (logo != null) title.Controls.Add(new GlassPicture { Image = logo, Size = new Size(24, 24), Margin = new Padding(0, 1, 8, 0) });
-            title.Controls.Add(new GlassLabel { Text = label, AutoSize = true, Font = Theme.Ui(11f, FontStyle.Bold), Margin = new Padding(0, 2, 8, 0) });
-            title.Controls.Add(new GlassLabel { Text = email, AutoSize = true, Font = Theme.Ui(10f), ForeColor = Theme.Muted, Margin = new Padding(0, 4, 10, 0) });
+            title.Controls.Add(new GlassLabel { Text = label, AutoSize = true, Font = labelFont, Margin = new Padding(0, 2, 8, 0) });
+            var emailBeside = new GlassLabel { Text = email, AutoSize = true, Font = emailFont, ForeColor = Theme.Muted, Margin = new Padding(0, 4, 10, 0) };
+            title.Controls.Add(emailBeside);
+            // The same e-mail on the line below, for a card too narrow to hold it beside the name.
+            var emailBelow = new GlassLabel { Text = email, AutoSize = true, Font = emailFont, ForeColor = Theme.Muted, Margin = new Padding(logo != null ? 32 : 0, 0, 0, 6), Visible = false };
             // Plan names such as "self_serve_business_prolite" are made readable and kept short.
             var planText = plan.Replace("_", " ");
             if (planText.Length > 16) planText = planText.Substring(0, 15) + "\u2026";
@@ -1831,6 +2388,8 @@ namespace DSHProxy
             title.Controls.Add(new GlassLabel { Text = disabled ? "\u25CF Paused" : "\u25CF Active", AutoSize = true, ForeColor = disabled ? Theme.Muted : Theme.Ok, Margin = new Padding(0, 5, 0, 0) });
             card.Controls.Add(title, 0, 0);
             card.SetColumnSpan(title, 2);
+            card.Controls.Add(emailBelow, 0, 1);
+            card.SetColumnSpan(emailBelow, 3);
 
             var actions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Anchor = AnchorStyles.Top | AnchorStyles.Right, Margin = new Padding(0) };
             var signOut = Skin.Danger(new PillButton { Text = "Sign out...", AutoSize = true, Margin = new Padding(6, 0, 0, 0) });
@@ -1855,17 +2414,21 @@ namespace DSHProxy
             var resetCount = (int)Json.Num(resets, "available", 0);
             card.Controls.Add(actions, 2, 0);
 
-            var row = 1;
+            // The third column is as wide as its widest line, or as the buttons above.
+            var third = actions.PreferredSize.Width + actions.Margin.Horizontal;
+            var row = 2;
             foreach (var item in windows)
             {
                 var w = Json.Obj(item);
                 var reported = !(Json.Get(w, "reported") is bool) || Json.Bool(w, "reported");
                 var left = Json.Num(w, "leftPercent", 0);
-                card.Controls.Add(new GlassLabel { Text = Json.Str(Json.Get(w, "title")), AutoSize = true, Margin = new Padding(0, 4, 0, 4), Font = Theme.Ui(9.5f), ForeColor = reported ? Theme.Text : Theme.Muted }, 0, row);
+                card.Controls.Add(new GlassLabel { Text = Json.Str(Json.Get(w, "title")), AutoSize = true, Margin = new Padding(0, 4, 0, 4), Font = windowFont, ForeColor = reported ? Theme.Text : Theme.Muted }, 0, row);
                 if (reported)
                 {
                     card.Controls.Add(new Meter { LeftPercent = left, Dock = DockStyle.Fill }, 1, row);
-                    card.Controls.Add(new GlassLabel { Text = string.Format("{0:0}% left \u00B7 {1}", left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, MinimumSize = new Size(330, 0), ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 4, 0, 4) }, 2, row);
+                    var resetLine = new GlassLabel { Text = string.Format("{0:0}% left \u00B7 {1}", left, Format.Reset(Json.Str(Json.Get(w, "resetsAt")))), AutoSize = true, MinimumSize = new Size(330, 0), ForeColor = Theme.ForLeft(left), Margin = new Padding(0, 4, 0, 4) };
+                    third = Math.Max(third, Math.Max(resetLine.MinimumSize.Width, resetLine.PreferredSize.Width) + resetLine.Margin.Horizontal);
+                    card.Controls.Add(resetLine, 2, row);
                 }
                 else
                 {
@@ -1882,7 +2445,7 @@ namespace DSHProxy
                 var strip = Glass.Make(new FlowLayoutPanel { AutoSize = false, Height = 56, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 12, 0, 0), Padding = new Padding(14, 10, 14, 10) }, 14, false, Theme.Bad);
                 strip.Controls.Add(new Chip { Text = resetCount == 1 ? "\u26A0 1 limit reset" : string.Format("\u26A0 {0} limit resets", resetCount), Tint = Theme.Warn, Margin = new Padding(0, 5, 12, 0) });
                 strip.Controls.Add(new GlassLabel { Text = "Danger zone: spending one cannot be undone.", AutoSize = true, ForeColor = Theme.Bad, Margin = new Padding(0, 9, 14, 0) });
-                var useReset = Skin.DangerStrong(new PillButton { Text = "Use a reset\u2026", AutoSize = true });
+                var useReset = Skin.DangerStrong(new PillButton { Text = "Use a reset\u2026", AutoSize = true, Margin = new Padding(3, 0, 3, 0) });
                 useReset.Click += (s, e) => UseReset(file, label, email, windows, resetCount);
                 strip.Controls.Add(useReset);
                 card.Controls.Add(strip, 0, row);
@@ -1899,6 +2462,49 @@ namespace DSHProxy
                 card.Controls.Add(noteLabel, 0, row);
                 card.SetColumnSpan(noteLabel, 3);
             }
+            // The e-mail stands beside the name while the title line has the
+            // room for all of it; in a narrower card it gets the line below.
+            // The card is measured only at the width its list gives it, and it
+            // is changed after the list has finished laying out: a card that
+            // changes its height while the list is being laid out leaves the
+            // list scrolling over the height the card had before.
+            var beside = true;
+            var queued = false;
+            Func<bool> measured = () => !card.IsDisposed && card.Parent != null && card.Width + SystemInformation.VerticalScrollBarWidth >= card.Parent.ClientSize.Width;
+            Func<bool> fitsNow = () =>
+            {
+                var column = card.ColumnStyles[2];
+                var room = card.ClientSize.Width - card.Padding.Horizontal - (column.SizeType == SizeType.Absolute ? (int)column.Width : third);
+                var need = 0;
+                foreach (Control part in title.Controls) need += part.PreferredSize.Width + part.Margin.Horizontal;
+                return email.Length == 0 || need <= room;
+            };
+            Action move = () =>
+            {
+                queued = false;
+                if (!measured()) return;
+                var fits = fitsNow();
+                if (fits == beside) return;
+                beside = fits;
+                card.SuspendLayout();
+                emailBeside.Visible = fits;
+                emailBelow.Visible = !fits;
+                title.Margin = new Padding(0, 0, 0, fits ? 6 : 0);
+                card.ResumeLayout(true);
+            };
+            card.SizeChanged += (s, e) =>
+            {
+                if (queued || !measured() || fitsNow() == beside) return;
+                var poster = card.IsHandleCreated ? (System.Windows.Forms.Control)card : this;
+                if (!poster.IsHandleCreated)
+                {
+                    move();
+                    return;
+                }
+                queued = true;
+                poster.BeginInvoke(move);
+            };
+            thirdNeed = third;
             return card;
         }
 
@@ -2121,10 +2727,12 @@ namespace DSHProxy
             fillingModels = true;
             modelsList.BeginUpdate();
             modelsList.Items.Clear();
+            modelTicks.Clear();
             foreach (var m in visible)
             {
                 var reason = Json.Str(Json.Get(m, "reason"));
                 var offered = Json.Bool(m, "offered");
+                modelTicks[Json.Str(Json.Get(m, "id"))] = offered;
                 var efforts = new List<string>();
                 foreach (var e in Json.Arr(Json.Get(m, "efforts"))) efforts.Add(Json.Str(e));
                 string label;
@@ -2141,10 +2749,12 @@ namespace DSHProxy
                 }
                 string service;
                 ServiceLabels.TryGetValue(Json.Str(Json.Get(m, "account")), out service);
+                if (service == null) service = Json.Str(Json.Get(m, "account"));
+                var known = Json.Str(Json.Get(m, "name"));
                 var row = new ListViewItem(new[]
                 {
                     Json.Str(Json.Get(m, "id")),
-                    service ?? Json.Str(Json.Get(m, "account")),
+                    service,
                     Tokens(Json.Num(m, "contextWindow", 0)),
                     Tokens(Json.Num(m, "maxTokens", 0)),
                     efforts.Count > 0 ? string.Join(", ", efforts.ToArray()) : "none",
@@ -2154,7 +2764,7 @@ namespace DSHProxy
                     Checked = offered,
                     Tag = Json.Str(Json.Get(m, "id")),
                     ImageKey = Json.Str(Json.Get(m, "account")),
-                    ToolTipText = Json.Str(Json.Get(m, "name"))
+                    ToolTipText = (known.Length > 0 ? known + "  \u00B7  " : "") + "Service: " + service
                 };
                 if (reason == "new" && offered) { row.ForeColor = Theme.Accent; row.Font = new Font(modelsList.Font, FontStyle.Bold); }
                 else if (!offered) row.ForeColor = Theme.Muted;
@@ -2164,11 +2774,18 @@ namespace DSHProxy
             fillingModels = false;
         }
 
+        // What each row was filled with, or was last changed to by the user.
+        private readonly Dictionary<string, bool> modelTicks = new Dictionary<string, bool>();
+
         private void OnModelChecked(ItemCheckEventArgs e)
         {
             if (fillingModels) return;
             var id = modelsList.Items[e.Index].Tag as string;
             if (id == null) return;
+            // Windows reports every tick again when it builds the list, which
+            // is when the page is first shown; only a real change is acted on.
+            bool ticked;
+            if (modelTicks.TryGetValue(id, out ticked) && ticked == (e.NewValue == CheckState.Checked)) return;
             if (!running)
             {
                 e.NewValue = e.CurrentValue;
@@ -2176,6 +2793,7 @@ namespace DSHProxy
                 return;
             }
             var on = e.NewValue == CheckState.Checked;
+            modelTicks[id] = on;
             ControlInBackground("models/choose", new Dictionary<string, object> { { "id", id }, { "offered", on } }, result =>
             {
                 AppendLog((on ? "Offering " : "No longer offering ") + id + (Json.Bool(result, "harnessChanged") ? "; DeepSeek Harness routes updated. Restart DeepSeek Harness to see it." : "."));
@@ -2210,7 +2828,7 @@ namespace DSHProxy
             if (key == suggestionsKey) return;
             suggestionsKey = key;
             suggestionsPanel.SuspendLayout();
-            suggestionsPanel.Controls.Clear();
+            Children.Release(suggestionsPanel);
             foreach (var item in list)
             {
                 var s = Json.Obj(item);
@@ -2219,7 +2837,7 @@ namespace DSHProxy
                 var lanes = new List<string>();
                 foreach (var l in Json.Arr(Json.Get(s, "lanes"))) lanes.Add(Json.Str(l));
                 var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 2, 0, 2) };
-                row.Controls.Add(new GlassLabel { Text = string.Format("Newer model: {0} could replace {1} on lane {2}.", to, from, string.Join(", ", lanes.ToArray())), AutoSize = true, Margin = new Padding(0, 7, 10, 0) });
+                row.Controls.Add(new GlassLabel { Text = string.Format("Newer model: {0} could replace {1} on lane {2}.", to, from, string.Join(", ", lanes.ToArray())), AutoSize = true, Margin = new Padding(0, 12, 10, 0) });
                 var use = new PillButton { Text = "Use " + to, AutoSize = true };
                 var lanesCopy = lanes.ToArray();
                 use.Click += (s2, e2) => ReplaceOnLanes(from, to, lanesCopy);
@@ -2263,6 +2881,36 @@ namespace DSHProxy
             updateButton.Visible = available;
             rollbackButton.Visible = previousBackend.Length > 0;
             updateBar.Visible = running && (available || previousBackend.Length > 0);
+            FitUpdateBar();
+        }
+
+        // The sentence about the backend wraps in front of its buttons, so a
+        // narrow window does not push them out of sight, and it stands in
+        // the middle of their height on one line or on two.
+        private void FitUpdateBar()
+        {
+            var buttons = 0;
+            var tallest = 0;
+            var offered = new List<Button>();
+            if (lastUpdate != null && Json.Bool(lastUpdate, "available")) offered.Add(updateButton);
+            if (previousBackend.Length > 0) offered.Add(rollbackButton);
+            foreach (var button in offered)
+            {
+                var size = button.PreferredSize;
+                buttons += size.Width + button.Margin.Horizontal;
+                tallest = Math.Max(tallest, size.Height);
+            }
+            var room = updateBar.ClientSize.Width - updateBar.Padding.Horizontal - 12 - buttons;
+            if (room < 80) return;
+            // The sentence takes all the room there is, so the buttons stand
+            // at the right edge, under Start and Stop, at every width.
+            var sentence = new Size(room, updateLabel.GetPreferredSize(new Size(room, 0)).Height);
+            var margin = new Padding(0, Math.Max(0, 3 + (tallest - sentence.Height) / 2), 12, 0);
+            if (updateLabel.Size == sentence && updateLabel.Margin == margin) return;
+            updateBar.SuspendLayout();
+            updateLabel.Size = sentence;
+            updateLabel.Margin = margin;
+            updateBar.ResumeLayout(true);
         }
 
         private void ApplyUpdate()
@@ -2326,10 +2974,12 @@ namespace DSHProxy
         //
         // The Chat / Video switch changes what the sections show; the selected
         // section stays where it is, and the log is the same in both. The
-        // video pages are a setup surface: nothing here signs in, asks for a
-        // price, or submits a job. Models and billing routes are read and
-        // written through the command line only (see VideoSettings), off the
-        // UI thread. A preview window shows sample data and runs no command.
+        // video pages are a setup surface: nothing here asks for a price or
+        // submits a job. Models and billing routes are read and written
+        // through the command line only (see VideoSettings), off the UI
+        // thread; saved keys and the Krea sign-in have their own section
+        // further down (video credentials). A preview window shows sample
+        // data and runs no command.
 
         private readonly Panel content = new Panel { Dock = DockStyle.Fill };
         private readonly Panel videoHost = new Panel { Dock = DockStyle.Fill, Visible = false };
@@ -2390,7 +3040,11 @@ namespace DSHProxy
             if (video)
             {
                 // Before the window exists there is nowhere to report to.
-                if (IsHandleCreated) LoadVideoSettings();
+                if (IsHandleCreated)
+                {
+                    LoadVideoSettings();
+                    EnterVideoPage();
+                }
                 else videoPending = true;
             }
             else if (tabs.SelectedIndex == 0)
@@ -2428,9 +3082,9 @@ namespace DSHProxy
             }
             content.ResumeLayout(true);
             content.Invalidate(true);
-            SetText(workspaceHint, logSelected ? "The log is shared by the Chat and Video workspaces."
+            SetText(workspaceHint, Tied(logSelected ? "The log is shared by the Chat and Video workspaces."
                 : videoMode ? "Video routing setup. Nothing is generated or charged from this window."
-                : "Chat accounts, keys, lanes and models.");
+                : "Chat accounts, keys, lanes and models."));
         }
 
         private static ListView SetUpVideoList(ListView list, string name, string[] columns, int[] widths)
@@ -2457,13 +3111,13 @@ namespace DSHProxy
             top.Controls.Add(new GlassLabel { Text = title, AutoSize = true, Font = Theme.Ui(12f, FontStyle.Bold), ForeColor = Theme.Text, Margin = new Padding(0, 2, 0, 4) }, 0, 0);
             // Sized by its text and the width it has, so a narrow window gets
             // the lines it needs and a wide one gives the room to the list.
-            top.Controls.Add(new GlassLabel { Text = note, AutoSize = true, Dock = DockStyle.Fill, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 8) }, 0, 1);
+            top.Controls.Add(new GlassLabel { Text = Tied(note), AutoSize = true, Dock = DockStyle.Fill, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 8) }, 0, 1);
             return top;
         }
 
         private static Label Foot(string text, int height)
         {
-            return new GlassLabel { Text = text, Dock = DockStyle.Bottom, AutoSize = false, Height = height, ForeColor = Theme.Muted, Padding = new Padding(0, 10, 0, 0) };
+            return new GlassLabel { Text = Tied(text), Dock = DockStyle.Bottom, AutoSize = false, Height = height, ForeColor = Theme.Muted, Padding = new Padding(0, 10, 0, 0) };
         }
 
         // The bottom of a video page that changes settings: what happened
@@ -2497,22 +3151,39 @@ namespace DSHProxy
         // section, the log, has none: both workspaces show the same log.
         private void BuildVideoPages()
         {
-            // Accounts. Nothing on this page starts a sign-in or looks one up.
-            var accounts = SetUpVideoList(new DarkList(), "Video accounts", new[] { "Service", "Billed in", "Sign-in", "State" }, new[] { 200, 178, 136, 240 });
-            VideoLogos(accounts, "krea");
-            accounts.Items.Add(new ListViewItem(new[] { VideoSettings.RouteName("krea"), VideoSettings.Units("krea"), "Manual, by you", "Not connected here \u00B7 not checked" }) { ForeColor = Theme.Muted, ImageKey = VideoLogoKey(accounts, "krea") });
-            AddVideoPage("Accounts", accounts,
-                VideoTop("Video accounts", "Video has one signed-in service, a Krea workspace, and its sign-in is manual. This app does not sign in to Krea, does not hold that sign-in and cannot show whether you are signed in. The chat accounts (Claude, ChatGPT, Gemini, Kimi) are not used for video."),
-                Foot("You sign in yourself, in a terminal in the DSHProxy folder, with the separate Krea helper: node bin\\dshproxy-krea.js login. It prints a consent address for you to open. Sign-in with a live Krea workspace has not been verified in this build.", 62));
+            // Accounts: the one signed-in video service. Its state comes from
+            // the separate Krea helper when the page opens, never on a timer.
+            SetUpVideoList(videoAccountsList, "Video accounts: Krea sign-in state", new[] { "Service", "Billed in", "Sign-in", "State" }, new[] { 200, 184, 126, 270 });
+            VideoLogos(videoAccountsList, "krea");
+            kreaRow = new ListViewItem(new[] { VideoSettings.RouteName("krea"), VideoSettings.Units("krea"), "In your browser", "Not read yet" }) { ForeColor = Theme.Muted, ImageKey = VideoLogoKey(videoAccountsList, "krea") };
+            videoAccountsList.Items.Add(kreaRow);
+            kreaSignIn = Skin.Primary(new PillButton { Text = "Sign in to Krea...", AutoSize = true });
+            kreaSignIn.Click += (s, e) => KreaSignIn();
+            kreaSignOut = new PillButton { Text = "Sign out", AutoSize = true, AccessibleName = "Sign out of Krea" };
+            kreaSignOut.Click += (s, e) => KreaSignOut();
+            kreaCancel = new PillButton { Text = "Cancel", AutoSize = true, Enabled = false, AccessibleName = "Cancel the Krea sign-in" };
+            kreaCancel.Click += (s, e) => KreaCancelSignIn();
+            AddVideoPage("Accounts", videoAccountsList,
+                VideoTop("Video accounts", "Video has one signed-in service, a Krea workspace. Sign in to Krea starts DSHProxy's separate Krea helper and opens Krea's consent page in your browser. The helper keeps the sign-in; this app sees only whether one is present and until when. The chat accounts (Claude, ChatGPT, Gemini, Kimi) are not used for video. Sign-in with a live Krea workspace has not been verified in this build."),
+                VideoBottom(videoAccountsStatus, kreaSignIn, kreaSignOut, kreaCancel));
 
-            // API keys. A table of names only: no key is read, shown or stored.
-            // These services are named in text; the app has no logo for them.
-            var keys = SetUpVideoList(new DarkList(), "Video API keys", new[] { "Billing route", "Environment variable", "Billed in", "State" }, new[] { 290, 190, 130, 150 });
-            foreach (var route in new[] { new[] { "videorouter", "VIDEOROUTER_API_KEY" }, new[] { "videorouter-replicate", "VIDEOROUTER_API_KEY" }, new[] { "kovapi", "KOVAPI_API_KEY" }, new[] { "callirra", "CALLIRRA_API_KEY" } })
-                keys.Items.Add(new ListViewItem(new[] { VideoSettings.RouteName(route[0]), route[1], VideoSettings.Units(route[0]), "Not read by this app" }) { ForeColor = Theme.Muted });
-            AddVideoPage("API keys", keys,
-                VideoTop("Video API keys", "A pay-per-use video route takes its key from an environment variable of the process that runs the video command. These keys are not entered here, not stored by DSHProxy, and not in the encrypted key store on the Chat API keys page. This app does not read or check them."),
-                Foot("Never put a key on a command line. The Krea workspace route uses a sign-in instead of a key: see Accounts.", 44));
+            // API keys: one row for each pay-per-use provider. The rows say
+            // whether a key is saved, never the key, and none says a key works.
+            // These providers are named in text; the app has no logo for them.
+            // The State column holds the longest state in the smallest window.
+            SetUpVideoList(videoKeysList, "Video API keys: one row for each provider", new[] { "Provider", "Environment variable", "Billed in", "State" }, new[] { 104, 166, 98, 412 });
+            videoKeysList.SelectedIndexChanged += (s, e) => UpdateVideoKeyButtons();
+            videoKeysList.ItemActivate += (s, e) => AddVideoKey();
+            videoKeyAdd = Skin.Primary(new PillButton { Text = "Add or replace key...", AutoSize = true, Enabled = false });
+            videoKeyAdd.Click += (s, e) => AddVideoKey();
+            videoKeyRemove = new PillButton { Text = "Remove key", AutoSize = true, Enabled = false };
+            videoKeyRemove.Click += (s, e) => RemoveVideoKey();
+            AddVideoPage("API keys", videoKeysList,
+                VideoTop("Video API keys", "Save the key of a pay-per-use video provider here. It is stored encrypted in the DSHProxy data folder, like the Chat API keys, and is used by DSHProxy's video command; a key in the provider's environment variable is used instead when that is set. A saved key is not checked against the provider. Video generation from DeepSeek Harness works on the Krea route only for now."),
+                VideoBottom(videoKeysStatus, videoKeyAdd, videoKeyRemove, new GlassLabel { Text = "The Krea workspace route uses a sign-in instead of a key: see Accounts.", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(12, 11, 0, 0) }));
+            SetPageStatus(videoAccountsStatus, "The Krea sign-in state has not been read yet.", Theme.Muted);
+            SetPageStatus(videoKeysStatus, "The saved video keys have not been read yet.", Theme.Muted);
+            FillVideoKeys();
 
             // Lanes: one billing route for each enabled model.
             SetUpVideoList(videoLanesList, "Video lanes: enabled models and their billing route", new[] { "Model", "Company", "Billing route", "Billed in" }, new[] { 180, 100, 250, 180 });
@@ -2741,7 +3412,7 @@ namespace DSHProxy
         // two of these running: every caller checks videoBusy first, a read
         // cannot start while a write is out, and a write cannot start while a
         // read is. videoBusy is only ever read and written on the UI thread.
-        private void VideoCommand(string[] args, Action<Cli.Result> done)
+        private void VideoCommand(string[] args, string input, Action<Cli.Result> done)
         {
             SetVideoBusy(true);
             // A chat operation may already be showing the wait cursor; it is
@@ -2751,7 +3422,7 @@ namespace DSHProxy
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 Cli.Result result;
-                try { result = cli.Run(args, null, 20000); }
+                try { result = cli.Run(args, input, 20000); }
                 catch (Exception error) { result = new Cli.Result { Code = -1, Out = "", Err = error.Message }; }
                 try
                 {
@@ -2760,6 +3431,12 @@ namespace DSHProxy
                         SetVideoBusy(false);
                         if (!alreadyWaiting) UseWaitCursor = false;
                         done(result);
+                        // The keys page was opened while this command was out.
+                        if (!videoBusy && videoKeysWanted)
+                        {
+                            videoKeysWanted = false;
+                            if (videoMode && tabs.SelectedIndex == VideoKeysPage) ReadVideoKeys(null, false);
+                        }
                     }));
                 }
                 // The window has gone: there is nothing left to report to.
@@ -2773,6 +3450,7 @@ namespace DSHProxy
         {
             videoBusy = busy;
             foreach (var button in videoButtons) if (button.Enabled == busy) button.Enabled = !busy;
+            UpdateVideoKeyButtons();
         }
 
         // Reads the video settings: `dshproxy video settings`. `notSaved` is
@@ -2790,7 +3468,7 @@ namespace DSHProxy
                 return;
             }
             SetVideoStatus(notSaved == null ? "Reading video settings..." : notSaved + " Reading what is saved...", notSaved == null ? Theme.Muted : Theme.Bad);
-            VideoCommand(VideoSettings.ReadCommand(), result =>
+            VideoCommand(VideoSettings.ReadCommand(), null, result =>
             {
                 string failure;
                 var models = VideoSettings.Read(result, out failure);
@@ -2914,7 +3592,7 @@ namespace DSHProxy
                 return;
             }
             SetVideoStatus("Saving: " + what + "...", Theme.Muted);
-            VideoCommand(VideoSettings.SetCommand(id, route, enabled), result =>
+            VideoCommand(VideoSettings.SetCommand(id, route, enabled), null, result =>
             {
                 if (result.Code != 0)
                 {
@@ -2952,6 +3630,597 @@ namespace DSHProxy
                 }
                 FillVideo();
             });
+        }
+
+        // ---------- video credentials ----------
+        //
+        // Video > Accounts shows the Krea sign-in and starts or ends it through
+        // the separate Krea helper. Video > API keys saves, replaces and
+        // removes provider keys through `dshproxy video key`. Neither a key
+        // nor a sign-in is kept, logged or shown by this window. Every call
+        // runs off the UI thread: one command line call at a time (videoBusy,
+        // shared with the video settings) and one helper at a time (kreaBusy).
+        // A preview window starts no process and reads nothing.
+
+        private const int VideoAccountsPage = 0;
+        private const int VideoKeysPage = 1;
+        private readonly ListView videoAccountsList = new DarkList();
+        private readonly ListView videoKeysList = new DarkList();
+        private readonly Label videoAccountsStatus = new GlassLabel { ForeColor = Theme.Muted };
+        private readonly Label videoKeysStatus = new GlassLabel { ForeColor = Theme.Muted };
+        private ListViewItem kreaRow;
+        private Button kreaSignIn;
+        private Button kreaSignOut;
+        private Button kreaCancel;
+        private Button videoKeyAdd;
+        private Button videoKeyRemove;
+        // What `video key list` last reported; null until it has answered.
+        private List<VideoKeys.Provider> videoKeys;
+        private string videoKeysNote = "Not read yet";
+        // The keys page was opened while another command was out.
+        private bool videoKeysWanted;
+        private bool kreaBusy;
+        // The sign-in that is waiting for the browser, if one is.
+        private KreaLogin kreaLogin;
+        private Func<string, bool> openConsentPage = Krea.Open;
+
+        // Called when a video page comes on screen: the two credential pages
+        // read their state then, and at no other time on their own.
+        private void EnterVideoPage()
+        {
+            if (!videoMode || !IsHandleCreated) return;
+            if (tabs.SelectedIndex == VideoAccountsPage) ReadKreaState(null, Theme.Muted);
+            else if (tabs.SelectedIndex == VideoKeysPage) ReadVideoKeys(null, false);
+        }
+
+        // The line under a video list: what happened last. A screen reader
+        // hears it when its page is the one on screen.
+        private void SetPageStatus(Label label, string text, Color color)
+        {
+            var changed = label.Text != text;
+            SetText(label, text);
+            if (label.ForeColor != color) label.ForeColor = color;
+            var index = tabs.SelectedIndex;
+            if (!changed || !videoMode || index >= videoPages.Count || !videoPages[index].Contains(label) || !label.IsHandleCreated) return;
+            try { Announce(label, text); }
+            catch (Exception) { }
+        }
+
+        private static string ClockNow()
+        {
+            return DateTime.Now.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
+        }
+
+        // ----- API keys -----
+
+        private VideoKeys.Provider SelectedVideoKey()
+        {
+            return videoKeysList.SelectedItems.Count == 0 ? null : videoKeysList.SelectedItems[0].Tag as VideoKeys.Provider;
+        }
+
+        private void UpdateVideoKeyButtons()
+        {
+            if (videoKeyAdd == null) return;
+            var on = !videoBusy && SelectedVideoKey() != null;
+            if (videoKeyAdd.Enabled != on) videoKeyAdd.Enabled = on;
+            if (videoKeyRemove.Enabled != on) videoKeyRemove.Enabled = on;
+        }
+
+        private void FillVideoKeys()
+        {
+            var selected = SelectedVideoKey();
+            var selectedId = selected == null ? null : selected.Id;
+            videoKeysList.BeginUpdate();
+            videoKeysList.Items.Clear();
+            if (videoKeys == null)
+            {
+                videoKeysList.Items.Add(new ListViewItem(new[] { "Not shown", "", "", videoKeysNote }) { ForeColor = Theme.Muted });
+            }
+            else
+            {
+                foreach (var provider in videoKeys)
+                {
+                    var item = new ListViewItem(new[] { provider.Label, provider.Variable, VideoKeys.Units(provider), VideoKeys.State(provider) }) { Tag = provider, ForeColor = !provider.Saved ? Theme.Muted : provider.Readable ? Theme.Text : Theme.Warn };
+                    videoKeysList.Items.Add(item);
+                    if (provider.Id == selectedId) item.Selected = true;
+                }
+            }
+            videoKeysList.EndUpdate();
+            UpdateVideoKeyButtons();
+        }
+
+        // Reads which keys are saved: `dshproxy video key list`. `outcome` is
+        // what a save or removal just did; it stays on the line while the list
+        // is read again and after, so the list always shows what is saved and
+        // the line still says what happened.
+        private void ReadVideoKeys(string outcome, bool failed)
+        {
+            if (VideoSynthetic)
+            {
+                if (videoKeys == null) videoKeys = VideoKeys.Parse(VideoKeys.Sample);
+                SetPageStatus(videoKeysStatus, outcome ?? "Sample rows for this preview window, not your keys. No key is read, saved or removed here.", Theme.Accent);
+                FillVideoKeys();
+                return;
+            }
+            if (videoBusy)
+            {
+                videoKeysWanted = true;
+                return;
+            }
+            videoKeysWanted = false;
+            SetPageStatus(videoKeysStatus, outcome == null ? "Reading which video keys are saved..." : outcome + " Reading what is saved...", outcome != null && failed ? Theme.Bad : Theme.Muted);
+            VideoCommand(VideoKeys.ListCommand(), null, result =>
+            {
+                string failure;
+                var providers = VideoKeys.Read(result, out failure);
+                if (providers == null)
+                {
+                    // What could not be read is not shown as if it were current.
+                    videoKeys = null;
+                    videoKeysNote = "Could not be read";
+                    SetPageStatus(videoKeysStatus, (outcome == null ? "" : outcome + " ") + "Could not read which video keys are saved: " + failure, Theme.Bad);
+                    AppendLog("Video: could not read which video keys are saved: " + failure);
+                }
+                else
+                {
+                    videoKeys = providers;
+                    if (outcome == null) SetPageStatus(videoKeysStatus, "Read from DSHProxy at " + ClockNow() + ". A saved key is not checked against its provider.", Theme.Muted);
+                    else SetPageStatus(videoKeysStatus, outcome + " The list shows what is saved (read at " + ClockNow() + ").", failed ? Theme.Bad : Theme.Ok);
+                }
+                FillVideoKeys();
+            });
+        }
+
+        // Saves or replaces the key of the selected provider: `dshproxy video
+        // key set PROVIDER`, with the key on standard input and nowhere else.
+        private void AddVideoKey()
+        {
+            var provider = SelectedVideoKey();
+            if (provider == null) return;
+            if (VideoSynthetic)
+            {
+                SetPageStatus(videoKeysStatus, "Sample only: no key is asked for or saved in this preview window.", Theme.Accent);
+                return;
+            }
+            if (videoBusy) return;
+            var id = provider.Id;
+            var label = provider.Label;
+            var key = KeyDialog.Ask(this, label);
+            if (key == null) return;
+            var unusable = VideoKeys.Refusal(key);
+            if (unusable != null)
+            {
+                SetPageStatus(videoKeysStatus, "Not saved: " + unusable, Theme.Bad);
+                Msg.Show(this, "The " + label + " key was not saved.\n\n" + unusable, "Video API key", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            SetPageStatus(videoKeysStatus, "Saving the " + label + " key...", Theme.Muted);
+            VideoCommand(VideoKeys.SetCommand(id), key + "\n", result =>
+            {
+                if (VideoKeys.Saved(result, id))
+                {
+                    AppendLog("Video: saved the " + label + " key.");
+                    ReadVideoKeys("Saved the " + label + " key. It was not checked against " + label + ".", false);
+                    return;
+                }
+                if (result.Code == 0)
+                {
+                    // The command succeeded but did not answer as agreed, so
+                    // what is saved is asked for rather than assumed.
+                    AppendLog("Video: the " + label + " key was sent, but the answer could not be read.");
+                    ReadVideoKeys("DSHProxy did not answer as expected after the " + label + " key was sent.", true);
+                    return;
+                }
+                var refused = VideoKeys.Without(VideoSettings.Failure(result), key);
+                AppendLog("Video: the " + label + " key was not saved: " + refused);
+                ReadVideoKeys("Not saved: " + refused, true);
+                Msg.Show(this, "The " + label + " key was not saved.\n\n" + refused + "\n\nThe list is being read again, so it shows what is saved.", "Video API key", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            });
+        }
+
+        // Removes the saved key of the selected provider: `dshproxy video key
+        // remove PROVIDER`, after asking.
+        private void RemoveVideoKey()
+        {
+            var provider = SelectedVideoKey();
+            if (provider == null) return;
+            if (VideoSynthetic)
+            {
+                SetPageStatus(videoKeysStatus, "Sample only: no key is removed in this preview window.", Theme.Accent);
+                return;
+            }
+            if (videoBusy) return;
+            var id = provider.Id;
+            var label = provider.Label;
+            if (Msg.Show(this, "Remove the saved " + label + " video key?\n\nDSHProxy's video command can then use " + label + " only with a key in " + provider.Variable + ".", "Video API key", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            SetPageStatus(videoKeysStatus, "Removing the saved " + label + " key...", Theme.Muted);
+            VideoCommand(VideoKeys.RemoveCommand(id), null, result =>
+            {
+                if (result.Code != 0)
+                {
+                    var refused = VideoSettings.Failure(result);
+                    AppendLog("Video: the saved " + label + " key was not removed: " + refused);
+                    ReadVideoKeys("Not removed: " + refused, true);
+                    Msg.Show(this, "The saved " + label + " key was not removed.\n\n" + refused + "\n\nThe list is being read again, so it shows what is saved.", "Video API key", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                var removed = VideoKeys.Removed(result, id);
+                if (removed == null)
+                {
+                    AppendLog("Video: removal of the saved " + label + " key was asked for, but the answer could not be read.");
+                    ReadVideoKeys("DSHProxy did not answer as expected when asked to remove the " + label + " key.", true);
+                }
+                else if (removed.Value)
+                {
+                    AppendLog("Video: removed the saved " + label + " key.");
+                    ReadVideoKeys("Removed the saved " + label + " key.", false);
+                }
+                else ReadVideoKeys("No " + label + " key was saved, so nothing was removed.", false);
+            });
+        }
+
+        // ----- Krea sign-in -----
+
+        private void SetKreaBusy(bool busy, bool cancellable)
+        {
+            kreaBusy = busy;
+            if (kreaSignIn.Enabled == busy) kreaSignIn.Enabled = !busy;
+            if (kreaSignOut.Enabled == busy) kreaSignOut.Enabled = !busy;
+            var cancel = busy && cancellable;
+            if (kreaCancel.Enabled != cancel) kreaCancel.Enabled = cancel;
+        }
+
+        private void ShowKreaState(string text, Color color)
+        {
+            if (kreaRow.SubItems[3].Text != text) kreaRow.SubItems[3].Text = text;
+            if (kreaRow.ForeColor != color) kreaRow.ForeColor = color;
+        }
+
+        // Runs a short helper command off the UI thread and hands back its result.
+        private void KreaCommand(string[] args, Action<Cli.Result> done)
+        {
+            SetKreaBusy(true, false);
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                Cli.Result result;
+                try { result = cli.RunKrea(args, 20000); }
+                catch (Exception) { result = new Cli.Result { Code = -1, Out = "", Err = "" }; }
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        SetKreaBusy(false, false);
+                        done(result);
+                    }));
+                }
+                // The window has gone: there is nothing left to report to.
+                catch (InvalidOperationException) { }
+            });
+        }
+
+        // Asks the helper whether a sign-in is present: `status`. `outcome` is
+        // what a sign-in or sign-out just did; it stays on the line.
+        private void ReadKreaState(string outcome, Color color)
+        {
+            if (VideoSynthetic)
+            {
+                ShowKreaState("Sample: not signed in", Theme.Muted);
+                SetPageStatus(videoAccountsStatus, outcome ?? "Sample row for this preview window. The Krea helper is not started and no sign-in is read.", Theme.Accent);
+                return;
+            }
+            if (kreaBusy) return;
+            SetPageStatus(videoAccountsStatus, (outcome == null ? "" : outcome + " ") + "Reading the Krea sign-in state...", outcome == null ? Theme.Muted : color);
+            KreaCommand(Krea.StatusCommand(), result =>
+            {
+                var state = result.Code == 0 ? Krea.ParseStatus(result.Out, DateTime.UtcNow) : null;
+                if (state == null)
+                {
+                    // A state that could not be read is not shown as either one.
+                    ShowKreaState("Not known", Theme.Warn);
+                    SetPageStatus(videoAccountsStatus, (outcome == null ? "" : outcome + " ") + "The Krea helper did not report the sign-in state. Open this page again to ask once more.", Theme.Bad);
+                    AppendLog("Video: the Krea helper did not report the sign-in state.");
+                    return;
+                }
+                ShowKreaState(Krea.Describe(state), state.SignedIn ? Theme.Ok : Theme.Muted);
+                var read = "State read from the Krea helper at " + ClockNow() + "; it is read when this page opens, not kept up to date.";
+                SetPageStatus(videoAccountsStatus, outcome == null ? read : outcome + " " + read, outcome == null ? Theme.Muted : color);
+            });
+        }
+
+        // Starts the helper's `login`, opens the consent page it names in the
+        // browser, and waits for it to end. The address is checked before it
+        // is opened and is never written anywhere.
+        private void KreaSignIn()
+        {
+            if (VideoSynthetic)
+            {
+                SetPageStatus(videoAccountsStatus, "Sample only: no sign-in is started in this preview window.", Theme.Accent);
+                return;
+            }
+            if (kreaBusy) return;
+            var open = openConsentPage;
+            var login = new KreaLogin(() => cli.StartKrea(Krea.LoginCommand()), open);
+            kreaLogin = login;
+            SetKreaBusy(true, true);
+            ShowKreaState("Signing in...", Theme.Muted);
+            SetPageStatus(videoAccountsStatus, "Starting the Krea sign-in: the helper is asking Krea for the consent page. Cancel stops it.", Theme.Muted);
+            AppendLog("Video: Krea sign-in started.");
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                var outcome = login.Run(() =>
+                {
+                    try { BeginInvoke(new Action(() => { if (kreaLogin == login) SetPageStatus(videoAccountsStatus, "Waiting for you to finish in the browser. Cancel stops the sign-in.", Theme.Accent); })); }
+                    catch (InvalidOperationException) { }
+                });
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        kreaLogin = null;
+                        SetKreaBusy(false, false);
+                        var message = Krea.Message(outcome);
+                        AppendLog("Video: " + message);
+                        ReadKreaState(message, outcome == Krea.Outcome.SignedIn ? Theme.Ok : outcome == Krea.Outcome.Cancelled ? Theme.Muted : Theme.Bad);
+                    }));
+                }
+                catch (InvalidOperationException) { }
+            });
+        }
+
+        // Stops the helper that is waiting for the browser.
+        private void KreaCancelSignIn()
+        {
+            var login = kreaLogin;
+            if (login == null) return;
+            kreaCancel.Enabled = false;
+            SetPageStatus(videoAccountsStatus, "Stopping the Krea helper...", Theme.Muted);
+            ThreadPool.QueueUserWorkItem(_ => login.Cancel());
+        }
+
+        // Removes the stored sign-in: the helper's `logout`, after asking.
+        private void KreaSignOut()
+        {
+            if (VideoSynthetic)
+            {
+                SetPageStatus(videoAccountsStatus, "Sample only: nothing is signed out in this preview window.", Theme.Accent);
+                return;
+            }
+            if (kreaBusy) return;
+            if (Msg.Show(this, "Sign out of Krea?\n\nThe Krea sign-in stored on this computer is removed. Video on the Krea workspace route then needs a new sign-in.", "Krea", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            SetPageStatus(videoAccountsStatus, "Signing out of Krea...", Theme.Muted);
+            KreaCommand(Krea.LogoutCommand(), result =>
+            {
+                if (result.Code == 0)
+                {
+                    AppendLog("Video: signed out of Krea.");
+                    ReadKreaState("Signed out of Krea.", Theme.Muted);
+                }
+                else
+                {
+                    AppendLog("Video: Krea sign-out did not complete.");
+                    ReadKreaState("Sign-out did not complete: the Krea helper ended with an error.", Theme.Bad);
+                }
+            });
+        }
+
+        // ---------- restart for a key change ----------
+
+        // The wait for an idle moment that is in progress, if one is.
+        private IdleStop idleStop;
+        private RestartWaitDialog restartDialog;
+
+        // Restarts the gateway this window started so it uses a changed key.
+        // With nothing in flight it is stopped and started as it always was.
+        // With requests in flight nothing is cut: the gateway is asked to stop
+        // at a moment with none, and started again when it has.
+        private void RestartForChange(string title)
+        {
+            if (gateway == null || gateway.HasExited || idleStop != null) return;
+            if (inFlight <= 0 && !Unanswered)
+            {
+                StopGateway();
+                StartGateway();
+                return;
+            }
+            var asked = gateway;
+            var stop = new IdleStop(() => cli.Start(IdleStop.Command()));
+            IdleStop.Result result = null;
+            using (var dialog = new RestartWaitDialog(inFlight, () => ThreadPool.QueueUserWorkItem(_ => stop.Cancel())))
+            {
+                idleStop = stop;
+                restartDialog = dialog;
+                AppendLog("Restart: waiting for the requests in flight to finish, at most 5 minutes.");
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    var ended = stop.Run();
+                    // A gateway that stopped ends its own process a moment later.
+                    // After an answer that did not arrive it may have, too. In
+                    // every other case nothing is waited for here: should the
+                    // gateway stop after all, the watch below starts it again.
+                    if (ended.Outcome == IdleStop.Outcome.Stopped || ended.Outcome == IdleStop.Outcome.NotDone)
+                    {
+                        try { asked.WaitForExit(ended.Outcome == IdleStop.Outcome.Stopped ? 15000 : 1500); }
+                        catch (InvalidOperationException) { }
+                        catch (System.ComponentModel.Win32Exception) { }
+                    }
+                    try
+                    {
+                        BeginInvoke(new Action(() =>
+                        {
+                            result = ended;
+                            dialog.Finish();
+                        }));
+                    }
+                    catch (InvalidOperationException) { }
+                });
+                dialog.ShowDialog(this);
+                idleStop = null;
+                restartDialog = null;
+            }
+            if (result == null || quitting) return;
+
+            // Stop or Quit was used from the tray while this waited.
+            if (gateway != asked) return;
+            var gone = asked.HasExited;
+            switch (result.Outcome)
+            {
+                case IdleStop.Outcome.Stopped:
+                    // Stopped with nothing in flight. Should its process still be
+                    // there, ending it cuts nothing: its port is closed.
+                    if (gone) gateway = null;
+                    else StopGateway();
+                    inFlight = 0;
+                    AppendLog("Restart: the gateway stopped at a moment with nothing in flight. Starting it again.");
+                    StartGateway();
+                    return;
+                case IdleStop.Outcome.StillBusy:
+                    StartAgainIfItStops(asked);
+                    AppendLog("Restart: requests were still running after 5 minutes. Nothing was restarted.");
+                    Msg.Show(this, (result.InFlight == 1 ? "1 request is" : result.InFlight.ToString(CultureInfo.InvariantCulture) + " requests are") + " still running after 5 minutes of waiting.\n\nNothing was restarted: the gateway keeps running as it was. The key change is used after the next restart of the gateway.", title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                case IdleStop.Outcome.Cancelled:
+                    if (gone)
+                    {
+                        // It stopped in the very moment Cancel was pressed.
+                        gateway = null;
+                        inFlight = 0;
+                        AppendLog("Restart: the gateway had already stopped when the wait was cancelled. Starting it again.");
+                        StartGateway();
+                        return;
+                    }
+                    StartAgainIfItStops(asked);
+                    AppendLog("Restart cancelled: the gateway keeps running. The key change is used after the next restart.");
+                    return;
+                default:
+                    if (gone)
+                    {
+                        gateway = null;
+                        inFlight = 0;
+                        AppendLog("Restart: the gateway has stopped (" + result.Message + "). Starting it again.");
+                        StartGateway();
+                        return;
+                    }
+                    // The gateway could not be asked to wait (an older gateway, for
+                    // one). What is left is the restart that cuts, and that is asked for.
+                    StartAgainIfItStops(asked);
+                    AppendLog("Restart: the gateway could not be asked to stop at an idle moment: " + result.Message);
+                    var unanswered = Unanswered;
+                    var cut = (inFlight <= 0 && !unanswered) || Msg.Show(this, "The gateway could not be asked to wait for an idle moment:\n" + result.Message + "\n\n" + (unanswered ? InFlight.UnansweredRestartQuestion(inFlight) : InFlight.RestartQuestion(inFlight)), title, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+                    // While the question was open the gateway was stopped from the
+                    // tray, or ended and was started again: there is nothing to do.
+                    if (quitting || gateway != asked) return;
+                    if (!cut)
+                    {
+                        AppendLog("Restart: not restarted. The key change is used after the next restart.");
+                        return;
+                    }
+                    StopGateway();
+                    StartGateway();
+                    return;
+            }
+        }
+
+        // The watch for a gateway that was asked to stop when idle, was left
+        // running, and may stop after all. Each watch has its own token; Stop,
+        // Quit and a start from here end the watch by taking the token away.
+        private object lateStopWatch;
+        private const int LateStopSeconds = 30;
+
+        // A gateway asked to stop at an idle moment can have begun to stop when
+        // the answer here was "not stopped": the wait was cancelled in that very
+        // moment, the answer did not arrive, or the command was ended. If its
+        // process ends within half a minute it is started again, once.
+        private void StartAgainIfItStops(Process asked)
+        {
+            if (quitting || gateway != asked) return;
+            var token = new object();
+            lateStopWatch = token;
+            var origin = lastOrigin;
+            // The watch waits on a process object of its own, so the one this
+            // window uses is touched by this thread only.
+            Process watched = null;
+            try { watched = Process.GetProcessById(asked.Id); }
+            // Already gone: the watch reports at once.
+            catch (ArgumentException) { }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
+            var watch = new Thread(() =>
+            {
+                // No process to wait for: it was gone already.
+                var ended = watched == null;
+                try
+                {
+                    if (watched != null) ended = watched.WaitForExit(LateStopSeconds * 1000);
+                }
+                catch (InvalidOperationException) { }
+                catch (System.ComponentModel.Win32Exception) { }
+                finally { if (watched != null) watched.Dispose(); }
+                // Whether another gateway has the address by now is asked
+                // here, when a start may follow: the question takes up to a
+                // second and a half, in which the window would not answer.
+                bool? answers = null;
+                if (ended)
+                {
+                    try { answers = GatewayAnswers(origin); }
+                    // Not an address: left to the start, which asks on the window's thread as before.
+                    catch (UriFormatException) { }
+                    catch (NotSupportedException) { }
+                }
+                try { BeginInvoke(new Action(() => LateStopSeen(token, asked, origin, answers))); }
+                catch (InvalidOperationException) { }
+            });
+            watch.IsBackground = true;
+            watch.Start();
+        }
+
+        // On the window's thread, when the gateway's process ended or the half
+        // minute is over.
+        // `answers`: what the watch was answered at `origin`, null when it did not ask.
+        private void LateStopSeen(object token, Process asked, string origin, bool? answers)
+        {
+            // Stop, Quit, a start from here or a newer watch came first.
+            if (lateStopWatch != token) return;
+            lateStopWatch = null;
+            if (quitting || gateway != asked) return;
+            bool ended;
+            try { ended = asked.HasExited; }
+            catch (InvalidOperationException) { ended = false; }
+            catch (System.ComponentModel.Win32Exception) { ended = false; }
+            if (!ended) return;
+            gateway = null;
+            // Not when another gateway answers at the address by now: the start
+            // says so. What the watch was answered counts only for the address
+            // the gateway still has; otherwise the start asks here.
+            if (StartGatewayKnowing(origin == lastOrigin ? answers : null)) AppendLog("The gateway had already begun to stop; it was started again.");
+        }
+
+        // ---------- stopping with requests in flight ----------
+
+        // The model requests in flight when the status was last read; 0 when
+        // the gateway did not say (not running, or an older gateway).
+        private int inFlight;
+        private bool confirmingCut;
+
+        // Stop and Quit ask first when the gateway this window started was
+        // serving requests at the last status read. No is the default.
+        private bool ConfirmCut(bool quitting)
+        {
+            if (ReadOnly || gateway == null || gateway.HasExited) return true;
+            // A gateway that did not answer the last check may be serving
+            // requests all the same: that is asked about too.
+            var unanswered = Unanswered;
+            if (inFlight <= 0 && !unanswered) return true;
+            // The tray menu still works while the question is open: a second
+            // Stop or Quit then does nothing rather than ask again on top.
+            if (confirmingCut) return false;
+            confirmingCut = true;
+            try { return Msg.Show(Visible ? this : null, unanswered ? InFlight.UnansweredQuestion(inFlight, quitting) : InFlight.Question(inFlight, quitting), quitting ? "Quit DeepSeekProxy" : "Stop gateway", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes; }
+            finally { confirmingCut = false; }
+        }
+
+        private void StopRequested()
+        {
+            if (ConfirmCut(false)) StopGateway();
         }
 
         // ---------- other actions ----------
@@ -3029,11 +4298,8 @@ namespace DSHProxy
                     AppendLog(text);
                     if (result.Code == 0 && restartHint && gateway != null && !gateway.HasExited)
                     {
-                        if (Msg.Show(this, text + "\n\nRestart the gateway now so it uses the change?", title, MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
-                        {
-                            StopGateway();
-                            StartGateway();
-                        }
+                        var busy = inFlight <= 0 ? "" : "\n\n" + (inFlight == 1 ? "1 request is" : inFlight.ToString(CultureInfo.InvariantCulture) + " requests are") + " in flight: the restart waits for a moment with none, at most 5 minutes, and cuts nothing.";
+                        if (Msg.Show(this, text + "\n\nRestart the gateway now so it uses the change?" + busy, title, MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes) RestartForChange(title);
                     }
                     else
                     {
@@ -3264,6 +4530,957 @@ namespace DSHProxy
             + "{\"model\":\"minimax-h3\",\"enabled\":true,\"route\":\"callirra\",\"routes\":[\"kovapi\",\"callirra\",\"krea\"]},"
             + "{\"model\":\"seedance-2.0\",\"enabled\":true,\"route\":null,\"routes\":[\"videorouter\",\"kovapi\",\"krea\"]},"
             + "{\"model\":\"seedance-2.5\",\"enabled\":false,\"route\":null,\"routes\":[\"videorouter\",\"kovapi\",\"krea\"]}]}";
+    }
+
+    // The saved API keys of the pay-per-use video providers, as `dshproxy
+    // video key` reports and changes them. This program never sees a saved
+    // key: `list` says only whether one is saved, and a new key is handed to
+    // `set` on standard input and to nothing else.
+    internal static class VideoKeys
+    {
+        public sealed class Provider
+        {
+            public string Id;
+            public string Label;
+            public string Variable;
+            public List<string> Routes;
+            public bool Saved;
+            // False for a saved key that cannot be decrypted.
+            public bool Readable;
+            public bool InEnvironment;
+        }
+
+        public const int MaxLength = 512;
+
+        public static string[] ListCommand()
+        {
+            return new[] { "video", "key", "list" };
+        }
+
+        // The provider is all that goes on the command line, and only as a
+        // plain name. The key never does.
+        public static string[] SetCommand(string provider)
+        {
+            if (!VideoSettings.IsName(provider)) throw new ArgumentException("Not a video key provider name.");
+            return new[] { "video", "key", "set", provider };
+        }
+
+        public static string[] RemoveCommand(string provider)
+        {
+            if (!VideoSettings.IsName(provider)) throw new ArgumentException("Not a video key provider name.");
+            return new[] { "video", "key", "remove", provider };
+        }
+
+        // Why a key is not sent to the command line at all, or null when it
+        // can be. The rule and the sentences are the command line's own
+        // (printable ASCII, at most 512 characters). It is checked here first
+        // because the pipe to the command is not UTF-8: a character outside
+        // the rule can arrive as another one, and a different key would be saved.
+        public static string Refusal(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return "No video API key was given. Nothing was saved.";
+            if (key.Length > MaxLength) return "A video API key can be at most 512 characters. Nothing was saved.";
+            foreach (var c in key)
+            {
+                if (c < 0x21 || c > 0x7E) return "A video API key cannot contain spaces, line breaks or anything else outside printable ASCII. Nothing was saved.";
+            }
+            return null;
+        }
+
+        private static Dictionary<string, object> Root(string json)
+        {
+            object parsed;
+            try { parsed = Json.Serializer.DeserializeObject(json ?? ""); }
+            catch (ArgumentException) { throw new FormatException("DSHProxy did not answer with JSON."); }
+            catch (InvalidOperationException) { throw new FormatException("DSHProxy did not answer with JSON."); }
+            var root = parsed as Dictionary<string, object>;
+            if (root == null) throw new FormatException("DSHProxy did not answer with a JSON object.");
+            return root;
+        }
+
+        // A provider's name as shown: short, printable ASCII.
+        private static bool IsLabel(string value)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length > 40 || value.Trim() != value) return false;
+            foreach (var c in value) if (c < 0x20 || c > 0x7E) return false;
+            return true;
+        }
+
+        // An environment variable name: capitals, digits and underscores.
+        private static bool IsVariable(string value)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length > 64) return false;
+            for (var i = 0; i < value.Length; i++)
+            {
+                var c = value[i];
+                if (!((c >= 'A' && c <= 'Z') || (i > 0 && ((c >= '0' && c <= '9') || c == '_')))) return false;
+            }
+            return true;
+        }
+
+        // Reads what `video key list` prints. Anything that is not the agreed
+        // shape is refused as a whole: a state is shown as reported or not at all.
+        public static List<Provider> Parse(string json)
+        {
+            var list = Json.Get(Root(json), "providers");
+            if (!(list is object[]) && !(list is ArrayList)) throw new FormatException("The answer has no list of video key providers.");
+            var providers = new List<Provider>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var item in Json.Arr(list))
+            {
+                var entry = item as Dictionary<string, object>;
+                var id = entry == null ? null : Json.Get(entry, "provider") as string;
+                if (!VideoSettings.IsName(id) || !seen.Add(id)) throw new FormatException("The answer lists a video key provider without a usable, unique name.");
+                var label = Json.Get(entry, "label") as string;
+                var variable = Json.Get(entry, "variable") as string;
+                if (!IsLabel(label) || !IsVariable(variable)) throw new FormatException("The answer names a video key provider or its variable in a form this app does not show.");
+                if (!(Json.Get(entry, "saved") is bool) || !(Json.Get(entry, "readable") is bool) || !(Json.Get(entry, "inEnvironment") is bool)) throw new FormatException("The answer does not say whether each video key is saved.");
+                var provider = new Provider { Id = id, Label = label, Variable = variable, Routes = new List<string>(), Saved = Json.Bool(entry, "saved"), InEnvironment = Json.Bool(entry, "inEnvironment") };
+                provider.Readable = provider.Saved && Json.Bool(entry, "readable");
+                foreach (var route in Json.Arr(Json.Get(entry, "routes")))
+                {
+                    var name = route as string;
+                    if (VideoSettings.IsName(name) && !provider.Routes.Contains(name)) provider.Routes.Add(name);
+                }
+                providers.Add(provider);
+            }
+            if (providers.Count == 0) throw new FormatException("The answer lists no video key provider.");
+            return providers;
+        }
+
+        // The providers a finished `list` reported, or null and why not.
+        public static List<Provider> Read(Cli.Result result, out string failure)
+        {
+            failure = null;
+            if (result.Code != 0)
+            {
+                failure = VideoSettings.Failure(result);
+                return null;
+            }
+            try { return Parse(result.Out); }
+            catch (FormatException error)
+            {
+                failure = error.Message;
+                return null;
+            }
+        }
+
+        // Whether a finished `set` answered {"provider":P,"saved":true}.
+        public static bool Saved(Cli.Result result, string provider)
+        {
+            if (result.Code != 0) return false;
+            try
+            {
+                var root = Root(result.Out);
+                return (Json.Get(root, "provider") as string) == provider && Json.Bool(root, "saved");
+            }
+            catch (FormatException) { return false; }
+        }
+
+        // What a finished `remove` answered: true when a key was removed,
+        // false when none was saved, null when it did not answer as agreed.
+        public static bool? Removed(Cli.Result result, string provider)
+        {
+            if (result.Code != 0) return null;
+            try
+            {
+                var root = Root(result.Out);
+                if ((Json.Get(root, "provider") as string) != provider || !(Json.Get(root, "saved") is bool) || Json.Bool(root, "saved") || !(Json.Get(root, "removed") is bool)) return null;
+                return Json.Bool(root, "removed");
+            }
+            catch (FormatException) { return null; }
+        }
+
+        // No state says a key works: it is never checked against the provider.
+        public static string State(Provider provider)
+        {
+            var text = !provider.Saved ? "Not saved" : provider.Readable ? "Saved" : "Saved, cannot be read: enter it again";
+            return provider.InEnvironment ? text + " \u00B7 also set in the environment" : text;
+        }
+
+        public static string Units(Provider provider)
+        {
+            return VideoSettings.Units(provider.Routes.Count > 0 ? provider.Routes[0] : "");
+        }
+
+        // A sentence from the command line, for a status line or the log. The
+        // command line never repeats a key; should it ever, the sentence is
+        // dropped rather than shown.
+        public static string Without(string text, string key)
+        {
+            if (string.IsNullOrEmpty(key) || (text ?? "").IndexOf(key, StringComparison.Ordinal) < 0) return text ?? "";
+            return "DSHProxy refused, with a message that is not shown here because it repeats what was typed.";
+        }
+
+        // Made-up rows for a preview window, in the shape `video key list`
+        // prints: one saved, one with the longest state there is, one not saved.
+        // The rows read exactly as real ones do, so a preview shows whether
+        // they fit; the line under the list says they are samples.
+        public const string Sample = "{\"providers\":["
+            + "{\"provider\":\"videorouter\",\"label\":\"VideoRouter\",\"variable\":\"VIDEOROUTER_API_KEY\",\"routes\":[\"videorouter\",\"videorouter-replicate\"],\"saved\":true,\"readable\":true,\"inEnvironment\":false},"
+            + "{\"provider\":\"kovapi\",\"label\":\"KovAPI\",\"variable\":\"KOVAPI_API_KEY\",\"routes\":[\"kovapi\"],\"saved\":true,\"readable\":false,\"inEnvironment\":true},"
+            + "{\"provider\":\"callirra\",\"label\":\"Callirra\",\"variable\":\"CALLIRRA_API_KEY\",\"routes\":[\"callirra\"],\"saved\":false,\"readable\":false,\"inEnvironment\":false}]}";
+    }
+
+    // What this program knows of the Krea sign-in, all of it from the
+    // separate helper (bin\dshproxy-krea.js): whether a sign-in is present and
+    // until when, the consent address of a sign-in in progress, and how that
+    // ended. The sign-in itself never reaches this program.
+    internal static class Krea
+    {
+        public sealed class State
+        {
+            public bool SignedIn;
+            // Local time. Only meaningful when signed in.
+            public DateTime Until;
+        }
+
+        public static string[] StatusCommand() { return new[] { "status" }; }
+        public static string[] LoginCommand() { return new[] { "login" }; }
+        public static string[] LogoutCommand() { return new[] { "logout" }; }
+
+        private static readonly DateTime Epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        // Reads the one line `status` prints: {"signedIn":true,"expiresAt":<ms
+        // since 1970>} or {"signedIn":false}. Null for anything else,
+        // including a sign-in said to last until a time already past.
+        public static State ParseStatus(string output, DateTime nowUtc)
+        {
+            var text = (output ?? "").Trim();
+            if (text.Length == 0 || text.Length > 512 || text.IndexOf('\n') >= 0) return null;
+            object parsed;
+            try { parsed = Json.Serializer.DeserializeObject(text); }
+            catch (ArgumentException) { return null; }
+            catch (InvalidOperationException) { return null; }
+            var root = parsed as Dictionary<string, object>;
+            if (root == null) return null;
+            var signedIn = Json.Get(root, "signedIn");
+            if (!(signedIn is bool)) return null;
+            if (!(bool)signedIn) return new State();
+            var expires = Json.Get(root, "expiresAt");
+            if (!(expires is int) && !(expires is long) && !(expires is double) && !(expires is decimal)) return null;
+            var ms = Convert.ToDouble(expires, CultureInfo.InvariantCulture);
+            // Not before now, not after the year 2100.
+            if (double.IsNaN(ms) || ms > 4102444800000d) return null;
+            var until = Epoch.AddMilliseconds(Math.Floor(ms));
+            if (until <= nowUtc) return null;
+            return new State { SignedIn = true, Until = until.ToLocalTime() };
+        }
+
+        public static string Describe(State state)
+        {
+            return state.SignedIn ? "Signed in \u00B7 until " + state.Until.ToString("ddd d MMM yyyy, HH:mm", CultureInfo.CurrentCulture) : "Not signed in";
+        }
+
+        private static readonly string[] Hosts = { "krea.ai", "www.krea.ai", "api.krea.ai" };
+
+        // The consent address to open, from the first line `login` prints, or
+        // null when that line is not one: it has to be an https address on
+        // krea.ai, www.krea.ai or api.krea.ai, written plainly. Checked twice,
+        // as text and as a parsed address, so that no way of writing another
+        // host (a name in front of an @, a port, an escaped or foreign letter)
+        // gets through.
+        public static string ConsentAddress(string line)
+        {
+            var text = (line ?? "").Trim();
+            const string scheme = "https://";
+            if (text.Length <= scheme.Length || text.Length > 4096 || !text.StartsWith(scheme, StringComparison.Ordinal)) return null;
+            foreach (var c in text) if (c <= 0x20 || c >= 0x7F || c == '\\') return null;
+            var end = text.IndexOfAny(new[] { '/', '?', '#' }, scheme.Length);
+            var authority = end < 0 ? text.Substring(scheme.Length) : text.Substring(scheme.Length, end - scheme.Length);
+            if (Array.IndexOf(Hosts, authority) < 0) return null;
+            Uri uri;
+            if (!Uri.TryCreate(text, UriKind.Absolute, out uri)) return null;
+            if (uri.Scheme != Uri.UriSchemeHttps || !uri.IsDefaultPort || uri.UserInfo.Length > 0 || Array.IndexOf(Hosts, uri.Host) < 0) return null;
+            return text;
+        }
+
+        // Opens a consent address in the default browser. Nothing but an
+        // address ConsentAddress accepts is ever handed to the shell.
+        public static bool Open(string address)
+        {
+            if (address == null || ConsentAddress(address) != address) return false;
+            try
+            {
+                using (Process.Start(new ProcessStartInfo(address) { UseShellExecute = true })) { }
+                return true;
+            }
+            catch (System.ComponentModel.Win32Exception) { return false; }
+            catch (InvalidOperationException) { return false; }
+        }
+
+        public enum Outcome
+        {
+            SignedIn,
+            Cancelled,
+            // The helper's own codes.
+            Refused,
+            LoginRequired,
+            Uncertain,
+            // Stopped by this program.
+            AddressRefused,
+            BrowserNotOpened,
+            NoAddressInTime,
+            NotFinishedInTime,
+            // The helper could not be started, or ended in a way it does not name.
+            NotStarted,
+            EndedWithoutAddress,
+            Failed
+        }
+
+        // How a finished `login` ended: exit 0 is signed in, otherwise the
+        // code it printed. Its error text is read for that code only and never shown.
+        public static Outcome Ended(int exitCode, string errors)
+        {
+            if (exitCode == 0) return Outcome.SignedIn;
+            var outcome = Outcome.Failed;
+            foreach (var line in (errors ?? "").Split('\n'))
+            {
+                switch (line.Trim())
+                {
+                    case "KREA_REFUSED": outcome = Outcome.Refused; break;
+                    case "KREA_LOGIN_REQUIRED": outcome = Outcome.LoginRequired; break;
+                    case "KREA_UNCERTAIN": outcome = Outcome.Uncertain; break;
+                }
+            }
+            return outcome;
+        }
+
+        // One fixed sentence for each way a sign-in can end.
+        public static string Message(Outcome outcome)
+        {
+            switch (outcome)
+            {
+                case Outcome.SignedIn: return "Signed in to Krea.";
+                case Outcome.Cancelled: return "Sign-in cancelled: the Krea helper was stopped.";
+                case Outcome.Refused: return "Krea sign-in did not complete (KREA_REFUSED): it was refused or closed in the browser, took longer than three minutes, or Krea could not be reached.";
+                case Outcome.LoginRequired: return "Krea sign-in did not complete (KREA_LOGIN_REQUIRED): no sign-in is present.";
+                case Outcome.Uncertain: return "Krea sign-in ended uncertain (KREA_UNCERTAIN): the helper could not tell whether it completed.";
+                case Outcome.AddressRefused: return "Refused: the Krea helper gave a consent address that is not an https address on krea.ai, www.krea.ai or api.krea.ai. It was not opened, and the helper was stopped.";
+                case Outcome.BrowserNotOpened: return "The consent page could not be opened in your browser. The Krea helper was stopped.";
+                case Outcome.NoAddressInTime: return "The Krea helper gave no consent address within a minute. It was stopped.";
+                case Outcome.NotFinishedInTime: return "The Krea helper did not finish in time. It was stopped.";
+                case Outcome.NotStarted: return "The Krea helper could not be started.";
+                case Outcome.EndedWithoutAddress: return "The Krea helper ended without giving a consent address.";
+                default: return "The Krea helper ended with an error it did not name.";
+            }
+        }
+    }
+
+    // One sign-in: the helper's `login` from its start to its end. Run blocks,
+    // so it is called off the UI thread, and says how the sign-in ended.
+    // Cancel may be called from any thread and stops the helper. The consent
+    // address goes from the helper's first line to `open` and nowhere else.
+    internal sealed class KreaLogin
+    {
+        private readonly Func<Process> start;
+        private readonly Func<string, bool> open;
+        private readonly object gate = new object();
+        private Process process;
+        private bool cancelled;
+
+        // The helper first asks Krea where to sign in (up to 45 seconds), then
+        // waits up to three minutes for the browser and saves the sign-in.
+        public int AddressMs = 60000;
+        public int FinishMs = 240000;
+
+        public KreaLogin(Func<Process> start, Func<string, bool> open)
+        {
+            this.start = start;
+            this.open = open;
+        }
+
+        private bool Cancelled
+        {
+            get { lock (gate) return cancelled; }
+        }
+
+        // The helper is ended while the lock is held, and Run lets go of it
+        // under the same lock before disposing it: Cancel never holds a
+        // process that is being disposed.
+        public void Cancel()
+        {
+            lock (gate)
+            {
+                cancelled = true;
+                if (process != null) Stop(process);
+            }
+        }
+
+        // Ends the helper and anything it started. Under the lock, like Cancel.
+        private void Stop(Process helper)
+        {
+            lock (gate) ProcessTree.Kill(helper);
+        }
+
+        public Krea.Outcome Run(Action waiting)
+        {
+            if (Cancelled) return Krea.Outcome.Cancelled;
+            Process helper;
+            try { helper = start(); }
+            catch (System.ComponentModel.Win32Exception) { return Krea.Outcome.NotStarted; }
+            catch (InvalidOperationException) { return Krea.Outcome.NotStarted; }
+            if (helper == null) return Krea.Outcome.NotStarted;
+            try
+            {
+                bool stopNow;
+                lock (gate)
+                {
+                    process = helper;
+                    stopNow = cancelled;
+                }
+                if (stopNow)
+                {
+                    Stop(helper);
+                    return Krea.Outcome.Cancelled;
+                }
+                // Nothing is typed to the helper.
+                try { helper.StandardInput.Close(); }
+                catch (InvalidOperationException) { }
+                catch (IOException) { }
+                var errors = helper.StandardError.ReadToEndAsync();
+                var first = helper.StandardOutput.ReadLineAsync();
+                string line = null;
+                var answered = false;
+                try
+                {
+                    answered = first.Wait(AddressMs);
+                    if (answered) line = first.Result;
+                }
+                catch (AggregateException) { answered = true; }
+                if (Cancelled)
+                {
+                    Stop(helper);
+                    return Krea.Outcome.Cancelled;
+                }
+                if (!answered)
+                {
+                    Stop(helper);
+                    return Krea.Outcome.NoAddressInTime;
+                }
+                if (line == null)
+                {
+                    // The helper ended before it had an address to give.
+                    if (!helper.WaitForExit(15000))
+                    {
+                        Stop(helper);
+                        return Krea.Outcome.NotFinishedInTime;
+                    }
+                    if (Cancelled) return Krea.Outcome.Cancelled;
+                    var early = Krea.Ended(helper.ExitCode, Text(errors));
+                    return early == Krea.Outcome.SignedIn ? Krea.Outcome.EndedWithoutAddress : early;
+                }
+                var address = Krea.ConsentAddress(line);
+                if (address == null)
+                {
+                    Stop(helper);
+                    return Krea.Outcome.AddressRefused;
+                }
+                bool opened;
+                try { opened = open(address); }
+                catch (Exception) { opened = false; }
+                if (!opened)
+                {
+                    Stop(helper);
+                    return Krea.Outcome.BrowserNotOpened;
+                }
+                if (waiting != null) waiting();
+                // Whatever else the helper prints is read so it cannot block
+                // on a full pipe, and is not kept.
+                helper.StandardOutput.ReadToEndAsync();
+                if (!helper.WaitForExit(FinishMs))
+                {
+                    Stop(helper);
+                    return Cancelled ? Krea.Outcome.Cancelled : Krea.Outcome.NotFinishedInTime;
+                }
+                if (Cancelled) return Krea.Outcome.Cancelled;
+                return Krea.Ended(helper.ExitCode, Text(errors));
+            }
+            catch (InvalidOperationException) { return Cancelled ? Krea.Outcome.Cancelled : Krea.Outcome.Failed; }
+            finally
+            {
+                lock (gate) process = null;
+                helper.Dispose();
+            }
+        }
+
+        private static string Text(System.Threading.Tasks.Task<string> reading)
+        {
+            try { return reading.Wait(5000) ? reading.Result : ""; }
+            catch (AggregateException) { return ""; }
+        }
+    }
+
+    // The gateway's own answer to GET <origin>/dshproxy/status. It needs no
+    // token and starts no process, so it is what the window asks every few
+    // seconds; the command line's full status is kept for when something changed.
+    internal static class GatewayStatus
+    {
+        private const int MaxBytes = 1024 * 1024;
+
+        // A listener on this computer takes a connection at once, however busy
+        // the program behind it is. Windows, though, spends two seconds finding
+        // out that nothing is listening. So a connection that is not there
+        // after this long means there is no gateway, and the window can say so
+        // seconds earlier.
+        private const int ConnectMs = 400;
+
+        // The body of the answer, or null when the gateway did not give one in
+        // time: nothing listening, a slow answer, or anything but HTTP 200.
+        // Plain sockets, because the answer is asked for every few seconds.
+        public static string Read(string origin, int timeoutMs)
+        {
+            try
+            {
+                Uri address;
+                if (!Uri.TryCreate(origin, UriKind.Absolute, out address) || address.Scheme != Uri.UriSchemeHttp) return null;
+                var clock = Stopwatch.StartNew();
+                foreach (var ip in Addresses(address.DnsSafeHost))
+                {
+                    var body = Ask(ip, address, timeoutMs, clock);
+                    if (body != null) return body;
+                    if (clock.ElapsedMilliseconds >= timeoutMs) break;
+                }
+                return null;
+            }
+            catch (System.Net.Sockets.SocketException) { return null; }
+            catch (IOException) { return null; }
+            catch (ObjectDisposedException) { return null; }
+            catch (ArgumentException) { return null; }
+            catch (FormatException) { return null; }
+            catch (OverflowException) { return null; }
+        }
+
+        // The settings allow 127.0.0.1, ::1 and localhost. The last one is a
+        // name, and the gateway listens on whichever address it resolves to.
+        private static IPAddress[] Addresses(string host)
+        {
+            IPAddress ip;
+            if (IPAddress.TryParse(host, out ip)) return new[] { ip };
+            return Dns.GetHostAddresses(host);
+        }
+
+        private static string Ask(IPAddress ip, Uri address, int timeoutMs, Stopwatch clock)
+        {
+            using (var socket = new System.Net.Sockets.Socket(ip.AddressFamily, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp))
+            {
+                socket.NoDelay = true;
+                socket.Blocking = false;
+                try { socket.Connect(new IPEndPoint(ip, address.Port)); }
+                catch (System.Net.Sockets.SocketException error)
+                {
+                    if (error.SocketErrorCode != System.Net.Sockets.SocketError.WouldBlock && error.SocketErrorCode != System.Net.Sockets.SocketError.InProgress) return null;
+                }
+                var wait = Math.Min(IPAddress.IsLoopback(ip) ? ConnectMs : timeoutMs, timeoutMs - (int)clock.ElapsedMilliseconds);
+                if (wait <= 0 || !socket.Poll(wait * 1000, System.Net.Sockets.SelectMode.SelectWrite)) return null;
+                socket.Blocking = true;
+                socket.SendTimeout = timeoutMs;
+                // One connection for each check, so none is left open on the
+                // gateway between checks.
+                socket.Send(Encoding.ASCII.GetBytes("GET /dshproxy/status HTTP/1.1\r\nHost: " + address.Authority + "\r\nAccept: application/json\r\nConnection: close\r\n\r\n"));
+                using (var answer = new MemoryStream())
+                {
+                    var buffer = new byte[8192];
+                    while (true)
+                    {
+                        var left = timeoutMs - (int)clock.ElapsedMilliseconds;
+                        if (left <= 0) return null;
+                        socket.ReceiveTimeout = left;
+                        var read = socket.Receive(buffer);
+                        var ended = read <= 0;
+                        if (!ended)
+                        {
+                            if (answer.Length + read > MaxBytes) return null;
+                            answer.Write(buffer, 0, read);
+                        }
+                        string body;
+                        if (Whole(answer.GetBuffer(), (int)answer.Length, ended, out body)) return body;
+                        if (ended) return null;
+                    }
+                }
+            }
+        }
+
+        // Reads an HTTP answer received so far. True when it can be judged:
+        // `body` is then its body, or null when it is not a whole 200 answer.
+        // False when more has to arrive first. `ended` says the gateway has
+        // closed the connection.
+        public static bool Whole(byte[] data, int length, bool ended, out string body)
+        {
+            body = null;
+            var head = Find(data, 0, length, true);
+            if (head < 0) return ended;
+            var lines = Encoding.ASCII.GetString(data, 0, head).Split(new[] { "\r\n" }, StringSplitOptions.None);
+            var first = lines[0].Split(' ');
+            if (first.Length < 2 || !first[0].StartsWith("HTTP/1.", StringComparison.Ordinal) || first[1] != "200") return true;
+            var declared = -1;
+            var chunked = false;
+            for (var index = 1; index < lines.Length; index++)
+            {
+                var colon = lines[index].IndexOf(':');
+                if (colon < 0) continue;
+                var name = lines[index].Substring(0, colon).Trim();
+                var value = lines[index].Substring(colon + 1).Trim();
+                if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out declared) || declared > MaxBytes) return true;
+                }
+                else if (name.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase)) chunked = value.IndexOf("chunked", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            var start = head + 4;
+            if (chunked)
+            {
+                using (var joined = new MemoryStream())
+                {
+                    var at = start;
+                    while (true)
+                    {
+                        var lineEnd = Find(data, at, length, false);
+                        if (lineEnd < 0) return ended;
+                        var sizeText = Encoding.ASCII.GetString(data, at, lineEnd - at);
+                        var semicolon = sizeText.IndexOf(';');
+                        if (semicolon >= 0) sizeText = sizeText.Substring(0, semicolon);
+                        int size;
+                        if (!int.TryParse(sizeText.Trim(), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out size) || size < 0 || size > MaxBytes) return true;
+                        at = lineEnd + 2;
+                        if (size == 0)
+                        {
+                            body = Encoding.UTF8.GetString(joined.GetBuffer(), 0, (int)joined.Length);
+                            return true;
+                        }
+                        if (at + size + 2 > length) return ended;
+                        joined.Write(data, at, size);
+                        at += size + 2;
+                    }
+                }
+            }
+            if (declared >= 0)
+            {
+                if (length - start < declared) return ended;
+                body = Encoding.UTF8.GetString(data, start, declared);
+                return true;
+            }
+            // Neither says where the body ends: it ends with the connection.
+            if (!ended) return false;
+            body = Encoding.UTF8.GetString(data, start, length - start);
+            return true;
+        }
+
+        // Where the next line break is from `from`, or the empty line that ends
+        // the headers when `blankLine` is set; -1 when it has not arrived.
+        private static int Find(byte[] data, int from, int length, bool blankLine)
+        {
+            var need = blankLine ? 4 : 2;
+            for (var index = from; index + need <= length; index++)
+            {
+                if (data[index] != 13 || data[index + 1] != 10) continue;
+                if (!blankLine || (data[index + 2] == 13 && data[index + 3] == 10)) return index;
+            }
+            return -1;
+        }
+
+        // Reads an answer: the requests in flight (0 when it does not say), and
+        // everything else as one text, which changes only when something other
+        // than that count does. False when the answer is not a JSON object.
+        public static bool Parse(string body, out int inFlight, out string print)
+        {
+            inFlight = 0;
+            print = null;
+            object parsed;
+            try { parsed = Json.Serializer.DeserializeObject(body ?? ""); }
+            catch (ArgumentException) { return false; }
+            catch (InvalidOperationException) { return false; }
+            var status = parsed as Dictionary<string, object>;
+            if (status == null) return false;
+            inFlight = InFlight.Count(status);
+            status.Remove("inFlight");
+            print = Json.Serializer.Serialize(status);
+            return true;
+        }
+    }
+
+    // Ends a process this program started, and anything that process started.
+    internal static class ProcessTree
+    {
+        public static void Kill(Process process)
+        {
+            try
+            {
+                if (process.HasExited) return;
+                using (var kill = Process.Start(new ProcessStartInfo("taskkill.exe", "/PID " + process.Id.ToString(CultureInfo.InvariantCulture) + " /T /F") { CreateNoWindow = true, UseShellExecute = false })) kill.WaitForExit(10000);
+                if (!process.HasExited) process.Kill();
+                process.WaitForExit(5000);
+            }
+            catch (System.ComponentModel.Win32Exception) { }
+            // A process that was disposed meanwhile. It is an InvalidOperationException
+            // as well; named so that nobody has to look that up.
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
+        }
+    }
+
+    // `dshproxy stop --when-idle --wait 300`: asks the running gateway to stop
+    // at a moment with no request in flight. It answers {"stopped":true} with
+    // exit code 0 once the gateway has stopped, or {"stopped":false,"inFlight":N}
+    // with exit code 2 when the wait ran out and the gateway keeps running.
+    // Anything else (no gateway, an older gateway that cannot do this, an
+    // answer that did not arrive) is exit code 1 with one sentence. Run
+    // blocks, so it is called off the UI thread; Cancel may be called from any
+    // thread and ends the command, which the gateway takes as "keep running".
+    internal sealed class IdleStop
+    {
+        public enum Outcome { Stopped, StillBusy, NotDone, Cancelled }
+
+        public sealed class Result
+        {
+            public Outcome Outcome;
+            // The requests still in flight when the wait ran out.
+            public int InFlight;
+            // Why it was not done, in the command line's own words.
+            public string Message;
+        }
+
+        public const int WaitSeconds = 300;
+
+        public static string[] Command()
+        {
+            return new[] { "stop", "--when-idle", "--wait", WaitSeconds.ToString(CultureInfo.InvariantCulture) };
+        }
+
+        // What a finished command said.
+        public static Result Read(int exitCode, string output, string errors)
+        {
+            Dictionary<string, object> answer = null;
+            try { answer = Json.Serializer.DeserializeObject((output ?? "").Trim()) as Dictionary<string, object>; }
+            catch (ArgumentException) { }
+            catch (InvalidOperationException) { }
+            var stopped = answer == null ? null : Json.Get(answer, "stopped");
+            if (exitCode == 0 && stopped is bool && (bool)stopped) return new Result { Outcome = Outcome.Stopped };
+            if (exitCode == 2 && stopped is bool && !(bool)stopped && Json.Get(answer, "inFlight") is int && (int)Json.Get(answer, "inFlight") >= 0)
+                return new Result { Outcome = Outcome.StillBusy, InFlight = (int)Json.Get(answer, "inFlight") };
+            var message = VideoSettings.Failure(new Cli.Result { Code = exitCode, Out = "", Err = errors ?? "" });
+            return new Result { Outcome = Outcome.NotDone, Message = exitCode == 0 || exitCode == 2 ? "DSHProxy did not answer as expected when asked to stop the gateway at an idle moment." : message };
+        }
+
+        private readonly Func<Process> start;
+        private readonly object gate = new object();
+        private Process process;
+        private bool cancelled;
+
+        public IdleStop(Func<Process> start)
+        {
+            this.start = start;
+        }
+
+        private bool Cancelled
+        {
+            get { lock (gate) return cancelled; }
+        }
+
+        // The command is ended while the lock is held, and Run lets go of it
+        // under the same lock before disposing it: Cancel never holds a
+        // process that is being disposed.
+        public void Cancel()
+        {
+            lock (gate)
+            {
+                cancelled = true;
+                if (process != null) ProcessTree.Kill(process);
+            }
+        }
+
+        public Result Run()
+        {
+            if (Cancelled) return new Result { Outcome = Outcome.Cancelled };
+            Process command;
+            try { command = start(); }
+            catch (System.ComponentModel.Win32Exception) { return new Result { Outcome = Outcome.NotDone, Message = "The DSHProxy command could not be started." }; }
+            catch (InvalidOperationException) { return new Result { Outcome = Outcome.NotDone, Message = "The DSHProxy command could not be started." }; }
+            try
+            {
+                bool stopNow;
+                lock (gate)
+                {
+                    process = command;
+                    stopNow = cancelled;
+                }
+                if (stopNow)
+                {
+                    lock (gate) ProcessTree.Kill(command);
+                    return new Result { Outcome = Outcome.Cancelled };
+                }
+                try { command.StandardInput.Close(); }
+                catch (InvalidOperationException) { }
+                catch (IOException) { }
+                var output = command.StandardOutput.ReadToEndAsync();
+                var errors = command.StandardError.ReadToEndAsync();
+                // The command itself gives up a minute after the wait.
+                if (!command.WaitForExit((WaitSeconds + 90) * 1000))
+                {
+                    lock (gate) ProcessTree.Kill(command);
+                    return Cancelled ? new Result { Outcome = Outcome.Cancelled } : new Result { Outcome = Outcome.NotDone, Message = "The DSHProxy command did not finish in time." };
+                }
+                // A gateway that stopped in the moment Cancel was pressed has stopped.
+                var read = Read(command.ExitCode, Text(output), Text(errors));
+                if (read.Outcome != Outcome.Stopped && Cancelled) return new Result { Outcome = Outcome.Cancelled };
+                return read;
+            }
+            catch (InvalidOperationException) { return Cancelled ? new Result { Outcome = Outcome.Cancelled } : new Result { Outcome = Outcome.NotDone, Message = "The DSHProxy command ended unexpectedly." }; }
+            finally
+            {
+                lock (gate) process = null;
+                command.Dispose();
+            }
+        }
+
+        private static string Text(System.Threading.Tasks.Task<string> reading)
+        {
+            try { return reading.Wait(5000) ? reading.Result : ""; }
+            catch (AggregateException) { return ""; }
+        }
+    }
+
+    // Shown while a restart waits for the requests in flight to finish. It
+    // closes when the wait has ended; Cancel, Esc and the close box ask for
+    // the wait to end and leave the gateway running.
+    internal sealed class RestartWaitDialog : Form
+    {
+        private readonly Label message;
+        private readonly Button cancel;
+        private readonly Action onCancel;
+        private bool finished;
+        private bool cancelling;
+
+        public static string Waiting(int count)
+        {
+            if (count <= 0) return "Nothing is in flight now. Waiting for the gateway to stop before restarting.";
+            return count == 1 ? "Waiting for 1 request to finish before restarting" : "Waiting for " + count.ToString(CultureInfo.InvariantCulture) + " requests to finish before restarting";
+        }
+
+        public RestartWaitDialog(int count, Action onCancel)
+        {
+            this.onCancel = onCancel;
+            Text = "Restart gateway";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MinimizeBox = false;
+            MaximizeBox = false;
+            ShowInTaskbar = false;
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            Font = Theme.Ui(9.5f);
+            Padding = new Padding(14);
+            var appIcon = AppIcon.Load(SystemInformation.SmallIconSize);
+            if (appIcon != null) Icon = appIcon;
+
+            var layout = Glass.Make(new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 3, Padding = new Padding(20, 20, 20, 16) }, 22, true);
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            message = new GlassLabel { Text = Waiting(count), AutoSize = true, MinimumSize = new Size(420, 0), MaximumSize = new Size(420, 0), ForeColor = Theme.Text, Font = Theme.Ui(10.5f, FontStyle.Bold), Margin = new Padding(0, 4, 0, 10), UseMnemonic = false };
+            var note = new GlassLabel { Text = "The gateway keeps serving until a moment with nothing in flight, for at most 5 minutes. Cancel leaves it running; the key change is then used after the next restart.", AutoSize = true, MaximumSize = new Size(420, 0), ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 18), UseMnemonic = false };
+            var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, Margin = new Padding(0), WrapContents = false };
+            cancel = Skin.Primary(new PillButton { Text = "Cancel", Size = new Size(100, 36), Margin = new Padding(8, 0, 0, 0), AccessibleName = "Cancel the restart" });
+            cancel.Click += (s, e) => AskToCancel();
+            row.Controls.Add(cancel);
+            layout.Controls.Add(message, 0, 0);
+            layout.Controls.Add(note, 0, 1);
+            layout.Controls.Add(row, 0, 2);
+            Controls.Add(layout);
+            AcceptButton = cancel;
+            CancelButton = cancel;
+            // Being the cancel button makes a press close the dialog. It must
+            // stay until the wait has really ended: the gateway may be stopping.
+            cancel.DialogResult = DialogResult.None;
+            Shown += (s, e) => cancel.Focus();
+            Disposed += (s, e) => { message.Font.Dispose(); Font.Dispose(); };
+            Skin.Apply(this);
+        }
+
+        // The count the gateway last reported.
+        public void SetCount(int count)
+        {
+            if (finished || cancelling) return;
+            var text = Waiting(count);
+            if (message.Text != text) message.Text = text;
+        }
+
+        // The wait has ended, one way or another.
+        public void Finish()
+        {
+            finished = true;
+            Close();
+        }
+
+        private void AskToCancel()
+        {
+            if (finished || cancelling) return;
+            cancelling = true;
+            cancel.Enabled = false;
+            message.Text = "Cancelling the restart...";
+            onCancel();
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // The close box is Cancel. The dialog itself goes when the wait has
+            // ended, or with the program.
+            if (!finished && (e.CloseReason == CloseReason.UserClosing || e.CloseReason == CloseReason.None))
+            {
+                e.Cancel = true;
+                AskToCancel();
+            }
+            base.OnFormClosing(e);
+        }
+    }
+
+    // Model requests in flight at the gateway, from the status the app polls.
+    internal static class InFlight
+    {
+        // The count in a status answer. A gateway that is not running, or an
+        // older one that does not count, gives null or nothing: that is 0.
+        public static int Count(Dictionary<string, object> status)
+        {
+            var value = Json.Get(status, "inFlight");
+            if (!(value is int) && !(value is long) && !(value is double) && !(value is decimal)) return 0;
+            var number = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+            if (double.IsNaN(number) || number < 1) return 0;
+            return number > 1000000 ? 1000000 : (int)Math.Floor(number);
+        }
+
+        // What the restart for a key change asks when the gateway cannot be
+        // asked to wait for an idle moment.
+        public static string RestartQuestion(int count)
+        {
+            return (count == 1 ? "1 model request was in flight" : count.ToString(CultureInfo.InvariantCulture) + " model requests were in flight")
+                + " when the gateway was last checked, a few seconds ago at most. Restarting the gateway now cuts " + (count == 1 ? "it" : "them") + ".\n\nRestart anyway?";
+        }
+
+        // The same when the gateway did not answer the last check: the count,
+        // if there was one, is from its last answer.
+        private static string Unanswered(int count)
+        {
+            return "The gateway did not answer when it was last checked, so requests may be in flight."
+                + (count <= 0 ? "" : count == 1 ? " 1 model request was in flight when it last answered." : " " + count.ToString(CultureInfo.InvariantCulture) + " model requests were in flight when it last answered.");
+        }
+
+        public static string UnansweredQuestion(int count, bool quitting)
+        {
+            return Unanswered(count) + " " + (quitting ? "Quitting stops the gateway now and cuts any that are" : "Stopping the gateway now cuts any that are") + ".\n\n"
+                + (quitting ? "Quit anyway?" : "Stop anyway?");
+        }
+
+        public static string UnansweredRestartQuestion(int count)
+        {
+            return Unanswered(count) + " Restarting the gateway now cuts any that are.\n\nRestart anyway?";
+        }
+
+        // What Stop and Quit ask before cutting requests.
+        public static string Question(int count, bool quitting)
+        {
+            var requests = count == 1 ? "1 model request was in flight" : count.ToString(CultureInfo.InvariantCulture) + " model requests were in flight";
+            return requests + " when the gateway was last checked, a few seconds ago at most. "
+                + (quitting ? "Quitting stops the gateway now and cuts " : "Stopping the gateway now cuts ") + (count == 1 ? "it" : "them") + ".\n\n"
+                + (quitting ? "Quit anyway?" : "Stop anyway?");
+        }
     }
 
     // Asks which one billing route a video model is charged to. Nothing is
