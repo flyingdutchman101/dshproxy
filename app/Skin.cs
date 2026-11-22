@@ -841,10 +841,12 @@ namespace DSHProxy
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
             var r = new Rectangle(2, 2, Width - 5, Height - 5);
-            using (var glow = Glass.Rounded(Rectangle.Inflate(r, 1, 1), 16)) using (var pen = new Pen(Color.FromArgb(60, Theme.Accent), 3f)) g.DrawPath(pen, glow);
+            // The corners follow the size: 15 at the full 60 pixels, less when the tile is smaller.
+            var radius = Math.Min(15, Width / 4);
+            using (var glow = Glass.Rounded(Rectangle.Inflate(r, 1, 1), radius + 1)) using (var pen = new Pen(Color.FromArgb(60, Theme.Accent), 3f)) g.DrawPath(pen, glow);
             if (Picture != null)
             {
-                using (var path = Glass.Rounded(r, 15))
+                using (var path = Glass.Rounded(r, radius))
                 {
                     var old = g.Clip;
                     g.SetClip(path, CombineMode.Intersect);
@@ -852,7 +854,7 @@ namespace DSHProxy
                     g.Clip = old;
                 }
             }
-            Glass.Edge(g, r, 15);
+            Glass.Edge(g, r, radius);
         }
     }
 
@@ -934,7 +936,7 @@ namespace DSHProxy
         {
             this.pages = pages;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
-            Dock = DockStyle.Top;
+            // Placed by its owner, which can ask CapsuleWidth how wide it draws.
             Height = 58;
             Font = Theme.Ui(10f);
             TabStop = true;
@@ -945,6 +947,33 @@ namespace DSHProxy
             pages.PagesChanged += (s, e) => Invalidate();
         }
 
+        // The width of each section pill, and of the capsule that holds them.
+        private List<int> Measure(Font bold, out int capsuleWidth)
+        {
+            var widths = new List<int>();
+            var total = 8;
+            for (var i = 0; i < pages.TabPages.Count; i++)
+            {
+                var w = TextRenderer.MeasureText(pages.TabPages[i].Text, bold).Width + 34;
+                widths.Add(w);
+                total += w + 2;
+            }
+            capsuleWidth = total + 6;
+            return widths;
+        }
+
+        // How wide the capsule is, for whoever places this strip. The capsule
+        // is drawn in the middle of whatever width the strip is given.
+        public int CapsuleWidth
+        {
+            get
+            {
+                int width;
+                using (var bold = new Font(Font, FontStyle.Bold)) Measure(bold, out width);
+                return width;
+            }
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             Glass.PaintBehind(e.Graphics, this, ClientRectangle);
@@ -953,15 +982,10 @@ namespace DSHProxy
             slots.Clear();
             using (var bold = new Font(Font, FontStyle.Bold))
             {
-                var widths = new List<int>();
-                var total = 8;
-                for (var i = 0; i < pages.TabPages.Count; i++)
-                {
-                    var w = TextRenderer.MeasureText(g, pages.TabPages[i].Text, bold).Width + 34;
-                    widths.Add(w);
-                    total += w + 2;
-                }
-                var capsule = new Rectangle(0, 8, total + 6, 42);
+                int capsuleWidth;
+                var widths = Measure(bold, out capsuleWidth);
+                // In the middle of the strip, whatever size it is given.
+                var capsule = new Rectangle(Math.Max(0, (Width - capsuleWidth) / 2), Math.Max(0, (Height - 42) / 2), capsuleWidth, 42);
                 Glass.Draw(g, capsule, capsule.Height / 2, true, true);
                 var x = capsule.X + 5;
                 for (var i = 0; i < pages.TabPages.Count; i++)
@@ -1066,13 +1090,29 @@ namespace DSHProxy
 
     // A ListView that paints the empty area below its last row as glass;
     // Windows would otherwise draw light column lines there.
+    //
+    // Its columns share the width of the list in proportion to the widths they
+    // were given, so a list fills a wide window and still fits a narrow one.
+    // Dragging a column edge changes the proportions from then on.
     internal sealed class DarkList : ListView
     {
         private const int LVM_SETEXTENDEDLISTVIEWSTYLE = 0x1036;
         private const int LVS_EX_DOUBLEBUFFER = 0x00010000;
+        private const int GWL_STYLE = -16;
+        private const int WS_HSCROLL = 0x00100000;
 
         [DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr window, int index);
+
+        // The widths the proportions come from, and the widths last set here.
+        private int[] shares;
+        private int[] fitted;
+        private int fittedFor = -1;
+        private bool fitting;
+        private bool fitQueued;
 
         protected override void OnHandleCreated(EventArgs e)
         {
@@ -1080,11 +1120,99 @@ namespace DSHProxy
             // Windows' own buffering for the list control. ControlStyles
             // double buffering is what produced half-painted rows on scroll.
             SendMessage(Handle, LVM_SETEXTENDEDLISTVIEWSTYLE, (IntPtr)LVS_EX_DOUBLEBUFFER, (IntPtr)LVS_EX_DOUBLEBUFFER);
+            QueueFit();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            QueueFit();
+        }
+
+        protected override void OnColumnWidthChanged(ColumnWidthChangedEventArgs e)
+        {
+            base.OnColumnWidthChanged(e);
+            // A width that is not the one set here was dragged by the user:
+            // the proportions are taken again from what the columns are now.
+            if (fitting || fitted == null || e.ColumnIndex < 0 || e.ColumnIndex >= fitted.Length || e.ColumnIndex >= Columns.Count) return;
+            if (Columns[e.ColumnIndex].Width != fitted[e.ColumnIndex]) shares = null;
+        }
+
+        // Fitted once the list has settled at its new size: fitting it during
+        // the resize left a sideways scroll bar behind when it became narrower.
+        private void QueueFit()
+        {
+            if (fitQueued || !IsHandleCreated || IsDisposed) return;
+            fitQueued = true;
+            try { BeginInvoke(new Action(FitColumns)); }
+            catch (InvalidOperationException) { fitQueued = false; }
+        }
+
+        private void FitColumns()
+        {
+            fitQueued = false;
+            if (IsDisposed || !IsHandleCreated || View != View.Details) return;
+            var count = Columns.Count;
+            var available = ClientSize.Width;
+            if (count == 0 || available <= 0) { fittedFor = available; return; }
+            if (shares == null || shares.Length != count)
+            {
+                shares = new int[count];
+                for (var i = 0; i < count; i++) shares[i] = Math.Max(1, Columns[i].Width);
+            }
+            long total = 0;
+            foreach (var share in shares) total += share;
+            // No column goes below 60% of its share, or below 40 pixels.
+            var widths = new int[count];
+            var least = new int[count];
+            var sum = 0;
+            for (var i = 0; i < count; i++)
+            {
+                least[i] = Math.Min(shares[i], Math.Max(40, shares[i] * 6 / 10));
+                widths[i] = Math.Max(least[i], (int)(shares[i] * (long)available / total));
+                sum += widths[i];
+            }
+            // Rounding leaves a few pixels over: the last column takes them, so
+            // the columns end exactly where the list does.
+            if (sum < available) widths[count - 1] += available - sum;
+            for (var i = count - 1; i >= 0 && sum > available; i--)
+            {
+                var take = Math.Min(widths[i] - least[i], sum - available);
+                widths[i] -= take;
+                sum -= take;
+            }
+            fitting = true;
+            try
+            {
+                var changed = false;
+                for (var i = 0; i < count; i++) if (Columns[i].Width != widths[i]) changed = true;
+                if (changed)
+                {
+                    BeginUpdate();
+                    for (var i = 0; i < count; i++) if (Columns[i].Width != widths[i]) Columns[i].Width = widths[i];
+                    EndUpdate();
+                }
+                // The widths can already be right while Windows still shows the
+                // scroll bar it put up half way through a resize; setting a
+                // width again makes it look once more.
+                if (sum <= available && (GetWindowLong(Handle, GWL_STYLE) & WS_HSCROLL) != 0)
+                {
+                    var last = Columns[count - 1];
+                    last.Width = widths[count - 1] - 1;
+                    last.Width = widths[count - 1];
+                }
+                fitted = widths;
+                fittedFor = available;
+            }
+            finally { fitting = false; }
         }
 
         protected override void WndProc(ref Message m)
         {
             base.WndProc(ref m);
+            // A scroll bar that came or went with the rows changes the width
+            // there is for columns without the list itself changing size.
+            if (m.Msg == 0x000F && View == View.Details && fittedFor != ClientSize.Width) QueueFit();
             if (m.Msg != 0x000F || View != View.Details) return; // WM_PAINT
             var top = Items.Count > 0 ? Items[Items.Count - 1].Bounds.Bottom : Font.Height + 12;
             if (top >= ClientSize.Height) return;
@@ -1334,9 +1462,14 @@ namespace DSHProxy
                 list.Tag = -1;
                 if (last >= 0 && last < list.Items.Count) list.Invalidate(list.Items[last].Bounds);
             };
-            EventHandler fill = (s, e) => { if (list.Columns.Count > 0) list.Columns[list.Columns.Count - 1].Width = -2; };
-            list.Resize += fill;
-            list.HandleCreated += fill;
+            // A DarkList fits all of its columns itself; in any other list the
+            // last column takes the room that is left.
+            if (!(list is DarkList))
+            {
+                EventHandler fill = (s, e) => { if (list.Columns.Count > 0) list.Columns[list.Columns.Count - 1].Width = -2; };
+                list.Resize += fill;
+                list.HandleCreated += fill;
+            }
             DarkScrollbars(list);
         }
 

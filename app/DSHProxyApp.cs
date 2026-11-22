@@ -839,22 +839,33 @@ namespace DSHProxy
             control = new GatewayControl(() => lastOrigin);
 
             Text = "DeepSeekProxy";
-            Width = 1000;
-            Height = 760;
-            MinimumSize = new Size(860, 600);
-            StartPosition = FormStartPosition.CenterScreen;
+            // Sized and placed for the screen the window opens on, which is
+            // the one the pointer is on.
+            Size smallest;
+            var start = StartBounds(Screen.FromPoint(Cursor.Position).WorkingArea, out smallest);
+            MinimumSize = smallest;
+            StartPosition = FormStartPosition.Manual;
+            Bounds = start;
             Font = Theme.Ui(9.5f);
             Icon = AppIcon.Load(SystemInformation.IconSize);
 
             BuildLayout();
             BuildTray();
             Skin.Apply(this);
+            LayoutColumn();
+            ClientSizeChanged += (s, e) => LayoutColumn();
+            // The header is lower in a short window when its two status lines
+            // fit side by side, which depends on what they say.
+            detailLabel.TextChanged += (s, e) => { if (shortWindow) LayoutHeader(true, column.Width); };
+            lowestLabel.TextChanged += (s, e) => { if (shortWindow) LayoutHeader(true, column.Width); };
 
             // Dragging the window edge to a new size: show a stretched snapshot
             // of the window and lay out again when the drag ends. Rebuilding the
             // glass for every dragged pixel is what tore the window apart.
             ResizeBegin += (s, e) => BeginResizePreview();
             ResizeEnd += (s, e) => EndResizePreview();
+            // Also raised when the window has been dragged to another screen.
+            ResizeEnd += (s, e) => FitMinimumSize();
             Resize += (s, e) => { if (resizePreview != null) { resizeWatchdog.Stop(); resizeWatchdog.Start(); } };
 
             startButton.Click += (s, e) => StartGateway();
@@ -876,7 +887,148 @@ namespace DSHProxy
             var workspaceArg = Array.IndexOf(args, "--workspace");
             if (workspaceArg >= 0 && workspaceArg + 1 < args.Length && args[workspaceArg + 1] == "video") videoSwitch.Checked = true;
             FormClosing += OnClosing;
-            accountsPanel.Resize += (s, e) => FitCards();
+        }
+
+        // The window's first size and place: up to 1280x880, never more than
+        // 92% of the working area of its screen, and in the middle of it. The
+        // smallest size it can be dragged to is 860x600, or 92% of the working
+        // area where that is less, so it always fits the screen it opens on.
+        internal static Rectangle StartBounds(Rectangle area, out Size smallest)
+        {
+            var mostWide = Math.Max(1, area.Width * 92 / 100);
+            var mostHigh = Math.Max(1, area.Height * 92 / 100);
+            smallest = new Size(Math.Min(860, mostWide), Math.Min(600, mostHigh));
+            var width = Math.Max(smallest.Width, Math.Min(1280, mostWide));
+            var height = Math.Max(smallest.Height, Math.Min(880, mostHigh));
+            return new Rectangle(area.X + (area.Width - width) / 2, area.Y + (area.Height - height) / 2, width, height);
+        }
+
+        // The smallest size follows the working area of the screen the window
+        // is on now, so it can always be made to fit that screen.
+        private void FitMinimumSize()
+        {
+            Size smallest;
+            StartBounds(Screen.FromControl(this).WorkingArea, out smallest);
+            if (MinimumSize != smallest) MinimumSize = smallest;
+        }
+
+        // ---------- the column ----------
+        //
+        // Everything in the window sits in one column in the middle of it, at
+        // most MaxColumnWidth wide; the backdrop fills the rest. A narrower
+        // window is all column, with the side padding each row already has.
+        // In a short window (client height under ShortBelow) the header and
+        // the rows around the pages are lower and, when the column is wide
+        // enough, the workspace switch moves onto the row of the section strip.
+
+        private const int MaxColumnWidth = 1240;
+        private const int ShortBelow = 760;
+        private readonly Panel column = new Panel();
+        private readonly Panel switchRow = new Panel { Dock = DockStyle.Top, Height = 108 };
+        private readonly Font nameFont = Theme.Light(22f);
+        private readonly Font nameFontShort = Theme.Light(17f);
+        private TableLayoutPanel headerPanel;
+        private AppMark headerMark;
+        private Label nameLabel;
+        private FlowLayoutPanel detailRow;
+        private FlowLayoutPanel headerButtons;
+        private TableLayoutPanel bottomRow;
+        private Label workspaceLabel;
+        private System.Windows.Forms.Control workspaceCapsule;
+        private bool shortWindow;
+        private int headerState = -1;
+
+        private void LayoutColumn()
+        {
+            // While the window edge is dragged the column is hidden behind a
+            // snapshot; it is laid out once, when the drag ends.
+            if (resizePreview != null || navStrip == null) return;
+            var client = ClientSize;
+            if (client.Width < 2 || client.Height < 2) return; // minimised
+            var width = Math.Min(client.Width, MaxColumnWidth);
+            var bounds = new Rectangle((client.Width - width) / 2, 0, width, client.Height);
+            shortWindow = client.Height < ShortBelow;
+            column.SuspendLayout();
+            if (column.Bounds != bounds) column.Bounds = bounds;
+            LayoutHeader(shortWindow, width);
+            LayoutSwitchRow(shortWindow, width);
+            var bottomHeight = shortWindow ? 36 : 42;
+            if (bottomRow.Height != bottomHeight)
+            {
+                bottomRow.Padding = shortWindow ? new Padding(22, 1, 22, 1) : new Padding(22, 8, 22, 8);
+                bottomRow.Height = bottomHeight;
+            }
+            column.ResumeLayout(true);
+        }
+
+        private void LayoutHeader(bool compact, int width)
+        {
+            // In a short window the two status lines share one line when they fit.
+            var inline = false;
+            if (compact)
+            {
+                var room = width - 44 - 58 - headerButtons.PreferredSize.Width - 12;
+                inline = lowestLabel.Text.Length == 0 || detailLabel.PreferredSize.Width + 18 + lowestLabel.PreferredSize.Width <= room;
+            }
+            var state = !compact ? 0 : inline ? 2 : 1;
+            if (state == headerState) return;
+            headerState = state;
+            headerPanel.SuspendLayout();
+            headerPanel.Padding = compact ? new Padding(22, 8, 22, 4) : new Padding(22, 18, 22, 8);
+            headerMark.Size = compact ? new Size(44, 44) : new Size(60, 60);
+            headerMark.Margin = compact ? new Padding(0, 2, 14, 0) : new Padding(0, 0, 16, 0);
+            nameLabel.Font = compact ? nameFontShort : nameFont;
+            stateLabel.Margin = compact ? new Padding(12, 6, 0, 0) : new Padding(14, 12, 0, 0);
+            detailRow.FlowDirection = inline ? FlowDirection.LeftToRight : FlowDirection.TopDown;
+            detailLabel.Margin = new Padding(0, 2, inline ? 18 : 0, 0);
+            headerButtons.Margin = new Padding(0, compact ? 4 : 8, 0, 0);
+            headerPanel.Height = !compact ? 104 : inline ? 62 : 84;
+            headerPanel.ResumeLayout(true);
+        }
+
+        // The workspace switch and the section strip, each in the middle of
+        // the column: on two rows, or side by side in a short window that is
+        // wide enough for both. Side by side there is no room for the line
+        // that describes the workspace, so it is not shown.
+        private void LayoutSwitchRow(bool compact, int width)
+        {
+            var label = workspaceLabel.PreferredSize;
+            var capsule = workspaceCapsule.PreferredSize;
+            var strip = navStrip.CapsuleWidth;
+            var both = label.Width + 12 + capsule.Width + 18 + strip;
+            var sideBySide = compact && both <= width - 44;
+            switchRow.SuspendLayout();
+            if (sideBySide)
+            {
+                var x = (width - both) / 2;
+                workspaceLabel.SetBounds(x, (50 - label.Height) / 2, label.Width, label.Height);
+                x += label.Width + 12;
+                workspaceCapsule.SetBounds(x, (50 - capsule.Height) / 2, capsule.Width, capsule.Height);
+                x += capsule.Width + 18;
+                navStrip.SetBounds(x, 0, strip, 50);
+                // Set outright: while the column is hidden for the resize preview,
+                // reading Visible says false for everything in it.
+                workspaceHint.Visible = false;
+                if (switchRow.Height != 50) switchRow.Height = 50;
+            }
+            else
+            {
+                // The switch itself is centred, so it does not move when the
+                // line beside it changes with the workspace.
+                var top = compact ? 4 : 6;
+                var stripHeight = compact ? 50 : 58;
+                var x = (width - capsule.Width) / 2;
+                workspaceCapsule.SetBounds(x, top, capsule.Width, capsule.Height);
+                workspaceLabel.SetBounds(x - 12 - label.Width, top + (capsule.Height - label.Height) / 2, label.Width, label.Height);
+                var hintLeft = x + capsule.Width + 14;
+                workspaceHint.SetBounds(hintLeft, top, Math.Max(0, width - 22 - hintLeft), capsule.Height);
+                workspaceHint.Visible = true;
+                var stripTop = top + capsule.Height + (compact ? 0 : 2);
+                navStrip.SetBounds(0, stripTop, width, stripHeight);
+                if (switchRow.Height != stripTop + stripHeight) switchRow.Height = stripTop + stripHeight;
+            }
+            switchRow.ResumeLayout(false);
+            navStrip.Invalidate();
         }
 
         protected override void SetVisibleCore(bool value)
@@ -936,9 +1088,20 @@ namespace DSHProxy
             return row;
         }
 
+        // A note above a page. As tall as its text at the width it has: one
+        // line in a wide window, two in a narrow one.
         private static Label Note(string text)
         {
-            return new GlassLabel { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 40, ForeColor = Theme.Muted, Padding = new Padding(0, 2, 0, 0) };
+            var note = new GlassLabel { Text = text, Dock = DockStyle.Top, AutoSize = false, Height = 40, ForeColor = Theme.Muted, Padding = new Padding(0, 2, 0, 0) };
+            EventHandler fit = (s, e) =>
+            {
+                if (note.Width <= 0) return;
+                var height = note.GetPreferredSize(new Size(note.Width, 0)).Height + 4;
+                if (note.Height != height) note.Height = height;
+            };
+            note.Resize += fit;
+            note.FontChanged += fit;
+            return note;
         }
 
         // Lists sit in a bordered panel so they read as one surface.
@@ -964,25 +1127,33 @@ namespace DSHProxy
         private System.Windows.Forms.Control BuildHeader()
         {
             var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = 104, ColumnCount = 3, Padding = new Padding(22, 18, 22, 8) };
+            headerPanel = header;
             header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             var mark = new AppMark { Size = new Size(60, 60), Margin = new Padding(0, 0, 16, 0) };
+            headerMark = mark;
             var big = AppIcon.Load(new Size(64, 64));
             if (big != null) mark.Picture = big.ToBitmapExact(64, Color.Black);
             header.Controls.Add(mark, 0, 0);
 
             var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0) };
             var nameRow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
-            nameRow.Controls.Add(new GlassLabel { Text = "DeepSeekProxy", AutoSize = true, Font = Theme.Light(22f), ForeColor = Theme.Text, Margin = new Padding(0, 0, 0, 0) });
+            nameLabel = new GlassLabel { Text = "DeepSeekProxy", AutoSize = true, Font = nameFont, ForeColor = Theme.Text, Margin = new Padding(0, 0, 0, 0) };
+            nameRow.Controls.Add(nameLabel);
             nameRow.Controls.Add(stateLabel);
             text.Controls.Add(nameRow);
-            text.Controls.Add(detailLabel);
-            text.Controls.Add(lowestLabel);
+            // The two status lines: one under the other, or side by side in a
+            // short window (see LayoutHeader).
+            detailRow = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = new Padding(0) };
+            detailRow.Controls.Add(detailLabel);
+            detailRow.Controls.Add(lowestLabel);
+            text.Controls.Add(detailRow);
             header.Controls.Add(text, 1, 0);
 
             var buttons = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Anchor = AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(0, 8, 0, 0) };
+            headerButtons = buttons;
             buttons.Controls.Add(startButton);
             buttons.Controls.Add(stopButton);
             header.Controls.Add(buttons, 2, 0);
@@ -1070,7 +1241,9 @@ namespace DSHProxy
             }
             var lanesTop = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 3, Margin = new Padding(0) };
             lanesTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            lanesTop.Controls.Add(Note("A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key."), 0, 0);
+            // In a table the row follows a label that sizes itself, which a
+            // Note (it sets its own height) does not get; the spacing is the same.
+            lanesTop.Controls.Add(new GlassLabel { Text = "A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key.", AutoSize = true, Dock = DockStyle.Fill, ForeColor = Theme.Muted, Margin = new Padding(0, 2, 0, 4) }, 0, 0);
             lanesTop.Controls.Add(presetRow, 0, 1);
             lanesTop.Controls.Add(presetNote, 0, 2);
             tabs.TabPages.Add(Page("Lanes", lanesList, lanesTop, Row(editLanes)));
@@ -1149,6 +1322,7 @@ namespace DSHProxy
             };
 
             var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 42, ColumnCount = 2, Padding = new Padding(22, 8, 22, 8) };
+            bottomRow = bottom;
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             footer.Margin = new Padding(0, 5, 0, 0);
@@ -1158,17 +1332,19 @@ namespace DSHProxy
             var nav = new NavStrip(tabs);
             navStrip = nav;
             // The chat pages and the video pages share one area; ShowWorkspace
-            // decides which of the two is on screen. They sit in their own
-            // panel so the resize preview, which hides and shows the window's
-            // direct children, cannot bring the hidden one back.
+            // decides which of the two is on screen.
             content.Controls.Add(tabs);
             content.Controls.Add(videoHost);
-            Controls.Add(content);
-            Controls.Add(nav);
-            Controls.Add(BuildWorkspaceBar());
-            Controls.Add(updateBar);
-            Controls.Add(bottom);
-            Controls.Add(header);
+            // The column is the window's only child, so the resize preview,
+            // which hides and shows the window's direct children, leaves what
+            // is hidden inside it (the update bar, the other workspace) alone.
+            // The rows are added in the order the Tab key visits them.
+            column.Controls.Add(content);
+            column.Controls.Add(BuildSwitchRow(nav));
+            column.Controls.Add(updateBar);
+            column.Controls.Add(bottom);
+            column.Controls.Add(header);
+            Controls.Add(column);
             ShowAccountsMessage("Starting...", Theme.Muted);
         }
 
@@ -1242,6 +1418,7 @@ namespace DSHProxy
             resizePreview.Dispose();
             resizePreview = null;
             if (image != null) image.Dispose();
+            LayoutColumn();
             foreach (Control child in Controls) child.Visible = true;
             Skin.SuppressBackdrop = false;
             Invalidate(true);
@@ -1608,22 +1785,9 @@ namespace DSHProxy
             }
             lowestLabel.Text = lowestText ?? "";
             lowestLabel.ForeColor = lowestText == null ? Theme.Muted : Theme.ForLeft(lowest);
+            // The cards are docked, so they are as wide as the page: the
+            // column keeps them from stretching across a wide monitor.
             accountsPanel.ResumeLayout();
-            FitCards();
-        }
-
-        // Cards keep a readable width on a wide monitor instead of stretching
-        // the meters across the whole screen.
-        private const int MaxCardWidth = 1600;
-
-        private void FitCards()
-        {
-            // The cards are docked, so their width comes from this padding. They
-            // line up with the page text and stop growing on a wide monitor.
-            var available = accountsPanel.ClientSize.Width;
-            var left = accountsPanel.Padding.Left;
-            var right = Math.Max(left, available - left - MaxCardWidth);
-            if (accountsPanel.Padding.Right != right) accountsPanel.Padding = new Padding(left, 4, right, 4);
         }
 
         private TableLayoutPanel BuildCard(Dictionary<string, object> account)
@@ -2172,7 +2336,7 @@ namespace DSHProxy
         private readonly List<Panel> videoPages = new List<Panel>();
         private readonly SegmentRadio chatSwitch = new SegmentRadio { Text = "Chat", Size = new Size(96, 34), Checked = true, AccessibleName = "Chat workspace", AccessibleDescription = "Shows chat accounts, API keys, lanes and models in the sections below." };
         private readonly SegmentRadio videoSwitch = new SegmentRadio { Text = "Video", Size = new Size(96, 34), AccessibleName = "Video workspace", AccessibleDescription = "Shows video accounts, API keys, lanes and models in the sections below." };
-        private readonly Label workspaceHint = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 13, 0, 0) };
+        private readonly Label workspaceHint = new GlassLabel { AutoSize = false, ForeColor = Theme.Muted, TextAlign = ContentAlignment.MiddleLeft };
         private readonly ListView videoModelsList = new DarkList();
         private readonly ListView videoLanesList = new DarkList();
         private readonly ListView videoHarnessList = new DarkList();
@@ -2200,18 +2364,22 @@ namespace DSHProxy
             get { return ReadOnly || previewLimits != null; }
         }
 
-        private System.Windows.Forms.Control BuildWorkspaceBar()
+        // The section strip and the workspace switch. LayoutSwitchRow places
+        // them; the strip comes first in the Tab order, as it always has.
+        private System.Windows.Forms.Control BuildSwitchRow(NavStrip nav)
         {
-            var bar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 50, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(22, 6, 22, 0) };
-            bar.Controls.Add(new GlassLabel { Text = "Workspace", AutoSize = true, Font = Theme.Ui(10f, FontStyle.Bold), Margin = new Padding(0, 11, 12, 0) });
-            var capsule = Glass.Make(new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(4), Margin = new Padding(0, 0, 14, 0), AccessibleRole = AccessibleRole.Grouping, AccessibleName = "Workspace" }, 21, true);
+            workspaceLabel = new GlassLabel { Text = "Workspace", AutoSize = true, Font = Theme.Ui(10f, FontStyle.Bold) };
+            var capsule = Glass.Make(new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(4), Margin = new Padding(0), AccessibleRole = AccessibleRole.Grouping, AccessibleName = "Workspace" }, 21, true);
+            workspaceCapsule = capsule;
             capsule.Controls.Add(chatSwitch);
             capsule.Controls.Add(videoSwitch);
-            bar.Controls.Add(capsule);
-            bar.Controls.Add(workspaceHint);
+            switchRow.Controls.Add(nav);
+            switchRow.Controls.Add(workspaceLabel);
+            switchRow.Controls.Add(capsule);
+            switchRow.Controls.Add(workspaceHint);
             videoSwitch.CheckedChanged += (s, e) => SetWorkspace(videoSwitch.Checked);
             ShowWorkspace();
-            return bar;
+            return switchRow;
         }
 
         private void SetWorkspace(bool video)
@@ -2265,10 +2433,6 @@ namespace DSHProxy
                 : "Chat accounts, keys, lanes and models.");
         }
 
-        // GWL_STYLE (-16) says whether a list is showing a sideways scroll bar (WS_HSCROLL).
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        private static extern int GetWindowLong(IntPtr window, int index);
-
         private static ListView SetUpVideoList(ListView list, string name, string[] columns, int[] widths)
         {
             list.View = View.Details;
@@ -2278,33 +2442,9 @@ namespace DSHProxy
             list.HeaderStyle = ColumnHeaderStyle.Nonclickable;
             list.Dock = DockStyle.Fill;
             list.AccessibleName = name;
+            // The widths are the proportions: the list shares its own width
+            // between its columns (see DarkList).
             for (var i = 0; i < columns.Length; i++) list.Columns.Add(columns[i], widths[i]);
-            // The last column takes the room that is left. Done once the list
-            // has settled at its new size: fitting it during the resize left a
-            // sideways scroll bar behind when the window was made smaller.
-            EventHandler fit = (s, e) =>
-            {
-                if (!list.IsHandleCreated) return;
-                list.BeginInvoke(new Action(() =>
-                {
-                    if (list.IsDisposed || list.Columns.Count == 0) return;
-                    var used = 0;
-                    for (var i = 0; i < list.Columns.Count - 1; i++) used += list.Columns[i].Width;
-                    var last = Math.Max(120, list.ClientSize.Width - used);
-                    var column = list.Columns[list.Columns.Count - 1];
-                    if (column.Width != last) column.Width = last;
-                    // The width can already be right while Windows still shows
-                    // the scroll bar it put up half way through the resize;
-                    // setting the width again makes it look once more.
-                    else if (used + last <= list.ClientSize.Width && (GetWindowLong(list.Handle, -16) & 0x00100000) != 0)
-                    {
-                        column.Width = last - 1;
-                        column.Width = last;
-                    }
-                }));
-            };
-            list.Resize += fit;
-            list.HandleCreated += fit;
             return list;
         }
 
