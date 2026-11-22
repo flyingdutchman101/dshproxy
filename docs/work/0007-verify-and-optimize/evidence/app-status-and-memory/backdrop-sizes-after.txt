@@ -1,0 +1,23 @@
+--- after a settled resize the backdrop is the one drawn at that size, drawn once ---
+ok   as first shown, 1280x880 (client 1264x841): 0 pixels differ from a backdrop drawn at that size
+ok   860x600 to 1280x880 (client 1264x841): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   1280x880 to 860x600 (client 844x561): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   860x600 to 3440x1392 (client 3424x1353): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   3440x1392 to 860x600 (client 844x561): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   860x600 to 5120x1392 (client 5104x1353): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   5120x1392 to 1280x880 (client 1264x841): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   1280x880 to 3440x1392 (client 3424x1353): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   3440x1392 to 1280x880 (client 1264x841): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   1280x880 to 5120x1392 (client 5104x1353): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   5120x1392 to 3440x1392 (client 3424x1353): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   3440x1392 to 5120x1392 (client 5104x1353): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   5120x1392 to 860x600 (client 844x561): 0 pixels differ from a backdrop drawn at that size; drawn 1 time; backdrops kept 1, redraws waiting 0, stretched ones 0
+--- a window that is being dragged: nothing is drawn until it has come to rest ---
+ok   40 steps 15 ms apart, 1280x880 to 1680x1080: drawn 0 times while it moved, 0 when the last step was made, 1 in all once it had come to rest; 0 pixels differ (client 1664x1041)
+--- a window nobody sees: nothing is drawn, and the backdrop is drawn when it is seen again ---
+ok   resized to 1500x900 and hidden at once (a redraw was waiting: True): 1.5 s later it is hidden, drawn 0 times, backdrops kept 1, redraws waiting 0, stretched ones 1
+ok   shown again: drawn 1 time, 0 pixels differ from a backdrop drawn at that size (client 1484x861); backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   resized to 1500x900 and minimised at once (a redraw was waiting: True): 1.5 s later it is minimised, drawn 0 times, backdrops kept 1, redraws waiting 0, stretched ones 1
+ok   shown again: drawn 1 time, 0 pixels differ from a backdrop drawn at that size (client 1484x861); backdrops kept 1, redraws waiting 0, stretched ones 0
+ok   the window never became the foreground window
+ALL OK

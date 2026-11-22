@@ -1,0 +1,14 @@
+hidden: DSHPROXY_HOME=%TEMP%\dshproxy-final\rig-count\home  gateway address http://127.0.0.1:53469
+command line folder: %TEMP%\dshproxy-final\root\
+--- processes and CPU, 5 minutes hidden (job object: this program and everything it starts) ---
+ok   started hidden, it shows the running gateway (0.2 s)
+hidden 0:00    processes ever    5   job CPU     937 ms   private 35.0 MB   ● Running
+hidden 1:00    processes ever    5   job CPU    1062 ms   private 35.2 MB   ● Running
+hidden 2:00    processes ever    5   job CPU    1140 ms   private 35.3 MB   ● Running
+hidden 3:00    processes ever    5   job CPU    1187 ms   private 35.5 MB   ● Running
+hidden 4:00    processes ever    5   job CPU    1218 ms   private 35.7 MB   ● Running
+hidden 5:00    processes ever    5   job CPU    1328 ms   private 36.0 MB   ● Running
+ok   processes started in 5 minutes hidden: 0 (command line runs begun in that time: 0), CPU 390 ms
+ok   the window is still hidden and still says Running
+ok   the window never became the foreground window
+ALL OK

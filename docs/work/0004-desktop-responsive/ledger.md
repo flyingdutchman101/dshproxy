@@ -7,6 +7,10 @@
 - Worker `desktop-ui` owns `app/DSHProxyApp.cs` and `app/Skin.cs` for this change; captures go to `after/`.
 - Next gate: inspect `after/` captures, independent review, then ask the user before restarting the running app or pushing.
 
+- 04:18. Layout delivered and accepted; committed locally as `29693af` (not pushed). Worker evidence: 45 captures in `after/`; equal margins at every size (5120x1392 was not clamped); no horizontal scrollbar in any capture; list or card area at 1280x672 between 50.4% and 61.3% of client height (31 to 42% before); six-tab switch 0 differing pixels; seam check 26 of 26; Tab order identical to `3f6eb33` in 36 comparisons; suite 469/469 and 65 files OK. Lead looked at four captures (3440 and 1280x672 Accounts, 1920 Video Models, 860x600 Video Lanes): centered, nothing clipped or overlapping.
+- Not verified: start size on a small or scaled screen (calculated only); a real mouse drag; Chat Lanes and Chat Models with rows (preview has none, so long model names at 860 wide are unchecked); the update bar inside the column. To be covered in the later responsive pass.
+- Worker also changed, unasked: page notes are as tall as their text; the icon tile's corners scale with the lower header. Spec remarks folded into `spec.md`.
+
 ## Side task: refused backend update (CLIProxyAPI 8.1.0)
 
 - 2026-11-22 03:32. User reported the update dialog: 8.1.0 "did not pass its trial"; "lists 11 models"; claude and codex "no model of this service is listed".

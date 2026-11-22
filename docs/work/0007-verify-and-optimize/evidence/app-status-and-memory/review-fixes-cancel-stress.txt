@@ -1,0 +1,13 @@
+=== source before these changes (sha256 6090543000271949) ===
+race: DSHPROXY_HOME=%USERPROFILE%\AppData\Local\Temp\dshproxy-fix\rig-flow\home  gateway address http://127.0.0.1:54121
+--- item 2: Cancel from two threads, without pause, while the run ends and disposes its process ---
+ok   the stop command: 300 rounds, 87981410 Cancel calls, exceptions that escaped: none
+ok   the Krea helper: 300 rounds, 72912523 Cancel calls, exceptions that escaped: none
+ALL OK
+
+=== source after (sha256 71EDDCC2A7FE2A55) ===
+race: DSHPROXY_HOME=%USERPROFILE%\AppData\Local\Temp\dshproxy-fix\rig-flow\home  gateway address http://127.0.0.1:54121
+--- item 2: Cancel from two threads, without pause, while the run ends and disposes its process ---
+ok   the stop command: 300 rounds, 123894667 Cancel calls, exceptions that escaped: none
+ok   the Krea helper: 300 rounds, 90322995 Cancel calls, exceptions that escaped: none
+ALL OK

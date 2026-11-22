@@ -1,0 +1,34 @@
+--- reading an answer ---
+ok   content-length: the body
+ok   content-length, body not all there yet: wait for more
+ok   content-length, connection closed early: no answer
+ok   headers not all there yet: wait for more
+ok   nothing but a closed connection: no answer
+ok   chunked: the pieces joined
+ok   chunked, last piece missing: wait for more
+ok   chunked with a size that is not a number: no answer
+ok   neither length nor chunks: the body ends with the connection
+ok   HTTP 404, 500, 302: no answer
+ok   not HTTP at all: no answer
+ok   a declared length above the limit: no answer
+ok   a multi-byte character in the body survives
+--- what an answer says ---
+ok   in-flight count and the rest
+ok   only the count differs: the rest is the same text
+ok   something else differs: the rest is another text
+ok   count null, absent, negative, text, 0.5: 0; 1.5 counts as 1 (as the earlier reviewed rule has it)
+ok   not an object, not JSON, empty: refused
+--- over a real connection ---
+ok   127.0.0.1: the body (56877)
+     took 5 ms
+ok   localhost, when only 127.0.0.1 listens: the body (411 ms)
+ok   nothing listening: no answer, known in well under 2 s (404 ms)
+ok   [::1]: the body
+ok   localhost, when only ::1 listens: the body (3 ms)
+ok   an answer that arrives 7 bytes at a time: the body
+ok   a server that keeps the connection open after a whole answer: the body, without waiting for the close (394 ms)
+ok   an answer after 2.6 s: no answer, given up at 2 s (2002 ms)
+ok   an answer that trickles for longer than 2 s in all: no answer, given up at 2 s (2010 ms)
+ok   another program on the port answering 404: no answer
+ok   an address that is not http, or not an address: no answer, nothing sent
+ALL OK

@@ -1,0 +1,3 @@
+# The captures show a folder under the local user profile in the window's
+# bottom line, so they stay out of the repository. See README.md here.
+*.png

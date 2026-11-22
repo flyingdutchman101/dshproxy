@@ -1,0 +1,22 @@
+ticks: DSHPROXY_HOME=%TEMP%\dshproxy-final\rig-flow\home  gateway address http://127.0.0.1:53437
+command line folder: %TEMP%\dshproxy-final\root\
+--- the Models page: the window sends a model choice only for a tick the user changed ---
+ok   the gateway runs and the list of models is filled (1.7 s): 4 rows, 3 ticked, and the page has not been shown yet (the list has a window: False)
+FAIL 1. the page is shown for the first time: 6 s later the gateway was sent no model choice (3 calls), and the log has no "Offering" line (3)
+     sent without a click: POST models/choose {"id":"synthetic-model-a","offered":true}
+     sent without a click: POST models/choose {"id":"synthetic-model-b","offered":true}
+     sent without a click: POST models/choose {"id":"synthetic-model-c","offered":true}
+ok      the ticks are as they were filled (3 of 4), and no box is open
+ok   2. one tick taken off by hand: one call (1), {"id":"synthetic-model-a","offered":false} (0.0 s); the list then shows 2 ticked
+ok   3. the tick put back by hand: one call (1), {"id":"synthetic-model-a","offered":true} (0.0 s); the list then shows 3 ticked
+ok   4. the list is filled again four times while the page is on screen (three times from what is known, once from a new status): no call (0), 3 ticked
+ok   5. another page and back: no call (0)
+FAIL in all, the gateway was sent 5 model choices
+--- the Video models page: the same for the other list with ticks ---
+ok   the video settings of the throwaway folder are read: 4 models, 0 enabled
+ok   set-up, by the command line: seedance-2.5 is enabled on the route videorouter
+ok   the Video workspace is opened on Accounts: the list of video models is filled (0.1 s), 1 ticked, and its page has not been shown (the list has a window: False)
+ok   6. the Video models page is shown for the first time: 6 s later nothing was saved (0 runs of "video settings set"), 1 ticked
+ok   7. its tick taken off by hand: one run (1): video settings set seedance-2.5 videorouter disabled (0.1 s)
+ok   the window never became the foreground window
+2 FAILED

@@ -1,0 +1,48 @@
+=== first run (the check expected 20 or 24 and was wrong: see notes.md) ===
+count: DSHPROXY_HOME=%USERPROFILE%\AppData\Local\Temp\dshproxy-fix\rig-count\home  gateway address http://127.0.0.1:54132
+command line folder: %USERPROFILE%\AppData\Local\Temp\dshproxy-fix\root\
+--- processes and CPU, 5 minutes visible and 5 minutes hidden (job object: this program and everything it starts) ---
+visible 0:00   processes ever    9   job CPU    2093 ms   private 35.5 MB   ● Running
+visible 1:00   processes ever   13   job CPU    3593 ms   private 43.7 MB   ● Running
+visible 2:00   processes ever   17   job CPU    4953 ms   private 44.4 MB   ● Running
+visible 3:00   processes ever   21   job CPU    6500 ms   private 44.4 MB   ● Running
+visible 4:00   processes ever   25   job CPU    7562 ms   private 45.7 MB   ● Running
+visible 5:00   processes ever   25   job CPU    8843 ms   private 46.1 MB   ● Running
+hidden 0:00    processes ever   25   job CPU    8859 ms   private 46.1 MB   ● Running
+hidden 1:00    processes ever   25   job CPU    8937 ms   private 45.9 MB   ● Running
+hidden 2:00    processes ever   25   job CPU    9062 ms   private 47.0 MB   ● Running
+hidden 3:00    processes ever   25   job CPU    9187 ms   private 47.0 MB   ● Running
+hidden 4:00    processes ever   25   job CPU    9234 ms   private 47.0 MB   ● Running
+hidden 5:00    processes ever   25   job CPU    9296 ms   private 47.0 MB   ● Running
+processes started in 5 minutes visible: 16   CPU 6750 ms
+processes started in 5 minutes hidden:  0   CPU 437 ms
+FAIL 5 minutes visible start 20 processes (five full statuses of four), or 24 when a sixth falls just inside
+ok   5 minutes hidden start none
+ok   the window showed a running gateway throughout, and no status read failed
+ok   the window never became the foreground window
+1 FAILED
+
+=== second run (the check's list of gaps wrongly included the 1.2 s between the two full statuses before the 5 minutes: see notes.md) ===
+count: DSHPROXY_HOME=%USERPROFILE%\AppData\Local\Temp\dshproxy-fix\rig-count\home  gateway address http://127.0.0.1:54132
+command line folder: %USERPROFILE%\AppData\Local\Temp\dshproxy-fix\root\
+--- processes and CPU, 5 minutes visible and 5 minutes hidden (job object: this program and everything it starts) ---
+visible 0:00   processes ever    9   job CPU    2968 ms   private 35.6 MB   ● Running
+visible 1:00   processes ever   13   job CPU    4515 ms   private 42.9 MB   ● Running
+visible 2:00   processes ever   15   job CPU    5125 ms   private 43.5 MB   ● Running
+visible 3:00   processes ever   17   job CPU    6765 ms   private 43.7 MB   ● Running
+visible 4:00   processes ever   21   job CPU    8437 ms   private 44.7 MB   ● Running
+visible 5:00   processes ever   25   job CPU    9656 ms   private 45.2 MB   ● Running
+hidden 0:00    processes ever   25   job CPU    9656 ms   private 45.2 MB   ● Running
+hidden 1:00    processes ever   25   job CPU    9765 ms   private 45.0 MB   ● Running
+hidden 2:00    processes ever   25   job CPU    9828 ms   private 44.9 MB   ● Running
+hidden 3:00    processes ever   25   job CPU    9921 ms   private 44.9 MB   ● Running
+hidden 4:00    processes ever   25   job CPU    9953 ms   private 44.9 MB   ● Running
+hidden 5:00    processes ever   25   job CPU   10000 ms   private 45.0 MB   ● Running
+processes started in 5 minutes visible: 16   CPU 6687 ms
+processes started in 5 minutes hidden:  0   CPU 343 ms
+full statuses while visible: 4; seconds between one and the next: 1.2, 59.9, 63.0, 62.9, 60.0
+FAIL visible: every process started belongs to a full status (16 = 4 x 4), and full statuses are a minute apart (closest 1.2 s): 16 or 20 processes in 5 minutes
+ok   5 minutes hidden start none
+ok   the window showed a running gateway throughout, and no status read failed
+ok   the window never became the foreground window
+1 FAILED

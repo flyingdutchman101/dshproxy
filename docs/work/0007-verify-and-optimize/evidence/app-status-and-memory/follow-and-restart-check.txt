@@ -1,0 +1,82 @@
+DSHPROXY_HOME=%USERPROFILE%\AppData\Local\Temp\dshproxy-poll\follow\home  gateway address http://127.0.0.1:53967
+command line folder: %USERPROFILE%\AppData\Local\Temp\dshproxy-poll\root\
+--- A. what the window notices, and what it costs (stand-in gateway) ---
+ok   started hidden, it shows the running gateway (0.3 s)
+ok   one full status at start, while hidden (1)
+ok   shown: a full status at once (0.1 s)
+ok   the window is visible and was not activated
+ok   21 s idle and visible: no command line run (0), the gateway asked about every 3 s (7 times)
+ok   in-flight count 3 is noticed (0.4 s) without a command line run
+ok   a gateway that reports no count reads as 0 (3.0 s), still without a command line run
+ok   only the count changed: still no command line run
+ok   accounts list changed: a full status starts (2.6 s) and the window shows 1 account (3.0 s after the change)
+     status line: http://127.0.0.1:53967  ·  CLIProxyAPI 6.9.9  ·  1 account  ·  12 models offered
+ok   one full status for that change, not one per check (1)
+ok   update field changed: the update bar shows it (2.5 s after the change)
+     update bar: CLIProxyAPI 9.9.9 is available (you run 8.0.72). Updating tries it first and keeps 8.0.72 for rollback.
+ok   one full status for that change (1)
+ok   one answer slower than 2 s: counted as a miss (most misses in a row: 1) and the display stays on Running
+ok   while a full status is running (made 5 s slow), the fast check still delivers a new count (0.6 s)
+ok   five requests for a full status in a row ran it twice (the one in progress, then one more), not five times (2)
+ok   gateway stopped: the window says Stopped (4.6 s)
+ok   Start is enabled and Stop is not
+ok   9 s stopped: no command line run (0)
+ok   gateway started again: the window says Running (3.3 s)
+ok   46 s hidden: the gateway asked about every 15 s (3 times), no command line run (0)
+ok   shown again: a full status at once (0.1 s)
+ok   minimised without being activated
+ok   31 s minimised: the gateway asked about every 15 s (2 times), no command line run (0)
+ok   restored: a full status at once (0.1 s)
+ok   full statuses never overlapped (10 runs in part A, 0 overlaps)
+ok   part A started no gateway and stopped none (commands other than status: 0)
+--- B. Stop, Quit and the restart after a Chat key change (real daemon, stand-in backend) ---
+ok   pure: exit 0 with {"stopped":true} is Stopped
+ok   pure: exit 2 with {"stopped":false,"inFlight":3} is StillBusy with 3
+ok   pure: exit 1 is NotDone with the command line's sentence as given
+ok   pure: exit 0 without an answer, exit 2 without a count and exit 0 with stopped:false are NotDone
+ok   pure: the command is stop --when-idle --wait 300
+ok   pure: wording for 1, 2 and 0 requests
+ok   Start: the window starts its gateway and shows Running (2.9 s)
+     gateway process 50624; http://127.0.0.1:53967  ·  CLIProxyAPI 8.0.72  ·  1 account  ·  12 models offered
+ok   in-flight count is 0 after the start
+ok   a held model request is counted (0.2 s)
+ok   Stop asks first, No is the default: 1 model request was in flight when the gateway was last checked, a few seconds ago at most. Stopping the gateway now cuts it. /  / Stop anyway?
+ok   No: the same gateway keeps running and the request is still in flight
+ok   after the key is saved the question says the restart will wait: Saved the deepseek key (region international). Restart the gateway, then run `dshproxy dsh apply`. /  / Restart the gateway now so it uses the change? /  / 1 request is in flight: the restart waits for a moment with none, at most 5 minutes, and cuts nothing.
+ok   it shows "Waiting for 1 request to finish before restarting" with a Cancel: Waiting for 1 request to finish before restarting | The gateway keeps serving until a moment with nothing in flight, for at most 5 minutes. Cancel leaves it running; the key change is then used after the next restart.
+ok   Cancel has an accessible name
+ok   the command line was started as: stop --when-idle --wait 300
+ok   4 s later the gateway is the same process, still serving, the request still in flight and not cut
+ok   a new request is served while it waits, and the dialog follows the count: 2 requests (0.2 s)
+ok   the requests finished: the dialog closed by itself (1.6 s)
+ok   the gateway was started again as a new process and the window shows Running (0.0 s)
+ok   the old gateway process ended by itself with exit code 0 (a killed one ends with 1): 0
+ok   both held requests finished whole and none was cut (finished 2, cut 0)
+ok   the command ended with exit code 0: end(0)
+ok   in-flight count is 0 after the restart
+ok   with nothing in flight the question is the old one, with no word about waiting: Saved the deepseek key (region international). Restart the gateway, then run `dshproxy dsh apply`. /  / Restart the gateway now so it uses the change?
+ok   it restarts at once, as before: new process, Running (0.0 s), no stop command run
+ok   Cancel: the dialog closed (1.9 s)
+ok   the command was ended (process 15592 gone)
+ok   the gateway is the same process, running, with the request still in flight and not cut
+ok   the gateway logged that the caller went away and that it keeps running
+ok   the log says the restart was cancelled
+ok   no further dialog is left open
+ok   exit code 2: it says requests are still running, nothing was restarted, and the key is used after the next restart: 1 request is still running after 5 minutes of waiting. /  / Nothing was restarted: the gateway keeps running as it was. The key change is used after the next restart of the gateway.
+ok   the command answered with exit code 2: end(2)
+ok   the waiting dialog is gone
+ok   the gateway is the same process, running, the request still in flight and not cut
+ok   exit code 1 with a usage sentence: it falls back to the yes or no question, No is the default: The gateway could not be asked to wait for an idle moment: / Unknown command "stop". Run `dshproxy help`. /  / 1 model request was in flight when the gateway was last checked, a few seconds ago at most. Restarting the gateway now cuts it. /  / Restart anyway?
+ok   No: the gateway is the same process, running, the request not cut
+ok   Yes: the gateway is restarted the old way (new process, Running) (1.9 s)
+ok   in-flight count is 0 right after that restart, so nothing stale can raise a question
+ok   Stop, Yes: the gateway is stopped (0.0 s) and the in-flight count is 0 at once
+ok   the window says Stopped (1.5 s after the stop)
+ok   no question when nothing is running
+ok   Start again: Running (2.5 s), in-flight count 0
+ok   a stand-in sign-in helper is waiting (process 24164)
+ok   Quit returned
+     Quit took 357 ms on the UI thread (that includes stopping the gateway, as before)
+ok   the helper was ended (0.0 s after Quit returned) and the gateway too
+ok   the window never became the foreground window
+ALL OK

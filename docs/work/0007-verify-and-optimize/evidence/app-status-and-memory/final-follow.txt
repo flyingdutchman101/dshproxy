@@ -1,0 +1,19 @@
+follow: DSHPROXY_HOME=%TEMP%\dshproxy-final\rig-follow\home  gateway address http://127.0.0.1:53448
+command line folder: %TEMP%\dshproxy-final\root\
+--- a gateway this window did not start (stand-in) ---
+ok   started hidden, it shows the running gateway (0.1 s)
+ok   in-flight count 3 is noticed (2.0 s) without a command line run
+ok   9 s idle: no command line run (0)
+ok   it stops answering: the window says Stopped (3.4 s)
+ok   as before for a gateway this window did not start: Start on, Stop off, no third state: ● Stopped | Start on, Stop off | tray: DSHProxy: stopped | The gateway is not running. Press Start.
+ok   it is not a gateway of this window: the count is 0 once it does not answer
+ok   Stop asks nothing about a gateway this window did not start
+ok   it answers again: the window says Running (2.4 s)
+ok   Start off, Stop on: ● Running | Start off, Stop on | tray: DSHProxy: running | http://127.0.0.1:53448  ·  CLIProxyAPI 8.0.72  ·  0 accounts  ·  7 models offered
+ok   and the count is back (0.0 s)
+ok   the gateway is gone: the window says Stopped (4.3 s)
+ok   Start on, Stop off: ● Stopped | Start on, Stop off | tray: DSHProxy: stopped | The gateway is not running. Press Start.
+ok   a gateway this window did not start answers (3.3 s): Stop asks nothing, stops nothing, and the log says where to stop it
+ok   full statuses never overlapped (5 runs, 0 overlaps), and nothing but status was run
+ok   the window never became the foreground window
+ALL OK

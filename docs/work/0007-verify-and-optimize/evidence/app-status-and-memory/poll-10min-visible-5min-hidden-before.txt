@@ -1,0 +1,27 @@
+run before  exe=%USERPROFILE%\Desktop\Development\DSHProxy\.agents\worktrees\video-routing\.tmp\poll\before\PollRig.exe  pid=51000  hwnd=34149868  visible=True  foreground changed by start: False
+0,visible,13,1766,359,1406,35.3,51.1,487,4,1
+60,visible,93,12047,1188,10859,48.1,64.7,488,24,2
+120,visible,173,24547,2328,22219,50.7,67.4,503,44,3
+180,visible,253,36609,3281,33328,53.6,70.3,511,64,4
+240,visible,333,48734,4250,44484,57.3,74.1,499,84,5
+300,visible,413,60766,5484,55281,60.2,77.2,507,104,6
+360,visible,493,72563,6500,66063,63.9,81.1,529,124,7
+420,visible,573,84484,7500,76984,67.0,84.1,511,144,8
+480,visible,653,95516,8328,87188,69.8,86.9,523,164,9
+540,visible,733,104594,8859,95734,73.4,90.6,510,184,10
+600,visible,813,113922,9531,104391,71.0,88.2,518,204,11
+600,visible-end,813,113922,9531,104391,71.0,88.2,518,204,11
+603,visible-after-forced-collection,817,114406,9547,104859,70.8,88.1,508,205,11
+hidden: visible=False
+604,hidden,817,114406,9547,104859,70.8,88.1,507,205,11
+664,hidden,897,123641,9703,113938,70.7,88.1,549,225,11
+724,hidden,977,133063,9797,123266,70.7,88.1,533,245,11
+784,hidden,1057,142109,10000,132109,71.0,88.4,519,265,11
+844,hidden,1137,151391,10156,141234,71.2,88.6,559,285,11
+904,hidden,1217,160484,10250,150234,71.3,88.8,545,305,11
+904,hidden-end,1217,160484,10250,150234,71.3,88.8,545,305,11
+at exit: job processes ever=1217 still active=0
+--- memory report from inside the app ---
+06:23:59 as-is private=72.1MB workingSet=89.4MB managed=6.64MB gen0=14 gen1=2 gen2=1 gdi=43 user=718 handles=518 glassSurfaces=55 controls=187 logChars=77
+06:24:00 after-forced-collection private=70.8MB workingSet=88.1MB managed=3.26MB gen0=16 gen1=4 gen2=3 gdi=43 user=718 handles=504 glassSurfaces=55 controls=187 logChars=77
+foreground window changed during the run by this script: not checked after start

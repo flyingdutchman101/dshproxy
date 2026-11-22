@@ -1,0 +1,4 @@
+--- processor time of the window's process in the 60 s after a resize ---
+ok   60 s after the resize to 1920x1040 had settled (18332 pixels differ from a backdrop drawn at that size): 16 ms of processor time, 0.03 % of one core; a redraw was waiting in 0 of 60 looks; backdrops kept 1, redraws waiting 0
+ok   the window never became the foreground window
+ALL OK

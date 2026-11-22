@@ -1,0 +1,23 @@
+--- after a settled resize the backdrop is the one drawn at that size, drawn once ---
+ok   as first shown, 1280x880 (client 1264x841): 0 pixels differ from a backdrop drawn at that size
+FAIL 860x600 to 1280x880 (client 1264x841): 23628 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+FAIL 1280x880 to 860x600 (client 844x561): 10197 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+FAIL 860x600 to 3440x1392 (client 3424x1353): 146529 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+FAIL 3440x1392 to 860x600 (client 844x561): 13667 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+FAIL 860x600 to 5120x1392 (client 5104x1353): 249614 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+FAIL 5120x1392 to 1280x880 (client 1264x841): 37966 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+FAIL 1280x880 to 3440x1392 (client 3424x1353): 183314 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+FAIL 3440x1392 to 1280x880 (client 1264x841): 37990 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+FAIL 1280x880 to 5120x1392 (client 5104x1353): 282083 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+FAIL 5120x1392 to 3440x1392 (client 3424x1353): 189429 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+FAIL 3440x1392 to 5120x1392 (client 5104x1353): 283388 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+FAIL 5120x1392 to 860x600 (client 844x561): 20304 pixels differ from a backdrop drawn at that size; drawn 0 times; backdrops kept 1, redraws waiting 0
+--- a window that is being dragged: nothing is drawn until it has come to rest ---
+FAIL 40 steps 15 ms apart, 1280x880 to 1680x1080: drawn 0 times while it moved, 0 when the last step was made, 0 in all once it had come to rest; 438538 pixels differ (client 1664x1041)
+--- a window nobody sees: nothing is drawn, and the backdrop is drawn when it is seen again ---
+ok   resized to 1500x900 and hidden at once (a redraw was waiting: True): 1.5 s later it is hidden, drawn 0 times, backdrops kept 1, redraws waiting 0
+FAIL shown again: drawn 0 times, 330470 pixels differ from a backdrop drawn at that size (client 1484x861); backdrops kept 1, redraws waiting 0
+ok   resized to 1500x900 and minimised at once (a redraw was waiting: True): 1.5 s later it is minimised, drawn 0 times, backdrops kept 1, redraws waiting 0
+FAIL shown again: drawn 0 times, 331168 pixels differ from a backdrop drawn at that size (client 1484x861); backdrops kept 1, redraws waiting 0
+ok   the window never became the foreground window
+15 FAILED
