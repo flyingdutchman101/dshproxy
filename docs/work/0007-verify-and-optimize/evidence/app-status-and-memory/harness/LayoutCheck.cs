@@ -323,8 +323,11 @@ namespace DSHProxy
         private static string StatusLine(string harness, bool running, bool profileExists, string bundle, string linkedTo, bool canInstall, string reason, string folder)
         {
             var linked = linkedTo ?? (bundle == "installed" || bundle == "switched-off" ? folder : null);
+            // As the command line answers: quitting is enough only when
+            // Harness being open is the one thing in the way.
+            var afterQuit = !canInstall && running && reason == "DeepSeek Harness is running.";
             return Json.Serializer.Serialize(Map("harness", harness, "harnessRunning", running, "profile", "desktop", "profileExists", profileExists, "bundle", bundle,
-                "folder", folder, "linkedTo", linked, "version", bundle == "not-installed" ? null : "0.1.0", "canInstall", canInstall, "reason", reason));
+                "folder", folder, "linkedTo", linked, "version", bundle == "not-installed" ? null : "0.1.0", "canInstall", canInstall, "canInstallAfterQuit", afterQuit, "reason", reason));
         }
 
         private const string NeverOpenedReason = "DeepSeek Harness has not been opened yet: open it once, then quit it.";
@@ -914,6 +917,9 @@ namespace DSHProxy
             confirm("not-found", StatusLine("not-found", false, false, "not-installed", null, false, NotFoundReason), new[] { "DeepSeek Harness was not found on this computer.", "The video tools cannot be installed.", NotFoundReason });
             var unsafePath = "The folder of the video tools has a character in its name that cannot be passed to DeepSeek Harness.";
             confirm("cannot-other-reason", StatusLine("found", false, true, "not-installed", null, false, unsafePath, spaces), new[] { "The video tools cannot be installed.", unsafePath });
+            // Harness is open, but something else is in the way too: the
+            // person is not asked to quit Harness for an install that would be refused.
+            confirm("cannot-other-reason-open", StatusLine("found", true, true, "not-installed", null, false, unsafePath, spaces), new[] { "The video tools cannot be installed.", unsafePath });
             Action<string, string, HarnessSetup.Outcome, string[], string> result = (name, line, outcome, says, button) =>
                 Modal("dialog-setup-result-" + name, () => { var state = HarnessSetup.Parse(line); SetupDialog.Show(form, state.Summary(routes, outcome, null, state.Folder)); }, null,
                     (top, fails) => { Says(top, fails, says); if (button != null) Has(top, fails, button); Has(top, fails, "OK"); });

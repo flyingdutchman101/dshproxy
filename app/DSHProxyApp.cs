@@ -4967,7 +4967,7 @@ namespace DSHProxy
     //
     //   {"harness":"found"|"not-found","harnessRunning":true,"profile":"desktop","profileExists":true,
     //    "bundle":"installed"|"switched-off"|"other-folder"|"folder-missing"|"not-installed",
-    //    "folder":"...","linkedTo":"..."|null,"version":"0.1.0"|null,"canInstall":true,"reason":"..."}
+    //    "folder":"...","linkedTo":"..."|null,"version":"0.1.0"|null,"canInstall":true,"canInstallAfterQuit":false,"reason":"..."}
     //   {"ok":true,"bundle":"installed","message":"...","log":"..."|null}
     //
     // A line that is not that shape, and a command that fails, are a state
@@ -4989,6 +4989,8 @@ namespace DSHProxy
         public bool ProfileExists;
         public bool HarnessRunning;
         public bool CanInstall;
+        // Nothing but a running DeepSeek Harness is in the way.
+        public bool CanInstallAfterQuit;
         // This DSHProxy's folder of the video tools; "" when not said.
         public string Folder = "";
         // The folder the profile points at; "" when none.
@@ -5068,13 +5070,14 @@ namespace DSHProxy
             if (root == null) return Unread(odd);
             var harness = Json.Get(root, "harness") as string;
             if (harness != "found" && harness != "not-found") return Unread(odd);
-            if (!(Json.Get(root, "harnessRunning") is bool) || !(Json.Get(root, "profileExists") is bool) || !(Json.Get(root, "canInstall") is bool)) return Unread(odd);
+            if (!(Json.Get(root, "harnessRunning") is bool) || !(Json.Get(root, "profileExists") is bool) || !(Json.Get(root, "canInstall") is bool) || !(Json.Get(root, "canInstallAfterQuit") is bool)) return Unread(odd);
             var read = new HarnessSetup
             {
                 HarnessFound = harness == "found",
                 ProfileExists = Json.Bool(root, "profileExists"),
                 HarnessRunning = Json.Bool(root, "harnessRunning"),
                 CanInstall = Json.Bool(root, "canInstall"),
+                CanInstallAfterQuit = Json.Bool(root, "canInstallAfterQuit"),
                 Folder = Clean(Json.Get(root, "folder"), 400),
                 LinkedTo = Clean(Json.Get(root, "linkedTo"), 400),
                 Version = Clean(Json.Get(root, "version"), 24),
@@ -5139,8 +5142,8 @@ namespace DSHProxy
                     default:
                         if (CanInstall) return Plan.Install;
                         // Open is the one obstacle the person can take away
-                        // on the spot. Any other shows when the install is tried.
-                        return HarnessRunning ? Plan.InstallAfterQuit : Plan.Cannot;
+                        // on the spot; the command line says when it is the only one.
+                        return CanInstallAfterQuit ? Plan.InstallAfterQuit : Plan.Cannot;
                 }
             }
         }
@@ -5356,7 +5359,7 @@ namespace DSHProxy
         // A made-up answer for a preview window, in the shape the command
         // line prints: a first Apply, with DeepSeek Harness closed.
         public const string Sample = "{\"harness\":\"found\",\"harnessRunning\":false,\"profile\":\"desktop\",\"profileExists\":true,\"bundle\":\"not-installed\","
-            + "\"folder\":\"C:\\\\Sample\\\\DSHProxy\\\\integrations\\\\dsh-video\",\"linkedTo\":null,\"version\":null,\"canInstall\":true,\"reason\":\"\"}";
+            + "\"folder\":\"C:\\\\Sample\\\\DSHProxy\\\\integrations\\\\dsh-video\",\"linkedTo\":null,\"version\":null,\"canInstall\":true,\"canInstallAfterQuit\":false,\"reason\":\"\"}";
     }
 
     // What this program knows of the Krea sign-in, all of it from the

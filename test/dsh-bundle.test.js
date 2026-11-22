@@ -11,7 +11,7 @@ const bundle = require("../src/dsh/bundle");
 const CLI = path.join(__dirname, "..", "bin", "dshproxy.js");
 const NAME = "@local/dshproxy-video";
 const BASE_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"];
-const CONTRACT_KEYS = ["harness", "harnessRunning", "profile", "profileExists", "bundle", "folder", "linkedTo", "version", "canInstall", "reason"];
+const CONTRACT_KEYS = ["harness", "harnessRunning", "profile", "profileExists", "bundle", "folder", "linkedTo", "version", "canInstall", "canInstallAfterQuit", "reason"];
 
 // What stands in for DeepSeek Harness's `dsh.cmd`: the same shape as the real
 // one (a batch file that hands its arguments to a program), with a Node script
@@ -172,7 +172,7 @@ test("installed: a link to this folder, selected, and not switched off in the pa
   });
   const found = await bundle.state(deps(box));
   assert.deepEqual(Object.keys(found), CONTRACT_KEYS);
-  assert.deepEqual(found, { harness: "found", harnessRunning: false, profile: "desktop", profileExists: true, bundle: "installed", folder: box.folder, linkedTo: found.linkedTo, version: "0.1.0", canInstall: false, reason: "" });
+  assert.deepEqual(found, { harness: "found", harnessRunning: false, profile: "desktop", profileExists: true, bundle: "installed", folder: box.folder, linkedTo: found.linkedTo, version: "0.1.0", canInstall: false, canInstallAfterQuit: false, reason: "" });
   assert.equal(found.linkedTo.toLowerCase(), box.folder.toLowerCase());
 });
 
@@ -286,7 +286,7 @@ test("not-installed: the profile does not name the plugin", async (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const found = await bundle.state(deps(box));
-  assert.deepEqual(found, { harness: "found", harnessRunning: false, profile: "desktop", profileExists: true, bundle: "not-installed", folder: box.folder, linkedTo: null, version: null, canInstall: true, reason: "" });
+  assert.deepEqual(found, { harness: "found", harnessRunning: false, profile: "desktop", profileExists: true, bundle: "not-installed", folder: box.folder, linkedTo: null, version: null, canInstall: true, canInstallAfterQuit: false, reason: "" });
 });
 
 test("a link written relative to the profile folder is resolved from there", async (t) => {
@@ -327,6 +327,24 @@ test("Harness is running when a DeepSeek Harness.exe from its folder exists", as
   assert.equal(running.harnessRunning, true);
   assert.equal(running.canInstall, false);
   assert.match(running.reason, /DeepSeek Harness is running\. Quit it/);
+  // Quitting Harness is all that is needed, and the answer says so.
+  assert.equal(running.canInstallAfterQuit, true);
+
+  // An installed plugin needs no quit; nor does one that was switched off.
+  const open = { processes: async () => [{ name: "DeepSeek Harness.exe", path: exe }] };
+  writeProfile(box, { dependencies: { [NAME]: link(box.folder) }, bundles: [...BASE_BUNDLES, NAME] });
+  const installedOpen = await bundle.state(deps(box, open));
+  assert.equal(installedOpen.bundle, "installed");
+  assert.equal(installedOpen.canInstallAfterQuit, false);
+
+  // Something else is in the way as well: quitting Harness would not be enough.
+  writeProfile(box, { dependencies: {}, bundles: BASE_BUNDLES, patch: "- id: [unclosed\n" });
+  const alsoBroken = await bundle.state(deps(box, open));
+  assert.equal(alsoBroken.harnessRunning, true);
+  assert.equal(alsoBroken.canInstall, false);
+  assert.equal(alsoBroken.canInstallAfterQuit, false);
+  fs.rmSync(profilePatchFile(box));
+  writeProfile(box);
 
   // The same name from another folder, and another program from this folder, are not it.
   const elsewhere = await bundle.state(deps(box, { processes: async () => [{ name: "DeepSeek Harness.exe", path: path.join(box.base, "harness-other", "DeepSeek Harness.exe") }, { name: "node.exe", path: path.join(box.harness, "node.exe") }] }));
@@ -661,7 +679,7 @@ test("dshproxy dsh bundle status --json prints the contract as one line and exit
   assert.equal(result.stdout.trim().split("\n").length, 1);
   const found = JSON.parse(result.stdout);
   assert.deepEqual(Object.keys(found), CONTRACT_KEYS);
-  assert.deepEqual(found, { harness: "found", harnessRunning: false, profile: "desktop", profileExists: true, bundle: "not-installed", folder: path.resolve(OWN_FOLDER), linkedTo: null, version: null, canInstall: true, reason: "" });
+  assert.deepEqual(found, { harness: "found", harnessRunning: false, profile: "desktop", profileExists: true, bundle: "not-installed", folder: path.resolve(OWN_FOLDER), linkedTo: null, version: null, canInstall: true, canInstallAfterQuit: false, reason: "" });
   assert.deepEqual(snapshot(box.base), before);
 
   // It could look, so it exits 0 also when there is nothing to find.

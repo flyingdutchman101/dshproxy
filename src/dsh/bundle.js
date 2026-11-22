@@ -206,6 +206,9 @@ function context(deps = {}) {
   };
 }
 
+// The states in which Harness's command has something to do.
+const INSTALLABLE = ["not-installed", "other-folder", "folder-missing"];
+
 async function look(ctx) {
   const { home, harnessDir, folder } = ctx;
   const profileDir = path.join(home, "profiles", PROFILE);
@@ -242,6 +245,7 @@ async function look(ctx) {
   // before "close Harness".
   const unreadablePatch = patch.error;
   let reason = "";
+  let onlyRunning = false;
   // An installed plugin needs nothing; only a patch that cannot be read is said.
   if (bundle === "installed") reason = unreadablePatch;
   else if (!harnessDir) reason = `${HARNESS} was not found on this computer. Install it and open it once, then try again.`;
@@ -252,7 +256,11 @@ async function look(ctx) {
   else if (own?.name !== PACKAGE) reason = `This DSHProxy's video plugin folder ${folder} is missing or incomplete. Restore the DSHProxy folder, then try again.`;
   else if (unsafe) reason = `The path ${unsafe} has a character (${UNSAFE_NAMES}) that cannot be passed to ${HARNESS}'s command safely. Move the folder to a path without it, or add the plugin by hand under Plugins > Add plugin in ${HARNESS}.`;
   else if (!processes.readable) reason = `DSHProxy could not check whether ${HARNESS} is running, so it counts as running. Quit ${HARNESS}, then try again.`;
-  else if (processes.running) reason = `${HARNESS} is running. Quit it completely, then try again.`;
+  else if (processes.running) {
+    reason = `${HARNESS} is running. Quit it completely, then try again.`;
+    // The one thing in the way that the person can take away on the spot.
+    onlyRunning = true;
+  }
 
   return {
     harness: harnessDir ? "found" : "not-found",
@@ -263,7 +271,9 @@ async function look(ctx) {
     folder,
     linkedTo,
     version,
-    canInstall: !reason && ["not-installed", "other-folder", "folder-missing"].includes(bundle),
+    canInstall: !reason && INSTALLABLE.includes(bundle),
+    // True when nothing but a running Harness is in the way.
+    canInstallAfterQuit: onlyRunning && INSTALLABLE.includes(bundle),
     reason
   };
 }

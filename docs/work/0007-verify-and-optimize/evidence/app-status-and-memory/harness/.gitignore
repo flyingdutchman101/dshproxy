@@ -1,0 +1,5 @@
+# What a run of the checks leaves behind: a throwaway data folder with its
+# own key, built programs and run logs. Never part of the repository.
+rig-*/
+root/
+layout-*.txt
