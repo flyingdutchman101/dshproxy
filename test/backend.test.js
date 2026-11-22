@@ -84,9 +84,9 @@ test("an API-key provider becomes a prefixed group with its models and levels", 
 test("a provider's region picks its endpoint and model list", () => {
   const group = (region) => YAML.parse(render({ ...BASE, providers: { qwen: { region, apiKey: "sk-test" } } }))["api-keys"]["openai-compatibility"][0];
   assert.equal(group("tokenplan")["base-url"], "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1");
-  assert.deepEqual(group("tokenplan").models.map((model) => model.name), ["qwen3.8-max", "qwen3.8-flash", "glm-5.3", "deepseek-v4-pro"]);
+  assert.deepEqual(group("tokenplan").models.map((model) => model.name), ["qwen4-max", "qwen3.8-max", "qwen3.8-flash", "glm-5.3", "deepseek-v4-pro"]);
   assert.equal(group("china")["base-url"], "https://dashscope.aliyuncs.com/compatible-mode/v1");
-  assert.deepEqual(group("china").models.map((model) => model.name), ["qwen3.8-max", "qwen3.8-flash"]);
+  assert.deepEqual(group("china").models.map((model) => model.name), ["qwen4-max", "qwen3.8-max", "qwen3.8-flash"]);
 });
 
 test("a model without reasoning levels declares none", () => {

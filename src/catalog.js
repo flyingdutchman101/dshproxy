@@ -90,6 +90,9 @@ const API_PROVIDERS = {
         baseUrl: "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1",
         residency: "Singapore",
         models: [
+          // Qwen4 Max: 983,616 tokens is the most input it takes with thinking on
+          // (docs.qwencloud.com, "Latest model: Qwen4-Max", read 2026-11-22).
+          m("qwen4-max", "Qwen4 Max", 983616, 131072, ["high"]),
           m("qwen3.8-max", "Qwen3.8 Max", 991808, 131072, ["high"]),
           m("qwen3.8-flash", "Qwen3.8 Flash", 1000000, 65536, ["high"]),
           m("glm-5.3", "GLM-5.3 (Qwen Token Plan)", 1000000, 128000, REASONING),
@@ -100,6 +103,7 @@ const API_PROVIDERS = {
       china: { label: "Pay-as-you-go · China (Beijing)", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", residency: "China" }
     },
     models: [
+      m("qwen4-max", "Qwen4 Max", 983616, 131072, ["high"]),
       m("qwen3.8-max", "Qwen3.8 Max", 991808, 131072, ["high"]),
       m("qwen3.8-flash", "Qwen3.8 Flash", 1000000, 65536, ["high"])
     ]

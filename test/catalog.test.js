@@ -30,6 +30,20 @@ test("an API-key model is found in whichever region lists it", () => {
   assert.equal(catalog.findModel("nobody/model"), null);
 });
 
+test("Qwen4 Max is offered on the Token Plan and on the pay-as-you-go hosts, sized for a request that thinks", () => {
+  const model = catalog.findModel("qwen/qwen4-max");
+  assert.equal(model.name, "Qwen4 Max");
+  // The most input the model takes with thinking on, and its longest answer without.
+  assert.equal(model.contextWindow, 983616);
+  assert.equal(model.maxTokens, 131072);
+  for (const region of ["tokenplan", "singapore", "china"]) {
+    const isAvailable = availability({ accounts: new Set(), providers: { qwen: { region } } });
+    assert.equal(isAvailable("qwen/qwen4-max"), true, region);
+  }
+  // The model it joins is still there.
+  assert.equal(catalog.findModel("qwen/qwen3.8-max").name, "Qwen3.8 Max");
+});
+
 test("a Token Plan key is placed on the Token Plan host", () => {
   assert.equal(catalog.regionForKey("qwen", "sk-sp-abc", "singapore"), "tokenplan");
   assert.equal(catalog.regionForKey("qwen", "sk-ws-abc", "tokenplan"), "singapore");
