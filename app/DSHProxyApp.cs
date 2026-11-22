@@ -837,7 +837,7 @@ namespace DSHProxy
         private readonly Button startButton = Skin.Primary(new PillButton { Text = "Start", Width = 104, Height = 40 });
         private readonly Button stopButton = Skin.Danger(new PillButton { Text = "Stop", Width = 104, Height = 40, Margin = new Padding(8, 3, 0, 3) });
         // In the header, so it is in sight on every page of both workspaces.
-        private readonly Button applyButton = Skin.Primary(new PillButton { Text = "Apply to DeepSeek Harness", AutoSize = true, MinimumSize = new Size(0, 40), Margin = new Padding(0, 3, 8, 3), AccessibleDescription = "Writes the DSHProxy routes into every DeepSeek Harness profile, after asking." });
+        private readonly Button applyButton = Skin.Primary(new PillButton { Text = "Apply to DeepSeek Harness", AutoSize = true, MinimumSize = new Size(0, 40), Margin = new Padding(0, 3, 8, 3), AccessibleDescription = "Writes the DSHProxy chat routes into every DeepSeek Harness profile and installs the video tools, after asking." });
         private readonly Panel accountsPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(0, 4, 0, 4) };
         private readonly Label limitsNote = new GlassLabel { AutoSize = true, ForeColor = Theme.Muted, Padding = new Padding(0, 12, 0, 0) };
         private readonly ListView keysList = new DarkList();
@@ -3137,11 +3137,6 @@ namespace DSHProxy
             return top;
         }
 
-        private static Label Foot(string text, int height)
-        {
-            return new GlassLabel { Text = Tied(text), Dock = DockStyle.Bottom, AutoSize = false, Height = height, ForeColor = Theme.Muted, Padding = new Padding(0, 10, 0, 0) };
-        }
-
         // The bottom of a video page that changes settings: what happened
         // last, then the buttons.
         private static System.Windows.Forms.Control VideoBottom(Label status, params System.Windows.Forms.Control[] buttons)
@@ -3156,6 +3151,22 @@ namespace DSHProxy
             foreach (var button in buttons) row.Controls.Add(button);
             bottom.Controls.Add(status, 0, 0);
             bottom.Controls.Add(row, 0, 1);
+            return bottom;
+        }
+
+        // The bottom of a video page that changes nothing itself: what was
+        // read last, then a note. Both are as tall as their text at the width
+        // they have, so a long folder name gets the lines it needs.
+        private static System.Windows.Forms.Control VideoNotes(Label status, string note)
+        {
+            var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
+            bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            status.AutoSize = true;
+            status.Dock = DockStyle.Fill;
+            status.Margin = new Padding(0, 10, 0, 0);
+            status.AccessibleRole = AccessibleRole.StatusBar;
+            bottom.Controls.Add(status, 0, 0);
+            bottom.Controls.Add(new GlassLabel { Text = Tied(note), AutoSize = true, Dock = DockStyle.Fill, ForeColor = Theme.Muted, Margin = new Padding(0, 6, 0, 0) }, 0, 1);
             return bottom;
         }
 
@@ -3232,22 +3243,25 @@ namespace DSHProxy
                 VideoTop("Video models", "Ticked models with a billing route are what the separate DeepSeek Harness video bundle may offer; new models start switched off. A tick is a setting only: it checks no sign-in, key, availability or price, it is not a spending limit, and nothing is generated or charged here. Choose the billing route under Lanes."),
                 VideoBottom(videoModelsStatus, reloadModels, CompanyNote()));
 
-            // DeepSeek Harness: video gets there through a separate bundle that
-            // this app neither installs nor looks for in any profile. The page
-            // says so, shows the settings the bundle would read, and has no
-            // button that could look as if it applied or checked anything.
+            // DeepSeek Harness: video gets there through the video tools, a
+            // plugin that Apply to DeepSeek Harness installs. The first row is
+            // what the command line read from the desktop profile (see the
+            // first-time setup); this program opens no profile itself. The
+            // page has no button: the one that acts is Apply, in the header.
             SetUpVideoList(videoHarnessList, "Video in DeepSeek Harness: state", new[] { "What", "State" }, new[] { 300, 470 });
             // The rows that matter most come first, so they are on screen in the smallest window.
-            videoHarnessList.Items.Add(new ListViewItem(new[] { "Bundle installed in DeepSeek Harness?", "Not known \u00B7 this app cannot tell and does not look" }) { ForeColor = Theme.Warn });
+            videoHarnessTools = new ListViewItem(new[] { "Video tools installed in DeepSeek Harness?", "Not read yet" }) { ForeColor = Theme.Muted };
+            videoHarnessList.Items.Add(videoHarnessTools);
             videoHarnessSaved = new ListViewItem(new[] { "Enabled, with a billing route", "Not read yet" }) { ForeColor = Theme.Muted };
             videoHarnessList.Items.Add(videoHarnessSaved);
             videoHarnessUnrouted = new ListViewItem(new[] { "Enabled, no valid route (not offered)", "Not read yet" }) { ForeColor = Theme.Muted };
             videoHarnessList.Items.Add(videoHarnessUnrouted);
-            videoHarnessFiles = new ListViewItem(new[] { "Bundle files in this DSHProxy folder", "" }) { ForeColor = Theme.Muted };
+            videoHarnessFiles = new ListViewItem(new[] { "Video tools in this DSHProxy folder", "" }) { ForeColor = Theme.Muted };
             videoHarnessList.Items.Add(videoHarnessFiles);
             AddVideoPage("DeepSeek Harness", videoHarnessList,
-                VideoTop("Video in DeepSeek Harness", "Video reaches DeepSeek Harness through a separate bundle, " + VideoBundleFolder + " in the DSHProxy folder, which has to be installed in DeepSeek Harness separately. DSHProxy does not install it, does not open a DeepSeek Harness profile for video, and cannot tell whether the bundle is installed or working there."),
-                Foot("Apply to DeepSeek Harness, at the top of the window, writes the Chat routes only: this window changes nothing in DeepSeek Harness for video. The bundle reads the enabled settings above; its README says what it can do and how far it has been checked.", 44));
+                VideoTop("Video in DeepSeek Harness", "Video reaches DeepSeek Harness through the video tools, a plugin in " + VideoBundleFolder + " of the DSHProxy folder. Apply to DeepSeek Harness, at the top of the window, installs it in the DeepSeek Harness desktop app, together with the Chat routes."),
+                VideoNotes(videoHarnessStatus, "The video tools offer the enabled models above. Their README says what they can do and how far that has been checked."));
+            SetPageStatus(videoHarnessStatus, "Whether the video tools are installed in DeepSeek Harness has not been read yet.", Theme.Muted);
 
             SetVideoStatus("Video settings have not been read yet.", Theme.Muted);
             FillVideo();
@@ -3693,6 +3707,7 @@ namespace DSHProxy
             if (!videoMode || !IsHandleCreated) return;
             if (tabs.SelectedIndex == VideoAccountsPage) ReadKreaState(null, Theme.Muted);
             else if (tabs.SelectedIndex == VideoKeysPage) ReadVideoKeys(null, false);
+            else if (tabs.SelectedIndex == VideoHarnessPage) ReadHarnessSetup();
         }
 
         // The line under a video list: what happened last. A screen reader
@@ -4267,10 +4282,208 @@ namespace DSHProxy
             RunInBackground(new[] { "key", "remove", key }, null, "API key", true);
         }
 
+        // ---------- first-time setup ----------
+        //
+        // Apply to DeepSeek Harness reads what is in place (`dshproxy dsh
+        // bundle status --json`), says so in a checklist, writes the chat
+        // routes (`dsh apply`, as it always did) and then has the command
+        // line install the video tools (`dsh bundle install --json`), once
+        // the person has quit DeepSeek Harness when it is open. This program
+        // never closes, ends or starts DeepSeek Harness, and never writes into
+        // one of its profiles itself. Every command runs off the UI thread.
+
+        private const int VideoHarnessPage = 4;
+        private readonly Label videoHarnessStatus = new GlassLabel { ForeColor = Theme.Muted, UseMnemonic = false };
+        private ListViewItem videoHarnessTools;
+        // What the command line last said about DeepSeek Harness and the
+        // video tools; null until it has answered.
+        private HarnessSetup harnessSetup;
+        private bool readingSetup;
+        // Apply finished while a read was out: what is true now is read after it.
+        private bool setupWanted;
+        // An Apply is under way: a second press does nothing.
+        private bool applying;
+        // Stands in for the command line in the layout check, which runs no
+        // command and touches no profile. Null everywhere else.
+        private Func<string[], Cli.Result> setupRun;
+
+        internal void UseSetupCommands(Func<string[], Cli.Result> run)
+        {
+            setupRun = run;
+        }
+
+        // A preview window runs none of the setup commands.
+        private bool SetupSynthetic
+        {
+            get { return VideoSynthetic && setupRun == null; }
+        }
+
+        // Runs one command of the setup off the UI thread and reports back on it.
+        private void SetupCommand(string[] args, int timeoutMs, Action<Cli.Result> done)
+        {
+            var alreadyWaiting = UseWaitCursor;
+            UseWaitCursor = true;
+            var run = setupRun;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                Cli.Result result;
+                try { result = run != null ? run(args) : cli.Run(args, null, timeoutMs); }
+                catch (Exception error) { result = new Cli.Result { Code = -1, Out = "", Err = error.Message }; }
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (!alreadyWaiting) UseWaitCursor = false;
+                        done(result);
+                    }));
+                }
+                // The window has gone: there is nothing left to report to.
+                catch (InvalidOperationException) { }
+            });
+        }
+
+        // Reads whether the video tools are installed in DeepSeek Harness:
+        // when the DeepSeek Harness page of the Video workspace comes on
+        // screen, and after an Apply.
+        private void ReadHarnessSetup()
+        {
+            if (SetupSynthetic)
+            {
+                // A preview window looks at nothing real.
+                if (harnessSetup == null && videoHarnessTools != null)
+                {
+                    videoHarnessTools.SubItems[1].Text = "Sample only \u00B7 not checked";
+                    videoHarnessTools.ForeColor = Theme.Muted;
+                    SetPageStatus(videoHarnessStatus, "This preview window does not look at DeepSeek Harness.", Theme.Accent);
+                }
+                return;
+            }
+            if (readingSetup)
+            {
+                setupWanted = true;
+                return;
+            }
+            readingSetup = true;
+            setupWanted = false;
+            if (harnessSetup == null && videoHarnessTools != null)
+            {
+                videoHarnessTools.SubItems[1].Text = "Reading...";
+                SetPageStatus(videoHarnessStatus, "Reading whether the video tools are installed in DeepSeek Harness...", Theme.Muted);
+            }
+            SetupCommand(HarnessSetup.StatusCommand(), 30000, result =>
+            {
+                readingSetup = false;
+                ShowHarnessSetup(HarnessSetup.Read(result), ClockNow());
+                if (setupWanted) ReadHarnessSetup();
+            });
+        }
+
+        // Puts what was read on the DeepSeek Harness page of the Video workspace.
+        private void ShowHarnessSetup(HarnessSetup state, string readAt)
+        {
+            var unreadBefore = harnessSetup != null && harnessSetup.State == HarnessSetup.Kind.Unreadable;
+            harnessSetup = state;
+            if (videoHarnessTools == null) return;
+            var cell = state.RowText();
+            if (videoHarnessTools.SubItems[1].Text != cell) videoHarnessTools.SubItems[1].Text = cell;
+            if (videoHarnessTools.ForeColor != state.RowColor()) videoHarnessTools.ForeColor = state.RowColor();
+            // A folder name at the end of the line is left as it is; any other line keeps its last two words together.
+            var line = "Checked at " + readAt + ". " + state.PageLine();
+            SetPageStatus(videoHarnessStatus, line.EndsWith(".", StringComparison.Ordinal) ? Tied(line) : line, state.RowColor());
+            // Said in the log once, not every time the page is opened.
+            if (state.State == HarnessSetup.Kind.Unreadable && !unreadBefore) AppendLog("Video: could not read whether the video tools are installed in DeepSeek Harness: " + state.Reason);
+        }
+
         private void ApplyToHarness()
         {
-            if (Msg.Show(this, "Write the DSHProxy routes into every DeepSeek Harness profile?\n\nEach profile is backed up first, and nothing else in it is changed. Restart DeepSeek Harness afterwards.", "DeepSeek Harness", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-            RunAndShow(new[] { "dsh", "apply" }, "DeepSeek Harness", false);
+            if (applying) return;
+            applying = true;
+            if (SetupSynthetic)
+            {
+                // A preview window shows the question with a sample and does nothing.
+                ApplyStep(() =>
+                {
+                    if (SetupDialog.Confirm(this, HarnessSetup.Parse(HarnessSetup.Sample))) Msg.Show(this, "Sample only: this is a preview window. Nothing was read, written or installed.", SetupDialog.Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return false;
+                });
+                return;
+            }
+            SetupCommand(HarnessSetup.StatusCommand(), 30000, read => ApplyStep(() => ApplyConfirmed(HarnessSetup.Read(read))));
+        }
+
+        // One step of an Apply, on the window's thread. A step that has
+        // handed over to a command returns true: the Apply is still under way.
+        private void ApplyStep(Func<bool> step)
+        {
+            var goesOn = false;
+            try { goesOn = step(); }
+            finally { if (!goesOn) applying = false; }
+        }
+
+        // The checklist. Cancel changes nothing: no command has written anything yet.
+        private bool ApplyConfirmed(HarnessSetup state)
+        {
+            ShowHarnessSetup(state, ClockNow());
+            if (!SetupDialog.Confirm(this, state) || quitting) return false;
+            SetupCommand(new[] { "dsh", "apply" }, 120000, applied => ApplyStep(() => ApplyWritten(state, applied)));
+            return true;
+        }
+
+        // The chat routes are written, or were not. Then the video tools,
+        // when the checklist said they would be installed.
+        private bool ApplyWritten(HarnessSetup state, Cli.Result applied)
+        {
+            var text = (applied.Out + Environment.NewLine + applied.Err).Trim();
+            AppendLog(text);
+            if (setupRun == null) RefreshStatus();
+            if (applied.Code != 0)
+            {
+                Msg.Show(this, text.Length > 0 ? text : "The chat routes were not written: the DSHProxy command ended with code " + applied.Code.ToString(CultureInfo.InvariantCulture) + ".", SetupDialog.Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+            if (!state.WillInstall)
+            {
+                ShowApplyResult(state.Summary(text, HarnessSetup.Outcome.NothingToInstall, null, VideoToolsFolder(state)));
+                return false;
+            }
+            if (HarnessSetup.Running())
+            {
+                bool gone;
+                using (var wait = new HarnessWaitDialog(HarnessSetup.Running))
+                {
+                    wait.ShowDialog(this);
+                    gone = wait.HarnessGone;
+                }
+                if (quitting) return false;
+                if (!gone)
+                {
+                    AppendLog("Video tools: not installed. The step was skipped while DeepSeek Harness was open.");
+                    ShowApplyResult(state.Summary(text, HarnessSetup.Outcome.Skipped, null, VideoToolsFolder(state)));
+                    return false;
+                }
+            }
+            SetupCommand(HarnessSetup.InstallCommand(), 180000, installed => ApplyStep(() =>
+            {
+                var answer = HarnessSetup.ReadInstall(installed);
+                AppendLog("Video tools: " + (answer.Ok ? "installed in DeepSeek Harness." : "not installed.") + (answer.Message.Length > 0 ? " " + answer.Message : ""));
+                ShowApplyResult(state.Summary(text, answer.Ok ? HarnessSetup.Outcome.Installed : HarnessSetup.Outcome.Failed, answer, VideoToolsFolder(state)));
+                return false;
+            }));
+            return true;
+        }
+
+        // The folder to choose in DeepSeek Harness when the video tools are
+        // installed by hand: the one the command line named, else this program's own.
+        private string VideoToolsFolder(HarnessSetup state)
+        {
+            return state.Folder.Length > 0 ? state.Folder : Path.Combine(cli.Root, VideoBundleFolder);
+        }
+
+        private void ShowApplyResult(HarnessSetup.Result result)
+        {
+            // The page shows what is true now, not what was true before.
+            ReadHarnessSetup();
+            SetupDialog.Show(this, result);
         }
 
         // Reads the profiles back and shows whether DeepSeek Harness has every
@@ -4742,6 +4955,408 @@ namespace DSHProxy
             + "{\"provider\":\"videorouter\",\"label\":\"VideoRouter\",\"variable\":\"VIDEOROUTER_API_KEY\",\"routes\":[\"videorouter\",\"videorouter-replicate\"],\"saved\":true,\"readable\":true,\"inEnvironment\":false},"
             + "{\"provider\":\"kovapi\",\"label\":\"KovAPI\",\"variable\":\"KOVAPI_API_KEY\",\"routes\":[\"kovapi\"],\"saved\":true,\"readable\":false,\"inEnvironment\":true},"
             + "{\"provider\":\"callirra\",\"label\":\"Callirra\",\"variable\":\"CALLIRRA_API_KEY\",\"routes\":[\"callirra\"],\"saved\":false,\"readable\":false,\"inEnvironment\":false}]}";
+    }
+
+    // What the command line says about DeepSeek Harness and the video tools,
+    // the plugin in integrations\dsh-video. This program looks at no profile
+    // and installs nothing itself; it runs two commands and reads the one
+    // JSON line each prints:
+    //
+    //   dshproxy dsh bundle status --json     looks, changes nothing
+    //   dshproxy dsh bundle install --json    has DeepSeek Harness's own command install the plugin
+    //
+    //   {"harness":"found"|"not-found","harnessRunning":true,"profile":"desktop","profileExists":true,
+    //    "bundle":"installed"|"switched-off"|"other-folder"|"folder-missing"|"not-installed",
+    //    "folder":"...","linkedTo":"..."|null,"version":"0.1.0"|null,"canInstall":true,"reason":"..."}
+    //   {"ok":true,"bundle":"installed","message":"...","log":"..."|null}
+    //
+    // A line that is not that shape, and a command that fails, are a state
+    // of their own, "could not be read": nothing here throws on a bad line.
+    // The sentences the app shows about the video tools are all here, so the
+    // checklist, the result and the page say the same thing in the same words.
+    internal sealed class HarnessSetup
+    {
+        public enum Kind { Installed, SwitchedOff, OtherFolder, FolderMissing, NotInstalled, NeverOpened, NotFound, Unreadable }
+
+        // What an Apply does about the video tools.
+        public enum Plan { Nothing, Install, InstallAfterQuit, Cannot, Unknown }
+
+        // What an Apply did about them.
+        public enum Outcome { NothingToInstall, Installed, Failed, Skipped }
+
+        public Kind State;
+        public bool HarnessFound;
+        public bool ProfileExists;
+        public bool HarnessRunning;
+        public bool CanInstall;
+        // This DSHProxy's folder of the video tools; "" when not said.
+        public string Folder = "";
+        // The folder the profile points at; "" when none.
+        public string LinkedTo = "";
+        public string Version = "";
+        // One sentence from the command line: why the tools cannot be
+        // installed, or why nothing could be read.
+        public string Reason = "";
+
+        public static string[] StatusCommand()
+        {
+            return new[] { "dsh", "bundle", "status", "--json" };
+        }
+
+        public static string[] InstallCommand()
+        {
+            return new[] { "dsh", "bundle", "install", "--json" };
+        }
+
+        // Whether a DeepSeek Harness process is left. A process list that
+        // cannot be read counts as one. Only ever looked at: this program
+        // closes and ends no process of DeepSeek Harness.
+        public static bool ProcessLeft()
+        {
+            try
+            {
+                var found = Process.GetProcessesByName("DeepSeek Harness");
+                foreach (var process in found) process.Dispose();
+                return found.Length > 0;
+            }
+            catch (InvalidOperationException) { return true; }
+            catch (System.ComponentModel.Win32Exception) { return true; }
+            catch (NotSupportedException) { return true; }
+        }
+
+        // The layout check puts its own answer here, so no process list is read.
+        public static Func<bool> Running = ProcessLeft;
+
+        // What the command line says is shown as text: no control characters, and not without end.
+        private static string Clean(object value, int max)
+        {
+            var text = value as string;
+            if (text == null) return "";
+            var clean = new StringBuilder(text.Length);
+            foreach (var c in text) clean.Append(c < 0x20 || c == 0x7F ? ' ' : c);
+            var result = clean.ToString().Trim();
+            return result.Length > max ? result.Substring(0, max - 1) + "\u2026" : result;
+        }
+
+        // The JSON object on the last line that has anything on it, or null.
+        private static Dictionary<string, object> LastLine(string output)
+        {
+            var lines = (output ?? "").Replace("\r", "").Split('\n');
+            for (var i = lines.Length - 1; i >= 0; i--)
+            {
+                var line = lines[i].Trim();
+                if (line.Length == 0) continue;
+                if (line.Length > 16384) return null;
+                try { return Json.Serializer.DeserializeObject(line) as Dictionary<string, object>; }
+                catch (ArgumentException) { return null; }
+                catch (InvalidOperationException) { return null; }
+            }
+            return null;
+        }
+
+        public static HarnessSetup Unread(string why)
+        {
+            return new HarnessSetup { State = Kind.Unreadable, Reason = Clean(why, 300) };
+        }
+
+        // Reads the line `dsh bundle status --json` prints. Never throws.
+        public static HarnessSetup Parse(string output)
+        {
+            if ((output ?? "").Trim().Length == 0) return Unread("DSHProxy gave no answer.");
+            var root = LastLine(output);
+            const string odd = "DSHProxy did not answer as expected.";
+            if (root == null) return Unread(odd);
+            var harness = Json.Get(root, "harness") as string;
+            if (harness != "found" && harness != "not-found") return Unread(odd);
+            if (!(Json.Get(root, "harnessRunning") is bool) || !(Json.Get(root, "profileExists") is bool) || !(Json.Get(root, "canInstall") is bool)) return Unread(odd);
+            var read = new HarnessSetup
+            {
+                HarnessFound = harness == "found",
+                ProfileExists = Json.Bool(root, "profileExists"),
+                HarnessRunning = Json.Bool(root, "harnessRunning"),
+                CanInstall = Json.Bool(root, "canInstall"),
+                Folder = Clean(Json.Get(root, "folder"), 400),
+                LinkedTo = Clean(Json.Get(root, "linkedTo"), 400),
+                Version = Clean(Json.Get(root, "version"), 24),
+                Reason = Clean(Json.Get(root, "reason"), 300)
+            };
+            Kind bundle;
+            switch (Json.Get(root, "bundle") as string)
+            {
+                case "installed": bundle = Kind.Installed; break;
+                case "switched-off": bundle = Kind.SwitchedOff; break;
+                case "other-folder": bundle = Kind.OtherFolder; break;
+                case "folder-missing": bundle = Kind.FolderMissing; break;
+                case "not-installed": bundle = Kind.NotInstalled; break;
+                default: return Unread(odd);
+            }
+            // A profile that has the tools says so, wherever the program is.
+            if (read.ProfileExists && (bundle == Kind.Installed || bundle == Kind.SwitchedOff)) read.State = bundle;
+            else if (!read.HarnessFound) read.State = Kind.NotFound;
+            else if (!read.ProfileExists) read.State = Kind.NeverOpened;
+            else read.State = bundle;
+            return read;
+        }
+
+        // What a finished `dsh bundle status --json` said.
+        public static HarnessSetup Read(Cli.Result result)
+        {
+            if (result == null) return Unread("DSHProxy gave no answer.");
+            return result.Code != 0 ? Unread(VideoSettings.Failure(result)) : Parse(result.Out);
+        }
+
+        public sealed class Install
+        {
+            public bool Ok;
+            // The command line's sentence: for a failure, the last line of DeepSeek Harness's command.
+            public string Message = "";
+            public string Log = "";
+        }
+
+        // What a finished `dsh bundle install --json` said. Installed only
+        // when the command says so and ended with code 0. Never throws.
+        public static Install ReadInstall(Cli.Result result)
+        {
+            if (result == null) return new Install { Message = "DSHProxy gave no answer." };
+            var root = LastLine(result.Out);
+            var ok = root == null ? null : Json.Get(root, "ok");
+            if (!(ok is bool))
+                return new Install { Message = result.Code != 0 ? VideoSettings.Failure(result) : "DSHProxy did not answer as expected, so it is not known whether the video tools were installed." };
+            return new Install { Ok = (bool)ok && result.Code == 0, Message = Clean(Json.Get(root, "message"), 400), Log = Clean(Json.Get(root, "log"), 400) };
+        }
+
+        public Plan Planned
+        {
+            get
+            {
+                switch (State)
+                {
+                    case Kind.Installed:
+                    case Kind.SwitchedOff: return Plan.Nothing;
+                    case Kind.Unreadable: return Plan.Unknown;
+                    case Kind.NeverOpened:
+                    case Kind.NotFound: return Plan.Cannot;
+                    default:
+                        if (CanInstall) return Plan.Install;
+                        // Open is the one obstacle the person can take away
+                        // on the spot. Any other shows when the install is tried.
+                        return HarnessRunning ? Plan.InstallAfterQuit : Plan.Cannot;
+                }
+            }
+        }
+
+        public bool WillInstall
+        {
+            get { return Planned == Plan.Install || Planned == Plan.InstallAfterQuit; }
+        }
+
+        // ----- the row and the line on the Video > DeepSeek Harness page -----
+
+        public string RowText()
+        {
+            switch (State)
+            {
+                case Kind.Installed: return "Yes \u00B7 switched on" + (Version.Length > 0 ? " \u00B7 version " + Version : "");
+                case Kind.SwitchedOff: return "Yes \u00B7 switched off in DeepSeek Harness";
+                case Kind.OtherFolder: return "Yes \u00B7 from another folder";
+                case Kind.FolderMissing: return "Not working \u00B7 its folder is gone";
+                case Kind.NotInstalled: return "No \u00B7 Apply to DeepSeek Harness installs them";
+                case Kind.NeverOpened: return "No \u00B7 DeepSeek Harness has not been opened yet";
+                case Kind.NotFound: return "No \u00B7 DeepSeek Harness was not found";
+                default: return "Could not be read";
+            }
+        }
+
+        public Color RowColor()
+        {
+            switch (State)
+            {
+                case Kind.Installed: return Theme.Ok;
+                case Kind.FolderMissing:
+                case Kind.Unreadable: return Theme.Bad;
+                default: return Theme.Warn;
+            }
+        }
+
+        private const string ApplyName = "Apply to DeepSeek Harness";
+
+        public string PageLine()
+        {
+            switch (State)
+            {
+                case Kind.Installed: return "The video tools are installed and switched on in DeepSeek Harness.";
+                case Kind.SwitchedOff: return "The video tools are installed, but switched off in DeepSeek Harness. " + ApplyName + " leaves them off: you can switch them on in DeepSeek Harness under Plugins.";
+                case Kind.OtherFolder: return "DeepSeek Harness has the video tools from another folder. " + Repair() + (LinkedTo.Length > 0 ? " The other folder: " + LinkedTo : "");
+                case Kind.FolderMissing: return "DeepSeek Harness has the video tools from a folder that is gone. Was the DSHProxy folder moved? " + Repair() + (LinkedTo.Length > 0 ? " The folder that is gone: " + LinkedTo : "");
+                case Kind.NotInstalled: return "The video tools are not installed in DeepSeek Harness. " + Repair();
+                case Kind.NeverOpened: return "DeepSeek Harness has not been opened yet, so the video tools cannot be installed. " + Remedy();
+                case Kind.NotFound: return "DeepSeek Harness was not found on this computer, so the video tools cannot be installed.";
+                default: return "Could not read whether the video tools are installed in DeepSeek Harness: " + Sentence(Reason);
+            }
+        }
+
+        // What puts it right, for a state an Apply can put right.
+        private string Repair()
+        {
+            var does = State == Kind.NotInstalled ? "installs them." : "points them at this DSHProxy folder.";
+            if (Planned == Plan.Cannot) return ApplyName + " cannot do that from here: " + Sentence(Reason.Length > 0 ? Reason : "DSHProxy did not say why.");
+            return ApplyName + ", at the top of the window, " + does;
+        }
+
+        private static string Sentence(string text)
+        {
+            return text.Length == 0 || text.EndsWith(".", StringComparison.Ordinal) || text.EndsWith("\u2026", StringComparison.Ordinal) ? text : text + ".";
+        }
+
+        // What the person does about a DeepSeek Harness that is missing or was never opened.
+        private string Remedy()
+        {
+            if (State == Kind.NotFound) return "Install DeepSeek Harness, open it once and quit it, then press " + ApplyName + " again.";
+            if (State == Kind.NeverOpened) return "Open DeepSeek Harness once, quit it, then press " + ApplyName + " again.";
+            return "";
+        }
+
+        // ----- the checklist an Apply asks with -----
+
+        public List<SetupLine> ConfirmLines()
+        {
+            var lines = new List<SetupLine>();
+            if (State == Kind.Unreadable) lines.Add(new SetupLine(SetupMark.Note, "DeepSeek Harness could not be checked.", Sentence(Reason)));
+            else if (!HarnessFound) lines.Add(new SetupLine(SetupMark.Cannot, "DeepSeek Harness was not found on this computer.", ""));
+            else if (!ProfileExists) lines.Add(new SetupLine(SetupMark.Cannot, "DeepSeek Harness is installed, but has not been opened yet.", ""));
+            else lines.Add(new SetupLine(SetupMark.Done, "DeepSeek Harness is installed and has been opened once.", ""));
+            lines.Add(new SetupLine(SetupMark.ToDo, "The chat routes will be written into every DeepSeek Harness profile.", "Each profile is backed up first.\nNothing else in it is changed."));
+            lines.Add(ToolsPlan());
+            lines.Add(new SetupLine(SetupMark.ToDo, (Planned == Plan.InstallAfterQuit ? "Start DeepSeek Harness again afterwards." : "Restart DeepSeek Harness afterwards.") + " DSHProxy does not do that for you.", ""));
+            return lines;
+        }
+
+        private SetupLine ToolsPlan()
+        {
+            var after = Planned == Plan.InstallAfterQuit;
+            const string open = "DeepSeek Harness is open now.\nYou will be asked to quit it, and you can skip that step.";
+            switch (Planned)
+            {
+                case Plan.Nothing:
+                    if (State == Kind.Installed) return new SetupLine(SetupMark.Done, "The video tools are already installed.", "");
+                    return new SetupLine(SetupMark.Done, "The video tools are installed, but switched off in DeepSeek Harness.", "They are left off.\nYou can switch them on in DeepSeek Harness under Plugins.");
+                case Plan.Unknown:
+                    return new SetupLine(SetupMark.Note, "The video tools could not be checked, so they are left as they are.", "");
+                case Plan.Cannot:
+                    var why = Reason.Length > 0 ? Sentence(Reason) : State == Kind.NotFound || State == Kind.NeverOpened ? "" : "DSHProxy did not say why.";
+                    var remedy = Remedy();
+                    return new SetupLine(SetupMark.Cannot, "The video tools cannot be installed.", why + (why.Length > 0 && remedy.Length > 0 ? "\n" : "") + remedy);
+                default:
+                    if (State == Kind.NotInstalled)
+                        return new SetupLine(SetupMark.ToDo, after ? "The video tools will be installed after you quit DeepSeek Harness." : "The video tools will be installed in DeepSeek Harness.", after ? open : "");
+                    var from = (State == Kind.FolderMissing ? "DeepSeek Harness has them from a folder that is gone:\n" : "DeepSeek Harness has them from another folder:\n") + LinkedTo;
+                    return new SetupLine(SetupMark.ToDo, "The video tools will be pointed at this DSHProxy folder" + (after ? " after you quit DeepSeek Harness." : "."), from + (after ? "\n" + open : ""));
+            }
+        }
+
+        // ----- what an Apply says when it has ended -----
+
+        public sealed class Result
+        {
+            public string Heading;
+            public List<SetupLine> Lines = new List<SetupLine>();
+            // The folder a button copies, for installing by hand; null when there is nothing to copy.
+            public string CopyPath;
+        }
+
+        // `applied`: what `dsh apply` printed. `install`: what the install
+        // answered, when it was run. `folder`: this DSHProxy's video tools.
+        public Result Summary(string applied, Outcome outcome, Install install, string folder)
+        {
+            var result = new Result();
+            var said = Shown(applied);
+            result.Lines.Add(new SetupLine(SetupMark.Done, said.Length > 0 ? "The chat routes were applied. DSHProxy reported:" : "The chat routes were applied.", said));
+            const string restart = "If anything above was updated, restart DeepSeek Harness so it uses the change.";
+            var byHand = false;
+            if (outcome == Outcome.Installed)
+            {
+                result.Heading = "DeepSeek Harness is set up";
+                result.Lines.Add(new SetupLine(SetupMark.Done, "The video tools are installed in DeepSeek Harness.", install == null ? "" : install.Message));
+                result.Lines.Add(new SetupLine(SetupMark.ToDo, "Start DeepSeek Harness again.", ""));
+            }
+            else if (outcome == Outcome.Failed)
+            {
+                result.Heading = "The video tools were not installed";
+                var detail = install == null ? "" : install.Message;
+                if (install != null && install.Log.Length > 0) detail += (detail.Length > 0 ? "\n" : "") + "More is in this file:\n" + install.Log;
+                result.Lines.Add(new SetupLine(SetupMark.Cannot, "The video tools were not installed.", detail));
+                byHand = true;
+            }
+            else if (outcome == Outcome.Skipped)
+            {
+                result.Heading = "The video tools were not installed";
+                result.Lines.Add(new SetupLine(SetupMark.Note, "The video tools were not installed, because you skipped that step.", ""));
+                result.Lines.Add(new SetupLine(SetupMark.ToDo, "To install them, quit DeepSeek Harness and press " + ApplyName + " again.", ""));
+                result.Lines.Add(new SetupLine(SetupMark.ToDo, restart, ""));
+            }
+            else if (Planned == Plan.Nothing && State == Kind.Installed)
+            {
+                result.Heading = "DeepSeek Harness is set up";
+                result.Lines.Add(new SetupLine(SetupMark.Done, "The video tools were already installed. Nothing was changed for them.", ""));
+                result.Lines.Add(new SetupLine(SetupMark.ToDo, restart, ""));
+            }
+            else if (Planned == Plan.Nothing)
+            {
+                result.Heading = "The video tools were left switched off";
+                result.Lines.Add(new SetupLine(SetupMark.Note, "The video tools are installed, but switched off in DeepSeek Harness. They were left off.", "You can switch them on in DeepSeek Harness under Plugins."));
+                result.Lines.Add(new SetupLine(SetupMark.ToDo, restart, ""));
+            }
+            else if (Planned == Plan.Unknown)
+            {
+                result.Heading = "The video tools were not checked";
+                result.Lines.Add(new SetupLine(SetupMark.Note, "The video tools could not be checked. Nothing was installed.", Sentence(Reason)));
+                result.Lines.Add(new SetupLine(SetupMark.ToDo, restart, ""));
+                result.Lines.Add(new SetupLine(SetupMark.ToDo, "Press " + ApplyName + " again later to check the video tools.", ""));
+            }
+            else
+            {
+                result.Heading = "The video tools were not installed";
+                var remedy = Remedy();
+                result.Lines.Add(new SetupLine(SetupMark.Cannot, "The video tools were not installed.", Reason.Length > 0 ? Sentence(Reason) : State == Kind.NotFound ? "DeepSeek Harness was not found on this computer." : State == Kind.NeverOpened ? "DeepSeek Harness has not been opened yet." : "DSHProxy did not say why."));
+                if (remedy.Length > 0)
+                {
+                    result.Lines.Add(new SetupLine(SetupMark.ToDo, remedy, ""));
+                    result.Lines.Add(new SetupLine(SetupMark.ToDo, restart, ""));
+                }
+                else byHand = true;
+            }
+            if (byHand)
+            {
+                // DeepSeek Harness is closed here: an install was tried, or
+                // could have been. Starting it also loads the chat routes.
+                result.Lines.Add(new SetupLine(SetupMark.ToDo, "To install them by hand, start DeepSeek Harness, open Plugins > Add plugin and choose this folder:", folder ?? ""));
+                result.CopyPath = string.IsNullOrEmpty(folder) ? null : folder;
+            }
+            return result;
+        }
+
+        // What `dsh apply` printed, as much of it as a dialog holds. All of it is in the log.
+        private static string Shown(string applied)
+        {
+            var lines = new List<string>();
+            foreach (var raw in (applied ?? "").Replace("\r", "").Split('\n'))
+            {
+                var line = Clean(raw, 200);
+                if (line.Length > 0) lines.Add(line);
+            }
+            if (lines.Count > 10)
+            {
+                var more = lines.Count - 9;
+                lines.RemoveRange(9, more);
+                lines.Add("And " + more.ToString(CultureInfo.InvariantCulture) + " more lines, on the Log page.");
+            }
+            return string.Join("\n", lines.ToArray());
+        }
+
+        // A made-up answer for a preview window, in the shape the command
+        // line prints: a first Apply, with DeepSeek Harness closed.
+        public const string Sample = "{\"harness\":\"found\",\"harnessRunning\":false,\"profile\":\"desktop\",\"profileExists\":true,\"bundle\":\"not-installed\","
+            + "\"folder\":\"C:\\\\Sample\\\\DSHProxy\\\\integrations\\\\dsh-video\",\"linkedTo\":null,\"version\":null,\"canInstall\":true,\"reason\":\"\"}";
     }
 
     // What this program knows of the Krea sign-in, all of it from the
@@ -5451,6 +6066,306 @@ namespace DSHProxy
                 AskToCancel();
             }
             base.OnFormClosing(e);
+        }
+    }
+
+    // The marks of the checklist Apply to DeepSeek Harness shows: in place,
+    // will be done, cannot be done, and something to know.
+    internal enum SetupMark { Done, ToDo, Cannot, Note }
+
+    // One line of that checklist: a mark, what it says, and under it a
+    // quieter line or two (a folder, a reason, what a command printed).
+    internal sealed class SetupLine
+    {
+        public readonly SetupMark Mark;
+        public readonly string Text;
+        // "" when there is none.
+        public readonly string Detail;
+
+        public SetupLine(SetupMark mark, string text, string detail)
+        {
+            Mark = mark;
+            Text = text ?? "";
+            Detail = detail ?? "";
+        }
+    }
+
+    // A mark of the checklist, drawn rather than written so it does not
+    // depend on a font having the sign. Each has its own shape as well as
+    // its own colour, and a screen reader is given the word.
+    internal sealed class MarkGlyph : Control
+    {
+        private readonly SetupMark mark;
+
+        public MarkGlyph(SetupMark mark)
+        {
+            this.mark = mark;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+            SetStyle(ControlStyles.Selectable, false);
+            Size = new Size(20, 20);
+            TabStop = false;
+            AccessibleRole = AccessibleRole.StaticText;
+            AccessibleName = Word(mark);
+        }
+
+        public static string Word(SetupMark mark)
+        {
+            switch (mark)
+            {
+                case SetupMark.Done: return "In place";
+                case SetupMark.ToDo: return "To do";
+                case SetupMark.Cannot: return "Cannot be done";
+                default: return "Note";
+            }
+        }
+
+        private static Color Tint(SetupMark mark)
+        {
+            switch (mark)
+            {
+                case SetupMark.Done: return Theme.Ok;
+                case SetupMark.ToDo: return Theme.Accent;
+                case SetupMark.Cannot: return Theme.Bad;
+                default: return Theme.Warn;
+            }
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            Glass.PaintBehind(e.Graphics, this, ClientRectangle);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Glass.PaintBehind(e.Graphics, this, ClientRectangle);
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var color = Tint(mark);
+            using (var glow = new SolidBrush(Color.FromArgb(40, color))) g.FillEllipse(glow, 0, 0, 19, 19);
+            using (var pen = new Pen(color, 2f))
+            {
+                pen.StartCap = LineCap.Round;
+                pen.EndCap = LineCap.Round;
+                pen.LineJoin = LineJoin.Round;
+                switch (mark)
+                {
+                    case SetupMark.Done:
+                        g.DrawLines(pen, new[] { new PointF(5.4f, 10f), new PointF(8.4f, 13f), new PointF(13.8f, 6.6f) });
+                        break;
+                    case SetupMark.ToDo:
+                        g.DrawLine(pen, 5.2f, 9.5f, 13.4f, 9.5f);
+                        g.DrawLines(pen, new[] { new PointF(10.2f, 6.2f), new PointF(13.6f, 9.5f), new PointF(10.2f, 12.8f) });
+                        break;
+                    case SetupMark.Cannot:
+                        g.DrawLine(pen, 6.2f, 6.2f, 12.8f, 12.8f);
+                        g.DrawLine(pen, 12.8f, 6.2f, 6.2f, 12.8f);
+                        break;
+                    default:
+                        g.DrawLine(pen, 9.5f, 5.2f, 9.5f, 10.4f);
+                        g.DrawLine(pen, 9.5f, 13.6f, 9.5f, 13.8f);
+                        break;
+                }
+            }
+        }
+    }
+
+    // The two dialogs of Apply to DeepSeek Harness that are a checklist: the
+    // question before anything is written, and what happened afterwards.
+    internal static class SetupDialog
+    {
+        public const string Title = "Apply to DeepSeek Harness";
+        public const string CopyText = "Copy folder path";
+        // The width a line of the checklist wraps at. A folder name without
+        // a space in it is broken at this width too.
+        private const int TextWidth = 460;
+
+        // True when the person chose to go on.
+        public static bool Confirm(IWin32Window owner, HarnessSetup state)
+        {
+            return Show(owner, "What is in place, and what Apply will do", state.ConfirmLines(), "Apply", "Cancel", null);
+        }
+
+        public static void Show(IWin32Window owner, HarnessSetup.Result result)
+        {
+            Show(owner, result.Heading, result.Lines, "OK", null, result.CopyPath);
+        }
+
+        private static bool Show(IWin32Window owner, string heading, List<SetupLine> lines, string accept, string cancel, string copyPath)
+        {
+            using (var form = new Form())
+            using (var headingFont = Theme.Ui(10.5f, FontStyle.Bold))
+            {
+                form.Text = Title;
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.StartPosition = owner == null ? FormStartPosition.CenterScreen : FormStartPosition.CenterParent;
+                form.MinimizeBox = false;
+                form.MaximizeBox = false;
+                form.ShowInTaskbar = owner == null;
+                form.AutoSize = true;
+                form.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+                form.Font = Theme.Ui(9.5f);
+                form.Padding = new Padding(14);
+                var appIcon = AppIcon.Load(SystemInformation.SmallIconSize);
+                if (appIcon != null) form.Icon = appIcon;
+
+                var rows = 2;
+                foreach (var line in lines) rows += line.Detail.Length > 0 ? 2 : 1;
+                var layout = Glass.Make(new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = rows, Padding = new Padding(20, 20, 20, 16) }, 22, true);
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                var title = new GlassLabel { Text = heading, AutoSize = true, MaximumSize = new Size(TextWidth + 32, 0), ForeColor = Theme.Text, Font = headingFont, Margin = new Padding(0, 4, 0, 14), UseMnemonic = false };
+                layout.Controls.Add(title, 0, 0);
+                layout.SetColumnSpan(title, 2);
+                var row = 1;
+                foreach (var line in lines)
+                {
+                    var last = line.Detail.Length == 0;
+                    layout.Controls.Add(new MarkGlyph(line.Mark) { Margin = new Padding(0, 0, 12, 0) }, 0, row);
+                    // The word of the mark is read out with the line it belongs to.
+                    layout.Controls.Add(new GlassLabel { Text = line.Text, AutoSize = true, MaximumSize = new Size(TextWidth, 0), ForeColor = Theme.Text, Margin = new Padding(0, 1, 0, last ? 12 : 2), UseMnemonic = false, AccessibleName = MarkGlyph.Word(line.Mark) + ": " + line.Text }, 1, row);
+                    row++;
+                    if (last) continue;
+                    layout.Controls.Add(new GlassLabel { Text = line.Detail, AutoSize = true, MaximumSize = new Size(TextWidth, 0), ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 12), UseMnemonic = false }, 1, row);
+                    row++;
+                }
+
+                var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, Margin = new Padding(0, 6, 0, 0), WrapContents = false };
+                var go = Skin.Primary(new PillButton { Text = accept, DialogResult = DialogResult.OK, Size = new Size(100, 36), Margin = new Padding(8, 0, 0, 0) });
+                Button stop = go;
+                if (cancel != null)
+                {
+                    stop = new PillButton { Text = cancel, DialogResult = DialogResult.Cancel, Size = new Size(100, 36), Margin = new Padding(8, 0, 0, 0) };
+                    buttons.Controls.Add(stop);
+                }
+                buttons.Controls.Add(go);
+                if (copyPath != null)
+                {
+                    // Stays open: the folder is on the clipboard, and still to be read here.
+                    var copy = new PillButton { Text = CopyText, Size = new Size(170, 36), Margin = new Padding(8, 0, 0, 0), AccessibleDescription = "Copies the folder of the video tools, to choose it in DeepSeek Harness." };
+                    copy.Click += (s, e) =>
+                    {
+                        try
+                        {
+                            Clipboard.SetText(copyPath);
+                            copy.Text = "Copied";
+                        }
+                        catch (System.Runtime.InteropServices.ExternalException) { copy.Text = "Could not copy"; }
+                    };
+                    buttons.Controls.Add(copy);
+                }
+                layout.Controls.Add(buttons, 0, row);
+                layout.SetColumnSpan(buttons, 2);
+                form.Controls.Add(layout);
+                form.AcceptButton = go;
+                form.CancelButton = stop;
+                form.Shown += (s, e) => go.Focus();
+                Skin.Apply(form);
+                return (owner == null ? form.ShowDialog() : form.ShowDialog(owner)) == DialogResult.OK;
+            }
+        }
+    }
+
+    // Shown after the chat routes are written, while DeepSeek Harness is
+    // still open: the video tools can only be installed when it is closed.
+    // It looks once a second whether a DeepSeek Harness process is left and
+    // closes itself when none is. The one button, Esc and the close box skip
+    // the video tools. This program never closes DeepSeek Harness itself.
+    internal sealed class HarnessWaitDialog : Form
+    {
+        public const string SkipText = "Skip the video tools";
+
+        private readonly Func<bool> running;
+        private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 1000 };
+        private readonly Label heading;
+        private bool looking;
+        private bool ended;
+
+        // True when the dialog closed because DeepSeek Harness had quit;
+        // false when the video tools were skipped.
+        public bool HarnessGone { get; private set; }
+
+        public HarnessWaitDialog(Func<bool> running)
+        {
+            this.running = running;
+            Text = SetupDialog.Title;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MinimizeBox = false;
+            MaximizeBox = false;
+            ShowInTaskbar = false;
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            Font = Theme.Ui(9.5f);
+            Padding = new Padding(14);
+            var appIcon = AppIcon.Load(SystemInformation.SmallIconSize);
+            if (appIcon != null) Icon = appIcon;
+
+            var layout = Glass.Make(new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 5, Padding = new Padding(20, 20, 20, 16) }, 22, true);
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            heading = new GlassLabel { Text = "Quit DeepSeek Harness to install the video tools", AutoSize = true, MinimumSize = new Size(440, 0), MaximumSize = new Size(440, 0), ForeColor = Theme.Text, Font = Theme.Ui(10.5f, FontStyle.Bold), Margin = new Padding(0, 4, 0, 12), UseMnemonic = false };
+            layout.Controls.Add(heading, 0, 0);
+            var notes = new[]
+            {
+                "The chat routes are written. The video tools can only be installed while DeepSeek Harness is closed.",
+                "Closing its window may not be enough: DeepSeek Harness can stay in the tray, next to the clock. Quit it there too.",
+                "This window closes by itself when DeepSeek Harness has quit, and the video tools are installed then. DSHProxy does not close DeepSeek Harness for you."
+            };
+            for (var i = 0; i < notes.Length; i++)
+                layout.Controls.Add(new GlassLabel { Text = notes[i], AutoSize = true, MaximumSize = new Size(440, 0), ForeColor = i == 0 ? Theme.Text : Theme.Muted, Margin = new Padding(0, 0, 0, i == notes.Length - 1 ? 18 : 10), UseMnemonic = false }, 0, i + 1);
+            var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, Margin = new Padding(0), WrapContents = false };
+            var skip = new PillButton { Text = SkipText, Size = new Size(190, 36), Margin = new Padding(8, 0, 0, 0), DialogResult = DialogResult.Cancel, AccessibleDescription = "Installs nothing and leaves DeepSeek Harness as it is." };
+            row.Controls.Add(skip);
+            layout.Controls.Add(row, 0, notes.Length + 1);
+            Controls.Add(layout);
+            AcceptButton = skip;
+            CancelButton = skip;
+            Shown += (s, e) =>
+            {
+                skip.Focus();
+                timer.Start();
+            };
+            timer.Tick += (s, e) => Look();
+            Disposed += (s, e) =>
+            {
+                timer.Dispose();
+                heading.Font.Dispose();
+                Font.Dispose();
+            };
+            Skin.Apply(this);
+        }
+
+        // Asks, off the UI thread, whether a DeepSeek Harness process is
+        // left. A question that fails counts as one left: the dialog stays.
+        private void Look()
+        {
+            if (looking || ended) return;
+            looking = true;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                bool left;
+                try { left = running(); }
+                catch (Exception) { left = true; }
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        looking = false;
+                        if (left || ended) return;
+                        HarnessGone = true;
+                        Close();
+                    }));
+                }
+                // Closed meanwhile: skipped.
+                catch (InvalidOperationException) { }
+            });
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            base.OnFormClosing(e);
+            if (e.Cancel) return;
+            ended = true;
+            timer.Stop();
         }
     }
 

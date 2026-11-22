@@ -25,6 +25,9 @@ namespace DSHProxy
     //   hscroll   no control has a horizontal scroll bar
     //   overlap   no two sibling controls overlap
     //   columns   the columns of every list add up to the list's client width
+    //   setup     Video > DeepSeek Harness says the state of the video tools
+    //             that was read, and the dialogs of Apply to DeepSeek Harness
+    //             say what they have to and can always be left
     // The window is off screen and is never activated.
     //   LayoutCheck <worktree> <throwaway folder> <output folder> <spare port> [only: text in a capture name]
     internal static class LayoutCheck
@@ -41,7 +44,7 @@ namespace DSHProxy
         private delegate IntPtr HookProc(int code, IntPtr w, IntPtr l);
         private static readonly HookProc NoActivation = (code, w, l) => code == 5 ? (IntPtr)1 : CallNextHookEx(IntPtr.Zero, code, w, l);
 
-        private static readonly string[] CheckNames = { "margins", "inside", "text", "hscroll", "overlap", "columns", "scroll", "apply" };
+        private static readonly string[] CheckNames = { "margins", "inside", "text", "hscroll", "overlap", "columns", "scroll", "apply", "setup" };
         private static MainForm form;
         private static string outDir;
         private static string only;
@@ -49,6 +52,8 @@ namespace DSHProxy
         private static int captures, checksRun, checksPassed, capturesClean, foregroundTaken, warnings;
         private static readonly SortedDictionary<string, int> failureKinds = new SortedDictionary<string, int>();
         private static string origin;
+        // What the capture being taken has to say about the first-time setup; null for a capture that shows none of it.
+        private static Action<Form, List<string>> setupCheck;
 
         private const BindingFlags Any = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
         private static FieldInfo F(string name) { var f = typeof(MainForm).GetField(name, Any); if (f == null) throw new MissingFieldException(name); return f; }
@@ -259,6 +264,8 @@ namespace DSHProxy
             public Action Enter;
             // Run at each size, after the window has been laid out at it.
             public Action After;
+            // The check "setup" of this page; null for a page that shows nothing of the first-time setup.
+            public Action<List<string>> Setup;
         }
 
         private static void Tab(int index) { G<PageHost>("tabs").SelectedIndex = index; }
@@ -285,6 +292,109 @@ namespace DSHProxy
             Do("SetPageStatus", G<Label>("videoKeysStatus"), line, color);
             var rows = G<ListView>("videoKeysList");
             if (rows.Items.Count > 0) rows.Items[0].Selected = true;
+        }
+
+        // ---------------------------------------------------------------
+        // The first-time setup. What the command line says about DeepSeek
+        // Harness and the video tools is one JSON line (the contract in
+        // docs/work/0013-first-time-setup/spec.md). The lines here are
+        // written from that contract, not taken from the app, and are put
+        // into the window as if the command line had printed them: no
+        // command is run, and no profile and no process list is looked at.
+
+        // A folder name of exactly 120 characters, the longest the dialogs and the page are checked with.
+        private static string Folder120(bool spaces)
+        {
+            var start = spaces ? "C:\\Users\\Firstname Lastname\\My Documents\\Tools and experiments\\" : "C:\\Users\\firstname.lastname\\Documents\\tools-and-experiments\\";
+            var end = spaces ? " DSHProxy\\integrations\\dsh-video" : "-DSHProxy\\integrations\\dsh-video";
+            var middle = spaces ? "an older copy of the gateway kept from last year for comparison and never opened again since" : "an-older-copy-of-the-gateway-kept-from-last-year-for-comparison-and-never-opened-again-since";
+            var folder = start + middle.Substring(0, 120 - start.Length - end.Length) + end;
+            if (folder.Length != 120) throw new InvalidOperationException("the sample folder is " + folder.Length + " characters long");
+            return folder;
+        }
+
+        private const string ThisFolder = "C:\\Tools\\DSHProxy\\integrations\\dsh-video";
+
+        private static string StatusLine(string harness, bool running, bool profileExists, string bundle, string linkedTo, bool canInstall, string reason)
+        {
+            return StatusLine(harness, running, profileExists, bundle, linkedTo, canInstall, reason, ThisFolder);
+        }
+
+        private static string StatusLine(string harness, bool running, bool profileExists, string bundle, string linkedTo, bool canInstall, string reason, string folder)
+        {
+            var linked = linkedTo ?? (bundle == "installed" || bundle == "switched-off" ? folder : null);
+            return Json.Serializer.Serialize(Map("harness", harness, "harnessRunning", running, "profile", "desktop", "profileExists", profileExists, "bundle", bundle,
+                "folder", folder, "linkedTo", linked, "version", bundle == "not-installed" ? null : "0.1.0", "canInstall", canInstall, "reason", reason));
+        }
+
+        private const string NeverOpenedReason = "DeepSeek Harness has not been opened yet: open it once, then quit it.";
+        private const string NotFoundReason = "DeepSeek Harness was not found in its usual folder or where dsh: links are registered.";
+
+        // The states of the video tools the page has to tell apart: a name, and the line that reports it.
+        private static readonly string[][] ToolsStates =
+        {
+            new[] { "installed", StatusLine("found", false, true, "installed", null, false, "") },
+            new[] { "switched-off", StatusLine("found", true, true, "switched-off", null, false, "") },
+            new[] { "other-folder", StatusLine("found", false, true, "other-folder", Folder120(false), true, "") },
+            new[] { "folder-missing", StatusLine("found", true, true, "folder-missing", Folder120(true), false, "DeepSeek Harness is running.") },
+            new[] { "not-installed", StatusLine("found", false, true, "not-installed", null, true, "") },
+            new[] { "never-opened", StatusLine("found", false, false, "not-installed", null, false, NeverOpenedReason) },
+            new[] { "not-found", StatusLine("not-found", false, false, "not-installed", null, false, NotFoundReason) },
+            new[] { "could-not-be-read", "Usage: dshproxy dsh apply|verify|status|remove [--dry-run]" }
+        };
+
+        // Puts a status line into the window as if the command line had just printed it.
+        private static void PutSetup(string line)
+        {
+            Do("ShowHarnessSetup", HarnessSetup.Parse(line), "08:41:07");
+        }
+
+        private static readonly Dictionary<string, string> toolsRows = new Dictionary<string, string>();
+
+        // Video > DeepSeek Harness after a state was read: the row that asks
+        // whether the video tools are installed says that state, no two
+        // states read the same, nothing on the page still says the app
+        // cannot tell, and a folder the profile points at is named in full
+        // together with what puts it right.
+        private static void ToolsRow(string state, string line, List<string> fails)
+        {
+            ListViewItem row = null;
+            foreach (ListViewItem item in G<ListView>("videoHarnessList").Items) if (item.Text.EndsWith("installed in DeepSeek Harness?", StringComparison.Ordinal)) row = item;
+            if (row == null) { fails.Add("the page has no row that asks whether the video tools are installed in DeepSeek Harness"); return; }
+            var cell = row.SubItems.Count > 1 ? row.SubItems[1].Text : "";
+            if (cell.StartsWith("Not known", StringComparison.Ordinal) || cell.IndexOf("cannot tell", StringComparison.Ordinal) >= 0)
+                fails.Add("the row \"" + row.Text + "\" still says \"" + cell + "\" for the state \"" + state + "\", which was read");
+            else if (cell.Length == 0 || cell.StartsWith("Not read", StringComparison.Ordinal) || cell.StartsWith("Reading", StringComparison.Ordinal) || cell.StartsWith("Sample", StringComparison.Ordinal))
+                fails.Add("the row \"" + row.Text + "\" says \"" + cell + "\", not the state \"" + state + "\" that was read");
+            else
+            {
+                var yes = cell.StartsWith("Yes", StringComparison.Ordinal);
+                var no = cell.StartsWith("No ", StringComparison.Ordinal);
+                if ((state == "installed" || state == "switched-off" || state == "other-folder") && !yes) fails.Add("the row says \"" + cell + "\" for the state \"" + state + "\": it does not begin with Yes");
+                if ((state == "not-installed" || state == "never-opened" || state == "not-found") && !no) fails.Add("the row says \"" + cell + "\" for the state \"" + state + "\": it does not begin with No");
+                if ((state == "could-not-be-read" || state == "folder-missing") && (yes || no)) fails.Add("the row says \"" + cell + "\" for the state \"" + state + "\", which is neither a plain yes nor a no");
+                foreach (var pair in toolsRows) if (pair.Key != state && pair.Value == cell) fails.Add("the row says \"" + cell + "\" for the state \"" + state + "\" and for the state \"" + pair.Key + "\"");
+                if (row.ForeColor == Theme.Muted) fails.Add("the row for the state \"" + state + "\" is in the colour of a row that says nothing");
+            }
+            toolsRows[state] = cell;
+            // Everything the page says in words, the lines above and below the list.
+            var said = new StringBuilder();
+            Action<Control> walk = null;
+            walk = c =>
+            {
+                if (c is Label && c.Visible) said.Append(c.Text.Replace('\u00A0', ' ')).Append('\n');
+                foreach (Control child in c.Controls) walk(child);
+            };
+            walk(G<List<Panel>>("videoPages")[4]);
+            var words = said.ToString();
+            foreach (var old in new[] { "cannot tell", "does not install", "Chat routes only", "installed in DeepSeek Harness separately" })
+                if (words.IndexOf(old, StringComparison.Ordinal) >= 0) fails.Add("the page still says \"" + old + "\", which is no longer true");
+            if (state == "other-folder" || state == "folder-missing")
+            {
+                var folder = Json.Str(Json.Get(Json.Obj(Json.Serializer.DeserializeObject(line)), "linkedTo"));
+                if (words.IndexOf(folder, StringComparison.Ordinal) < 0) fails.Add("the page does not name the folder the profile points at, " + folder);
+                if (words.IndexOf("Apply to DeepSeek Harness", StringComparison.Ordinal) < 0 || words.IndexOf("this DSHProxy folder", StringComparison.Ordinal) < 0) fails.Add("the page does not say that Apply to DeepSeek Harness points the video tools at this DSHProxy folder");
+            }
         }
 
         private static void Run(Dictionary<string, object> status, Dictionary<string, object> limits)
@@ -357,6 +467,13 @@ namespace DSHProxy
             pages.Add(new Page { Name = "video-lanes", Enter = () => { Workspace(true); Tab(2); } });
             pages.Add(new Page { Name = "video-models", Enter = () => { Workspace(true); Tab(3); } });
             pages.Add(new Page { Name = "video-harness", Enter = () => { Workspace(true); Tab(4); } });
+            // The same page for each state of the video tools the command line can report.
+            foreach (var state in ToolsStates)
+            {
+                var name = state[0];
+                var line = state[1];
+                pages.Add(new Page { Name = "video-harness-tools-" + name, Enter = () => { Workspace(true); Tab(4); PutSetup(line); }, Setup = fails => ToolsRow(name, line, fails) });
+            }
             pages.Add(new Page { Name = "video-log", Enter = () => { Workspace(true); Tab(5); } });
 
             Size smallest;
@@ -381,7 +498,10 @@ namespace DSHProxy
                     Ui(() => SetWindowPos(form.Handle, IntPtr.Zero, -12000, 0, size.Width, size.Height, 0x0004 | 0x0010));
                     Settle();
                     if (page.After != null) { Ui(page.After); Settle(); }
+                    var pageSetup = page.Setup;
+                    setupCheck = pageSetup == null ? (Action<Form, List<string>>)null : (top, fails) => pageSetup(fails);
                     Capture(name, form, size);
+                    setupCheck = null;
                 }
             }
             if (only == null || only.StartsWith("dialog", StringComparison.Ordinal)) Dialogs(status);
@@ -436,9 +556,373 @@ namespace DSHProxy
                 type.GetField("sessionKey", Any).SetValue(dialog, "antigravity");
                 type.GetMethod("ShowFailure", Any).Invoke(dialog, new object[] { "The provider did not finish the sign-in within 5 minutes. Nothing was saved. Try again, and approve access on the page that opens.", "antigravity", "Gemini (Antigravity)" });
             });
+            SetupDialogs();
         }
 
-        private static void Modal(string name, Action show, Action<Form> close)
+        // ---------------------------------------------------------------
+        // Apply to DeepSeek Harness, from the press of the button to what
+        // it says at the end. The command line is stood in for: each of its
+        // three commands gets an answer written here, in the shape the
+        // contract gives it, and whether DeepSeek Harness is running is a
+        // switch of this check. Nothing is run, written or installed, and
+        // no process list is read. The Copy button is never pressed: the
+        // clipboard belongs to the person at the machine.
+        private const string StatusCommand = "dsh bundle status --json";
+        private const string ApplyCommand = "dsh apply";
+        private const string InstallCommand = "dsh bundle install --json";
+        private static readonly List<string> ran = new List<string>();
+        private static volatile bool harnessOpen;
+
+        private static Cli.Result Said(string line) { return new Cli.Result { Code = 0, Out = line + "\n", Err = "" }; }
+        private static Cli.Result Failed(string output, string errors) { return new Cli.Result { Code = 1, Out = output, Err = errors }; }
+
+        private static void Answers(Cli.Result status, Cli.Result applied, Cli.Result installed, Cli.Result after)
+        {
+            lock (ran) ran.Clear();
+            var reads = 0;
+            var none = Failed("", "The layout check gave this command no answer.");
+            form.UseSetupCommands(args =>
+            {
+                var command = string.Join(" ", args);
+                lock (ran) ran.Add(command);
+                if (command == StatusCommand) return (reads++ == 0 ? status : after) ?? none;
+                if (command == ApplyCommand) return applied ?? none;
+                if (command == InstallCommand) return installed ?? none;
+                return none;
+            });
+        }
+
+        private static string Ran() { lock (ran) return string.Join("; ", ran.ToArray()); }
+
+        // The dialogs that are open, without those that were open before the setup dialogs began.
+        private static List<Form> earlier = new List<Form>();
+
+        private static List<Form> Shown()
+        {
+            return Ui(() => { var open = new List<Form>(); foreach (Form f in Application.OpenForms) if (!(f is MainForm) && f.Visible && !earlier.Contains(f)) open.Add(f); return open; });
+        }
+
+        private static Form NextDialog(List<Form> before)
+        {
+            var clock = Stopwatch.StartNew();
+            while (clock.ElapsedMilliseconds < 8000)
+            {
+                Thread.Sleep(60);
+                foreach (var f in Shown()) if (!before.Contains(f)) return f;
+            }
+            return null;
+        }
+
+        private static bool Gone(Form dialog, int ms)
+        {
+            var clock = Stopwatch.StartNew();
+            while (clock.ElapsedMilliseconds < ms)
+            {
+                if (Ui(() => dialog.IsDisposed || !dialog.Visible)) return true;
+                Thread.Sleep(60);
+            }
+            return false;
+        }
+
+        private static bool Press(Form dialog, string text)
+        {
+            return Ui(() =>
+            {
+                var button = Find<Button>(dialog, b => b.Text == text && b.Visible && b.Enabled);
+                if (button == null) return false;
+                button.PerformClick();
+                return true;
+            });
+        }
+
+        private static void Shot(string name, Form dialog, Action<Form, List<string>> check)
+        {
+            if (only != null && name.IndexOf(only, StringComparison.Ordinal) < 0) return;
+            Settle();
+            Thread.Sleep(250);
+            setupCheck = check;
+            Capture(name + "-" + Ui(() => dialog.Width) + "x" + Ui(() => dialog.Height), dialog, Size.Empty);
+            setupCheck = null;
+        }
+
+        // Something the first-time setup has to do that no picture shows: counted with the program checks.
+        private static void SetupFact(string name, List<string> problems)
+        {
+            checksRun++;
+            if (problems.Count == 0) checksPassed++;
+            results.WriteLine(name + "  | setup " + (problems.Count == 0 ? "ok;" : "FAIL;"));
+            foreach (var problem in problems)
+            {
+                results.WriteLine("    FAIL setup: " + problem);
+                int n;
+                failureKinds.TryGetValue("setup", out n);
+                failureKinds["setup"] = n + 1;
+            }
+            results.Flush();
+            Console.WriteLine((problems.Count == 0 ? "ok   " : "FAIL ") + name);
+        }
+
+        // Everything a dialog says in words: its lines and its buttons.
+        private static string Words(Control top)
+        {
+            var said = new StringBuilder();
+            Action<Control> walk = null;
+            walk = c =>
+            {
+                if ((c is Label || c is ButtonBase) && c.Visible) said.Append(c.Text.Replace('\u00A0', ' ')).Append('\n');
+                foreach (Control child in c.Controls) walk(child);
+            };
+            walk(top);
+            return said.ToString();
+        }
+
+        private static Button Has(Form top, List<string> fails, string text)
+        {
+            var button = Find<Button>(top, b => b.Text == text);
+            if (button == null) fails.Add("the dialog has no button \"" + text + "\"");
+            else if (!button.Visible || !button.Enabled) fails.Add("the button \"" + text + "\" cannot be pressed");
+            return button;
+        }
+
+        // Plain words, and the words this state calls for. The answers the
+        // command line is given here use the app's own words, so that what
+        // is looked for is what the app itself says.
+        private static void Says(Form top, List<string> fails, string[] wanted)
+        {
+            var words = Words(top);
+            if (words.IndexOf('!') >= 0) fails.Add("the dialog has an exclamation mark");
+            if (words.IndexOf("bundle", StringComparison.OrdinalIgnoreCase) >= 0) fails.Add("the dialog says \"bundle\" for the video tools");
+            foreach (var want in wanted ?? new string[0])
+                if (words.IndexOf(want, StringComparison.Ordinal) < 0) fails.Add("the dialog does not say \"" + want + "\"");
+        }
+
+        private static int Marks(Control top)
+        {
+            var n = top is MarkGlyph ? 1 : 0;
+            foreach (Control child in top.Controls) n += Marks(child);
+            return n;
+        }
+
+        // The question before anything is written: four marked lines, a way on and a way back.
+        private static void Checklist(Form top, List<string> fails, string[] wanted)
+        {
+            Has(top, fails, "Apply");
+            var cancel = Has(top, fails, "Cancel");
+            if (cancel != null && top.CancelButton != cancel) fails.Add("Esc does not cancel");
+            if (Marks(top) != 4) fails.Add("the checklist has " + Marks(top) + " marked lines, not the four it has to have");
+            var all = new List<string> { "chat routes", "backed up first", "video tools", "afterwards. DSHProxy does not do that for you." };
+            if (wanted != null) all.AddRange(wanted);
+            Says(top, fails, all.ToArray());
+        }
+
+        // The wait for DeepSeek Harness to quit: it can always be left.
+        private static void WaitCheck(Form top, List<string> fails)
+        {
+            var skip = Has(top, fails, "Skip the video tools");
+            if (skip == null) fails.Add("the waiting dialog has no way out");
+            else if (top.CancelButton != skip) fails.Add("Esc and the close box do not skip the video tools");
+            if (!top.ControlBox) fails.Add("the waiting dialog has no close box");
+            Says(top, fails, new[] { "Quit DeepSeek Harness to install the video tools", "tray", "closes by itself", "does not close DeepSeek Harness" });
+        }
+
+        private sealed class Flow
+        {
+            public string Name;
+            // What the command line answers: the first look, the routes, the install, the look after it.
+            public Cli.Result Status, Applied, Installed, After;
+            // DeepSeek Harness is running when the routes have been written.
+            public bool Open;
+            // Capture names; null for a dialog that is passed without a picture.
+            public string Confirm, Wait, End;
+            public string[] ConfirmSays, EndSays;
+            public string EndButton;
+            public bool Cancel, PressAgain, Skip;
+            // The commands that have to have been run, in order.
+            public string Ran;
+            // How the row of Video > DeepSeek Harness has to begin afterwards; null when nothing was read again.
+            public string RowAfter;
+        }
+
+        private static void RunFlow(Flow flow)
+        {
+            var name = "dialog-setup-flow-" + flow.Name;
+            var problems = new List<string>();
+            harnessOpen = flow.Open;
+            Answers(flow.Status, flow.Applied, flow.Installed, flow.After);
+            var before = Shown();
+            form.BeginInvoke(new Action(() => Do("ApplyToHarness")));
+            var confirm = NextDialog(before);
+            if (confirm == null)
+            {
+                problems.Add("the checklist did not open");
+                SetupFact(name, problems);
+                return;
+            }
+            if (flow.PressAgain)
+            {
+                // A second press while the first is still going.
+                Ui(() => Do("ApplyToHarness"));
+                Thread.Sleep(500);
+                if (Ran() != StatusCommand) problems.Add("after a second press the commands run were \"" + Ran() + "\"");
+                if (Shown().Count != 1) problems.Add("after a second press " + Shown().Count + " dialogs are open");
+            }
+            if (flow.Confirm != null) Shot(flow.Confirm, confirm, (top, fails) => Checklist(top, fails, flow.ConfirmSays));
+            before = Shown();
+            if (!Press(confirm, flow.Cancel ? "Cancel" : "Apply")) problems.Add("the checklist has no button \"" + (flow.Cancel ? "Cancel" : "Apply") + "\" to press");
+            if (!Gone(confirm, 5000)) problems.Add("the checklist did not close");
+            if (!flow.Cancel)
+            {
+                var next = NextDialog(before);
+                if (next is HarnessWaitDialog)
+                {
+                    if (!flow.Open) problems.Add("the person was asked to quit a DeepSeek Harness that is not running");
+                    if (flow.Wait != null) Shot(flow.Wait, next, WaitCheck);
+                    before = Shown();
+                    if (flow.Skip)
+                    {
+                        if (!Press(next, "Skip the video tools")) problems.Add("the waiting dialog has no button to skip with");
+                        if (!Gone(next, 5000)) problems.Add("the waiting dialog did not close when the video tools were skipped");
+                    }
+                    else
+                    {
+                        // The person quits DeepSeek Harness.
+                        Thread.Sleep(1300);
+                        if (Gone(next, 100)) problems.Add("the waiting dialog closed while DeepSeek Harness was still running");
+                        harnessOpen = false;
+                        if (!Gone(next, 5000)) problems.Add("the waiting dialog did not close by itself within 5 s of DeepSeek Harness quitting");
+                    }
+                    next = NextDialog(before);
+                }
+                else if (flow.Open && flow.Wait != null) problems.Add("DeepSeek Harness is running and the person was not asked to quit it");
+                if (next == null) problems.Add("nothing was shown at the end");
+                else
+                {
+                    if (flow.End != null) Shot(flow.End, next, (top, fails) => { Says(top, fails, flow.EndSays); if (flow.EndButton != null) Has(top, fails, flow.EndButton); Has(top, fails, "OK"); });
+                    var last = next;
+                    Ui(() => last.Close());
+                    if (!Gone(last, 5000)) problems.Add("the last dialog did not close");
+                }
+            }
+            Thread.Sleep(400);
+            Ui(() => { });
+            foreach (var left in Shown())
+            {
+                problems.Add("a dialog was still open at the end: " + Ui(() => left.Text));
+                Ui(() => left.Close());
+            }
+            if (Ran() != flow.Ran) problems.Add("the commands run were \"" + Ran() + "\", not \"" + flow.Ran + "\"");
+            if (Ui(() => (bool)F("applying").GetValue(form))) problems.Add("the Apply did not end: another press would do nothing");
+            if (flow.RowAfter != null)
+            {
+                var cell = Ui(() => G<ListView>("videoHarnessList").Items[0].SubItems[1].Text);
+                if (!cell.StartsWith(flow.RowAfter, StringComparison.Ordinal)) problems.Add("after the Apply the page says \"" + cell + "\" about the video tools, not \"" + flow.RowAfter + "...\"");
+            }
+            SetupFact(name, problems);
+        }
+
+        private static void SetupDialogs()
+        {
+            // Run for the whole check, for the dialogs, and for anything that names the setup dialogs.
+            if (only != null && "dialog-setup".IndexOf(only, StringComparison.Ordinal) < 0 && only.IndexOf("dialog-setup", StringComparison.Ordinal) < 0) return;
+            HarnessSetup.Running = () => harnessOpen;
+            // A dialog of an earlier capture that is still closing is given time to, and is not counted here.
+            for (var i = 0; i < 50 && Shown().Count > 0; i++) Thread.Sleep(100);
+            earlier = Shown();
+            var noSpaces = Folder120(false);
+            var spaces = Folder120(true);
+            var firstTime = StatusLine("found", false, true, "not-installed", null, true, "");
+            var firstTimeOpen = StatusLine("found", true, true, "not-installed", null, false, "DeepSeek Harness is running.");
+            var installed = StatusLine("found", false, true, "installed", null, false, "");
+            var installedOpen = StatusLine("found", true, true, "installed", null, false, "");
+            var neverOpened = StatusLine("found", false, false, "not-installed", null, false, NeverOpenedReason);
+            var routes = "default: updated (dshproxy-claude 7, dshproxy-openai 3)\nwork-profile-with-a-long-name: already up to date (dshproxy-claude 7, dshproxy-openai 3, dshproxy-compat 12)\nAdded the DSHPROXY_API_KEY credential reference.\nRestart DeepSeek Harness to load the new routes.\n";
+            var written = new Cli.Result { Code = 0, Out = routes, Err = "" };
+            var unchanged = new Cli.Result { Code = 0, Out = "default: already up to date (dshproxy-claude 7, dshproxy-openai 3)\nwork-profile-with-a-long-name: already up to date (dshproxy-claude 7, dshproxy-openai 3, dshproxy-compat 12)\n", Err = "" };
+            var done = Said(Json.Serializer.Serialize(Map("ok", true, "bundle", "installed", "message", "Installed the video tools in the desktop profile of DeepSeek Harness.", "log", null)));
+            var lastLine = "ERR_PNPM_LINKING_FAILED  EPERM: operation not permitted, symlink '" + noSpaces + "' -> 'C:\\Users\\firstname.lastname\\.dsh\\profiles\\desktop\\node_modules\\@local\\dshproxy-video'";
+            var log = "C:\\Users\\firstname.lastname\\AppData\\Local\\DSHProxy\\logs\\video-tools-install-2026-11-22T22-41-07.log";
+            var notDone = Failed(Json.Serializer.Serialize(Map("ok", false, "bundle", "not-installed", "message", lastLine, "log", log)) + "\n", "");
+
+            RunFlow(new Flow
+            {
+                Name = "first-time-harness-closed", Status = Said(firstTime), Applied = written, Installed = done, After = Said(installed), PressAgain = true,
+                Confirm = "dialog-setup-confirm-first-time-closed", ConfirmSays = new[] { "is installed and has been opened once", "The video tools will be installed in DeepSeek Harness." },
+                End = "dialog-setup-result-installed", EndSays = new[] { "default: updated", "The video tools are installed in DeepSeek Harness.", "Installed the video tools in the desktop profile", "Start DeepSeek Harness again." },
+                Ran = StatusCommand + "; " + ApplyCommand + "; " + InstallCommand + "; " + StatusCommand, RowAfter = "Yes"
+            });
+            RunFlow(new Flow
+            {
+                Name = "first-time-harness-open-then-quit", Status = Said(firstTimeOpen), Applied = written, Installed = done, After = Said(installed), Open = true,
+                Confirm = "dialog-setup-confirm-first-time-open", ConfirmSays = new[] { "The video tools will be installed after you quit DeepSeek Harness.", "DeepSeek Harness is open now.", "you can skip that step" },
+                Wait = "dialog-setup-wait",
+                End = "dialog-setup-result-installed-after-quit", EndSays = new[] { "The video tools are installed in DeepSeek Harness.", "Start DeepSeek Harness again." },
+                Ran = StatusCommand + "; " + ApplyCommand + "; " + InstallCommand + "; " + StatusCommand, RowAfter = "Yes"
+            });
+            RunFlow(new Flow
+            {
+                Name = "harness-open-and-skipped", Status = Said(StatusLine("found", true, true, "other-folder", noSpaces, false, "DeepSeek Harness is running.")), Applied = written, After = Said(StatusLine("found", true, true, "other-folder", noSpaces, false, "DeepSeek Harness is running.")), Open = true, Skip = true,
+                Confirm = "dialog-setup-confirm-other-folder-open", ConfirmSays = new[] { "The video tools will be pointed at this DSHProxy folder after you quit DeepSeek Harness.", "from another folder", noSpaces },
+                Wait = "dialog-setup-wait-skipped",
+                End = "dialog-setup-result-skipped", EndSays = new[] { "The video tools were not installed, because you skipped that step.", "quit DeepSeek Harness and press Apply to DeepSeek Harness again" },
+                Ran = StatusCommand + "; " + ApplyCommand + "; " + StatusCommand, RowAfter = "Yes \u00B7 from another folder"
+            });
+            RunFlow(new Flow
+            {
+                Name = "second-apply-changes-nothing", Status = Said(installedOpen), Applied = unchanged, After = Said(installedOpen), Open = true,
+                Confirm = "dialog-setup-confirm-installed", ConfirmSays = new[] { "The video tools are already installed." },
+                End = "dialog-setup-result-already-installed", EndSays = new[] { "default: already up to date", "The video tools were already installed. Nothing was changed for them." },
+                Ran = StatusCommand + "; " + ApplyCommand + "; " + StatusCommand, RowAfter = "Yes"
+            });
+            RunFlow(new Flow
+            {
+                Name = "cancel-changes-nothing", Status = Said(neverOpened), Cancel = true,
+                Confirm = "dialog-setup-confirm-never-opened", ConfirmSays = new[] { "has not been opened yet", "The video tools cannot be installed.", NeverOpenedReason, "Open DeepSeek Harness once, quit it, then press Apply to DeepSeek Harness again." },
+                Ran = StatusCommand
+            });
+            RunFlow(new Flow
+            {
+                Name = "install-fails", Status = Said(StatusLine("found", false, true, "not-installed", null, true, "", noSpaces)), Applied = written, Installed = notDone, After = Said(StatusLine("found", false, true, "not-installed", null, true, "", noSpaces)),
+                End = "dialog-setup-result-install-failed", EndButton = "Copy folder path", EndSays = new[] { "The video tools were not installed.", lastLine, log, "Plugins > Add plugin", noSpaces },
+                Ran = StatusCommand + "; " + ApplyCommand + "; " + InstallCommand + "; " + StatusCommand, RowAfter = "No"
+            });
+            RunFlow(new Flow
+            {
+                Name = "routes-fail-and-nothing-is-installed", Status = Said(firstTime), Applied = Failed("", "DSHProxy: The profile default could not be backed up: access to C:\\Users\\firstname.lastname\\.dsh\\profiles\\default\\settings.json is denied.\n"),
+                End = "dialog-setup-routes-failed", EndSays = new[] { "could not be backed up" },
+                Ran = StatusCommand + "; " + ApplyCommand
+            });
+            RunFlow(new Flow
+            {
+                Name = "could-not-be-read", Status = Failed("", "Usage: dshproxy dsh apply|verify|status|remove [--dry-run]\n"), Applied = written, After = Failed("", "Usage: dshproxy dsh apply|verify|status|remove [--dry-run]\n"),
+                Confirm = "dialog-setup-confirm-could-not-be-read", ConfirmSays = new[] { "DeepSeek Harness could not be checked.", "The video tools could not be checked, so they are left as they are." },
+                End = "dialog-setup-result-not-checked", EndSays = new[] { "default: updated", "The video tools could not be checked. Nothing was installed." },
+                Ran = StatusCommand + "; " + ApplyCommand + "; " + StatusCommand, RowAfter = "Could not be read"
+            });
+            // Nothing stands in for the command line from here on.
+            Ui(() => form.UseSetupCommands(null));
+            lock (ran) ran.Clear();
+
+            // The button in a preview window, which this window is: the
+            // checklist with a sample, and no command behind it.
+            Modal("dialog-setup-confirm-preview-window", () => Do("ApplyToHarness"), null, (top, fails) => Checklist(top, fails, new[] { "The video tools will be installed in DeepSeek Harness." }));
+
+            // The states the flows above did not pass through, shown as the app shows them.
+            Action<string, string, string[]> confirm = (name, line, says) =>
+                Modal("dialog-setup-confirm-" + name, () => SetupDialog.Confirm(form, HarnessSetup.Parse(line)), null, (top, fails) => Checklist(top, fails, says));
+            confirm("switched-off", StatusLine("found", true, true, "switched-off", null, false, ""), new[] { "switched off in DeepSeek Harness", "They are left off." });
+            confirm("folder-missing", StatusLine("found", false, true, "folder-missing", spaces, true, ""), new[] { "The video tools will be pointed at this DSHProxy folder.", "from a folder that is gone", spaces });
+            confirm("not-found", StatusLine("not-found", false, false, "not-installed", null, false, NotFoundReason), new[] { "DeepSeek Harness was not found on this computer.", "The video tools cannot be installed.", NotFoundReason });
+            var unsafePath = "The folder of the video tools has a character in its name that cannot be passed to DeepSeek Harness.";
+            confirm("cannot-other-reason", StatusLine("found", false, true, "not-installed", null, false, unsafePath, spaces), new[] { "The video tools cannot be installed.", unsafePath });
+            Action<string, string, HarnessSetup.Outcome, string[], string> result = (name, line, outcome, says, button) =>
+                Modal("dialog-setup-result-" + name, () => { var state = HarnessSetup.Parse(line); SetupDialog.Show(form, state.Summary(routes, outcome, null, state.Folder)); }, null,
+                    (top, fails) => { Says(top, fails, says); if (button != null) Has(top, fails, button); Has(top, fails, "OK"); });
+            result("switched-off", StatusLine("found", true, true, "switched-off", null, false, ""), HarnessSetup.Outcome.NothingToInstall, new[] { "They were left off." }, null);
+            result("never-opened", neverOpened, HarnessSetup.Outcome.NothingToInstall, new[] { "The video tools were not installed.", NeverOpenedReason, "Open DeepSeek Harness once, quit it, then press Apply to DeepSeek Harness again." }, null);
+            result("cannot-other-reason", StatusLine("found", false, true, "not-installed", null, false, unsafePath, spaces), HarnessSetup.Outcome.NothingToInstall, new[] { unsafePath, "Plugins > Add plugin", spaces }, "Copy folder path");
+        }
+
+        private static void Modal(string name, Action show, Action<Form> close, Action<Form, List<string>> check = null)
         {
             if (only != null && name.IndexOf(only, StringComparison.Ordinal) < 0) return;
             var before = Ui(() => { var open = new List<Form>(); foreach (Form f in Application.OpenForms) open.Add(f); return open; });
@@ -453,7 +937,9 @@ namespace DSHProxy
             if (dialog == null) { results.WriteLine(name + ": FAIL the dialog did not open"); return; }
             Settle();
             Thread.Sleep(250);
+            setupCheck = check;
             Capture(name + "-" + Ui(() => dialog.Width) + "x" + Ui(() => dialog.Height), dialog, Size.Empty);
+            setupCheck = null;
             Ui(() =>
             {
                 if (close != null) { close(dialog); return; }
@@ -499,6 +985,7 @@ namespace DSHProxy
                 if (!wanted.IsEmpty && top.Size != wanted) fails["margins"].Add("the window is " + top.Width + "x" + top.Height + ", not the " + wanted.Width + "x" + wanted.Height + " asked for");
                 if (top == form) facts += Margins(fails["margins"]);
                 if (top == form) HeaderApply(fails["apply"]);
+                if (setupCheck != null) setupCheck(top, fails["setup"]);
                 Walk(top, top, fails, notes);
             });
             // The picture is what the desktop compositor holds of the window,
