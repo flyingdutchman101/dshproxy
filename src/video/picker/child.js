@@ -48,6 +48,14 @@ const REASONS = ['sign-in', 'refused', 'bad-request', 'over-cap', 'no-key'];
 // The environment of the child: these names and no others, each copied as it
 // is when it is set. See environment().
 const ENVIRONMENT = Object.freeze(['SystemRoot', 'LOCALAPPDATA', 'APPDATA', 'TEMP', 'TMP', 'USERPROFILE', 'DSHPROXY_HOME']);
+// The same on macOS (docs/work/0014-macos-port, stage B):
+//   HOME               the default data folder, and where the Krea helper keeps
+//                      its sign-in (~/Library/Application Support/DSHProxy).
+//   TMPDIR             the temporary folder.
+//   DSHPROXY_HOME      the data folder: saved video keys and their master key.
+//   DSHPROXY_KEYCHAIN  the keychain that wraps the master key, when not the
+//                      login Keychain (src/keywrap-darwin.js).
+const MAC_ENVIRONMENT = Object.freeze(['HOME', 'TMPDIR', 'DSHPROXY_HOME', 'DSHPROXY_KEYCHAIN']);
 const KEY_VARIABLES = Object.freeze(['VIDEOROUTER_API_KEY', 'KOVAPI_API_KEY', 'CALLIRRA_API_KEY']);
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -405,9 +413,10 @@ function argsFor(kind, entry, { prompt, cap, jobId } = {}) {
 //   APPDATA       nothing in DSHProxy reads it; it is part of the user's
 //                 profile as Windows programs expect it, and is no secret.
 //   DSHPROXY_HOME the data folder: saved video keys and their master key.
-function environment(source, request, home) {
+function environment(source, request, home, platform = process.platform) {
   const given = source !== null && typeof source === 'object' ? source : {};
-  const names = record(request) && Array.isArray(request.args) && request.args[2] !== WORKSPACE_ROUTE ? [...ENVIRONMENT, ...KEY_VARIABLES] : ENVIRONMENT;
+  const listed = platform === 'darwin' ? MAC_ENVIRONMENT : ENVIRONMENT;
+  const names = record(request) && Array.isArray(request.args) && request.args[2] !== WORKSPACE_ROUTE ? [...listed, ...KEY_VARIABLES] : listed;
   const env = {};
   for (const name of names) if (typeof given[name] === 'string' && given[name]) env[name] = given[name];
   if (typeof home === 'string' && home) env.DSHPROXY_HOME = home;
@@ -461,7 +470,7 @@ function checkedLine(request, text) {
 // ignored for it, and when `signal` aborts it is left to finish and to write
 // its outcome file, which is where its result is then found. A request whose
 // signal has already aborted starts nothing.
-function spawnChild(request, { execPath = process.execPath, script = __filename, timeoutMs, signal, home, env = process.env, spawn = childProcess.spawn } = {}) {
+function spawnChild(request, { execPath = process.execPath, script = __filename, timeoutMs, signal, home, env = process.env, spawn = childProcess.spawn, platform = process.platform } = {}) {
   return new Promise((resolve) => {
     let line;
     try {
@@ -477,7 +486,7 @@ function spawnChild(request, { execPath = process.execPath, script = __filename,
     try {
       // The request, and the prompt inside it, travel on standard input only.
       // Standard error is not read: nothing a process below wrote is passed on.
-      child = spawn(execPath, [script], { env: environment(env, request, home), stdio: ['pipe', 'pipe', 'ignore'], shell: false, windowsHide: true });
+      child = spawn(execPath, [script], { env: environment(env, request, home, platform), stdio: ['pipe', 'pipe', 'ignore'], shell: false, windowsHide: true });
     } catch {
       return resolve({ ok: false, started: false, why: 'spawn' });
     }
@@ -551,4 +560,4 @@ function spawnChild(request, { execPath = process.execPath, script = __filename,
   });
 }
 
-module.exports = { main, start, outcomeOf, reasonOf, argsFor, spawnChild, parseRequest, environment, ENVIRONMENT, KEY_VARIABLES, MAX_REQUEST_BYTES };
+module.exports = { main, start, outcomeOf, reasonOf, argsFor, spawnChild, parseRequest, environment, ENVIRONMENT, MAC_ENVIRONMENT, KEY_VARIABLES, MAX_REQUEST_BYTES };

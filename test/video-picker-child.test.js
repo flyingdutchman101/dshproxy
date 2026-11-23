@@ -633,17 +633,17 @@ test('the child\'s environment is the fixed list, the provider keys only for an 
   assert.deepEqual(child.KEY_VARIABLES, KEYS);
   const kreaRequest = { kind: 'status', args: ['status', 'seedance-2.5', 'krea', 'job-7'] };
   const apiRequest = { kind: 'status', args: ['status', 'seedance-2.5', 'kovapi', 'job-7'] };
-  const forKrea = child.environment(parentEnv(), kreaRequest);
+  const forKrea = child.environment(parentEnv(), kreaRequest, undefined, 'win32');
   assert.deepEqual(Object.keys(forKrea), LISTED);
   for (const name of LISTED) assert.equal(forKrea[name], `value-of-${name}`);
-  const forApi = child.environment(parentEnv(), apiRequest);
+  const forApi = child.environment(parentEnv(), apiRequest, undefined, 'win32');
   assert.deepEqual(Object.keys(forApi), [...LISTED, ...KEYS]);
   for (const name of KEYS) assert.equal(forApi[name], `synthetic-${name}`);
   // Only what is set is copied; nothing is invented.
-  assert.deepEqual(child.environment({ SystemRoot: 'C:\\Windows', KOVAPI_API_KEY: '', CALLIRRA_API_KEY: 'k', TEMP: undefined, PICKER_EDGE_PLANTED: SECRET }, apiRequest), { SystemRoot: 'C:\\Windows', CALLIRRA_API_KEY: 'k' });
+  assert.deepEqual(child.environment({ SystemRoot: 'C:\\Windows', KOVAPI_API_KEY: '', CALLIRRA_API_KEY: 'k', TEMP: undefined, PICKER_EDGE_PLANTED: SECRET }, apiRequest, undefined, 'win32'), { SystemRoot: 'C:\\Windows', CALLIRRA_API_KEY: 'k' });
   // The data folder of the gateway wins over the one in the environment.
-  assert.equal(child.environment(parentEnv(), kreaRequest, 'D:\\gateway-home').DSHPROXY_HOME, 'D:\\gateway-home');
-  assert.equal(child.environment({}, kreaRequest, 'D:\\gateway-home').DSHPROXY_HOME, 'D:\\gateway-home');
+  assert.equal(child.environment(parentEnv(), kreaRequest, 'D:\\gateway-home', 'win32').DSHPROXY_HOME, 'D:\\gateway-home');
+  assert.equal(child.environment({}, kreaRequest, 'D:\\gateway-home', 'win32').DSHPROXY_HOME, 'D:\\gateway-home');
   assert.equal(JSON.stringify([forKrea, forApi]).includes('PLANTED'), false);
 });
 
@@ -670,7 +670,7 @@ const statusRequest = { kind: 'status', args: ['status', 'seedance-2.5', 'kovapi
 
 test('the child is started without a shell, hidden, with the fixed environment, and its request is written once as one line', async () => {
   const { spawn, calls } = fakeSpawn();
-  const waiting = child.spawnChild(statusRequest, { execPath: 'C:\\node\\node.exe', env: parentEnv(), home: 'D:\\gateway-home', spawn });
+  const waiting = child.spawnChild(statusRequest, { execPath: 'C:\\node\\node.exe', env: parentEnv(), home: 'D:\\gateway-home', spawn, platform: 'win32' });
   assert.equal(calls.length, 1);
   const { command, args, options, proc } = calls[0];
   assert.equal(command, 'C:\\node\\node.exe');
@@ -824,8 +824,12 @@ child.start({ run: async (args, out, options) => {
   out(JSON.stringify({ model: args[1], route: args[2], id: args[3], status: 'processing', note: ${JSON.stringify(SECRET)} }, null, 2));
 } }).then((code) => { process.exitCode = code; });
 `);
-  const env = parentEnv({ TEMP: home, TMP: home, USERPROFILE: home, LOCALAPPDATA: home, APPDATA: home, DSHPROXY_HOME: 'C:\\not-this-one' });
-  if (process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot; else delete env.SystemRoot;
+  // The names of this system: the Windows list, or on macOS the macOS one.
+  const LISTED_HERE = process.platform === 'darwin' ? MAC_LISTED : LISTED;
+  const env = process.platform === 'darwin'
+    ? macParentEnv({ HOME: home, TMPDIR: home, DSHPROXY_HOME: '/not-this-one', DSHPROXY_KEYCHAIN: path.join(home, 'none.keychain-db') })
+    : parentEnv({ TEMP: home, TMP: home, USERPROFILE: home, LOCALAPPDATA: home, APPDATA: home, DSHPROXY_HOME: 'C:\\not-this-one' });
+  if (process.platform !== 'darwin') { if (process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot; else delete env.SystemRoot; }
   const answer = await child.spawnChild(statusRequest, { execPath: process.execPath, script: stub, env, home, timeoutMs: 60000 });
   assert.deepEqual(answer, { ok: true, started: true, result: { v: 1, kind: 'status', ok: true, jobId: 'job-7', status: 'processing' } });
   const seen = JSON.parse(fs.readFileSync(path.join(home, 'seen.json'), 'utf8'));
@@ -834,11 +838,11 @@ child.start({ run: async (args, out, options) => {
   assert.deepEqual(seen.argv, [], 'nothing of the request is on the command line');
   // Windows itself adds a few names to every process started by Node; none of them is a secret.
   const ADDED_BY_THE_SYSTEM = ['HOMEDRIVE', 'HOMEPATH', 'LOGONSERVER', 'PATH', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP', 'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'WINDIR', '__CF_USER_TEXT_ENCODING'];
-  const allowed = new Set([...LISTED, ...KEYS, ...ADDED_BY_THE_SYSTEM].map((name) => name.toUpperCase()));
+  const allowed = new Set([...LISTED_HERE, ...KEYS, ...ADDED_BY_THE_SYSTEM].map((name) => name.toUpperCase()));
   const names = Object.keys(seen.env);
   for (const name of names) assert.ok(allowed.has(name.toUpperCase()), `the child was given ${name}`);
   const upper = names.map((name) => name.toUpperCase());
-  for (const name of [...LISTED, ...KEYS].filter((listed) => env[listed] !== undefined)) assert.ok(upper.includes(name.toUpperCase()), `the child was not given ${name}`);
+  for (const name of [...LISTED_HERE, ...KEYS].filter((listed) => env[listed] !== undefined)) assert.ok(upper.includes(name.toUpperCase()), `the child was not given ${name}`);
   for (const name of ['NODE_OPTIONS', 'NODE_PATH', 'NODE_EXTRA_CA_CERTS', 'HTTPS_PROXY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'DSHPROXY_API_KEY', 'DSH_HOME', 'KREA_API_TOKEN', 'PICKER_EDGE_PLANTED', 'NODE_TEST_CONTEXT']) {
     assert.equal(upper.includes(name), false, name);
   }
@@ -855,4 +859,35 @@ test('a real process that exits without a line, or cannot be found, is a failure
   const env = process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {};
   assert.deepEqual(await child.spawnChild(statusRequest, { script: silent, env, home, timeoutMs: 60000 }), { ok: false, started: true, why: 'exit' });
   assert.deepEqual(await child.spawnChild(statusRequest, { execPath: path.join(home, 'no-such-node.exe'), script: silent, env, home, timeoutMs: 60000 }), { ok: false, started: false, why: 'spawn' });
+});
+
+// ------------------------------- macOS (0014, stage B) -------------------------------
+
+const MAC_LISTED = ['HOME', 'TMPDIR', 'DSHPROXY_HOME', 'DSHPROXY_KEYCHAIN'];
+const macParentEnv = (extra = {}) => ({
+  ...Object.fromEntries(MAC_LISTED.map((name) => [name, `value-of-${name}`])),
+  ...Object.fromEntries(KEYS.map((name) => [name, `synthetic-${name}`])),
+  PATH: '/usr/bin:/bin', NODE_OPTIONS: '--no-warnings', SHELL: '/bin/zsh', USER: 'someone', SSH_AUTH_SOCK: '/tmp/agent', ANTHROPIC_API_KEY: SECRET, DSH_HOME: '/Users/someone/.dsh', PICKER_EDGE_PLANTED: SECRET, NODE_TEST_CONTEXT: 'child-v8',
+  ...extra,
+});
+
+test('on macOS the child\'s environment is the macOS list, the provider keys only for an API route, and the data folder it is told', () => {
+  assert.deepEqual(child.MAC_ENVIRONMENT, MAC_LISTED);
+  const kreaRequest = { kind: 'status', args: ['status', 'seedance-2.5', 'krea', 'job-7'] };
+  const apiRequest = { kind: 'status', args: ['status', 'seedance-2.5', 'kovapi', 'job-7'] };
+  const forKrea = child.environment(macParentEnv(), kreaRequest, undefined, 'darwin');
+  assert.deepEqual(Object.keys(forKrea), MAC_LISTED);
+  const forApi = child.environment(macParentEnv(), apiRequest, '/Users/someone/.dshproxy', 'darwin');
+  assert.deepEqual(Object.keys(forApi), [...MAC_LISTED, ...KEYS]);
+  assert.equal(forApi.DSHPROXY_HOME, '/Users/someone/.dshproxy');
+  assert.equal(JSON.stringify([forKrea, forApi]).includes('PLANTED'), false);
+  // The Windows names mean nothing here and are not passed.
+  assert.deepEqual(child.environment({ SystemRoot: 'C:\\Windows', LOCALAPPDATA: 'x', HOME: '/Users/someone' }, kreaRequest, undefined, 'darwin'), { HOME: '/Users/someone' });
+});
+
+test('the Krea helper is started with the environment of its system and nothing else', () => {
+  const workspace = require('../src/video/workspace');
+  const parent = { ...macParentEnv(), SystemRoot: 'C:\\Windows', LOCALAPPDATA: 'C:\\Users\\someone\\AppData\\Local', TEMP: 'C:\\Temp', TMP: 'C:\\Temp', USERPROFILE: 'C:\\Users\\someone' };
+  assert.deepEqual(workspace.helperEnvironment(parent, 'darwin'), { HOME: 'value-of-HOME', TMPDIR: 'value-of-TMPDIR', DSHPROXY_KEYCHAIN: 'value-of-DSHPROXY_KEYCHAIN' });
+  assert.deepEqual(workspace.helperEnvironment(parent, 'win32'), { SystemRoot: 'C:\\Windows', LOCALAPPDATA: 'C:\\Users\\someone\\AppData\\Local', TEMP: 'C:\\Temp', TMP: 'C:\\Temp', USERPROFILE: 'C:\\Users\\someone' });
 });
