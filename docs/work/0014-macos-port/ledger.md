@@ -22,10 +22,13 @@
 | B2 the children's environments | done on the Mac; CI pending | 23 Nov. `MAC_ENVIRONMENT` (`HOME, TMPDIR, DSHPROXY_HOME, DSHPROXY_KEYCHAIN`) for the picker's child, `helperEnvironment` (`HOME, TMPDIR, DSHPROXY_KEYCHAIN`) for the Krea helper; the Windows lists unchanged. Red first: 2 new tests. The Windows-string tests of the child now name `'win32'` (assertions unchanged); the real-process test uses the list of its system. |
 | B3 the video gate goes | done on the Mac; CI pending | 23 Nov. `video` removed from `src/not-yet.js`, the CLI, the gateway mount and `app.videoModels`; the 7 macOS skips naming stage B removed; `test/not-yet-darwin.test.js` keeps the two plugin-install cases. One test expected "refused" off Windows (the store used to refuse); on macOS it now says "sign-in required", as on Windows. Suite on the Mac: 960, 935 pass, 0 fail, 25 skipped (stage C, Windows-only and CI-only tests). |
 | B1 Krea sign-in store on macOS | done on the Mac; CI pending | 23 Nov. `macStore` in `src/krea-helper/oauth.js` (the store's body moved unchanged into `sessionStore`, which `windowsStore` calls as before); `bin/dshproxy-krea.js` picks the store by system; the `krea` not-yet gate removed. Red first: `test/krea-store-darwin.test.js` (3, "macStore is not a function") and the macOS twin of the real-helper status test (exit 1, the gate). The six renewal-process tests now run against the macOS store on a Mac (their Windows run is the same store as before) and pass. Suite on the Mac: 967, 935 pass, 0 fail, 32 skipped. |
-| Stage C plugin install: facts on the Mac, plan, build | open | outline in the spec |
-| Stage D app: inventory, decision, prototype, build | open | outline in the spec; decision 4 is the user's |
+| B CI | done | run on `3cc9bda`: all six jobs green; Windows 931 pass, 0 fail. |
+| B4 independent review; BM1 to BM4 by hand | review running; by hand needs the user | |
+| Stage C plugin install: facts, criteria, plan | written, shown to the user | `stage-c.md`, 23 Nov; facts `research/facts.md` section 7. Building waits until the user has seen it. |
+| Stage D app: inventory | done | `research/app-inventory.md` (subagent, read-only, every item with file:line): 11 page surfaces, 33 buttons, 7 dialogs, 15 of 18 control routes used. Found: the README's 10 % low-limit notification does not exist in the code. |
+| Stage D: prototype, decision | prototype being built | option (a), local web page + menu-bar item, in `prototype/`; decision 4 is the user's |
 
-Next step: stage A's automatic criteria C1 to C13 are met (evidence per slice above); M1 to M4 wait for the user. Stage B: criteria and plan in `stage-b.md`, shown to the user; building B1 next. Stage D: inventory of the Windows app being written (`research/app-inventory.md`).
+Next step: stage A's automatic criteria C1 to C13 are met; M1 to M4 wait for the user. Stage B is built (B1 to B3, CI green); its review is running; BM1 to BM4 wait for the user. Stage C: plan written, build after the user has seen it. Stage D: prototype being built, then the user's decision.
 
 ## Rulings
 
