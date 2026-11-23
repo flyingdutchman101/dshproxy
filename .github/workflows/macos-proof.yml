@@ -1,14 +1,14 @@
-# Throwaway, for docs/work/0013-macos-port: shows on a real Mac what the spec
+# Throwaway, for docs/work/0014-macos-port: shows on a real Mac what the spec
 # assumes about the Keychain, the backend and file modes. Runs only for pushes
 # to the macos-port branch that touch the proof. Removed before that branch is
 # merged.
-name: macOS proof (0013, throwaway)
+name: macOS proof (0014, throwaway)
 
 on:
   push:
     branches: [macos-port]
     paths:
-      - docs/work/0013-macos-port/spike/**
+      - docs/work/0014-macos-port/spike/**
       - .github/workflows/macos-proof.yml
 
 permissions:
@@ -32,4 +32,4 @@ jobs:
         with:
           node-version: 22.x
       - run: npm ci --ignore-scripts --force
-      - run: node docs/work/0013-macos-port/spike/proof.js
+      - run: node docs/work/0014-macos-port/spike/proof.js

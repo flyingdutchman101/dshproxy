@@ -1,4 +1,4 @@
-# 0013 — DSHProxy on macOS
+# 0014 — DSHProxy on macOS
 
 Status: goal set by the user on 23 Nov; stage A specified and reviewed; stages B to D outlined. The document as a whole has not been read and approved by the user. Written 2026-11-23 on Windows; the work continues on the user's Mac.
 
@@ -127,7 +127,7 @@ Proven before any production code, 23 Nov, with `spike/proof.js` on two GitHub M
 - Did not hold as first written: a read of a locked keychain does not end with an error. It waits for a dialog, on a machine with nobody at it too, and has to be ended. Design 1 and C9 are written to that.
 - The backend: both archives match their SHA-256, unpack with `/usr/bin/tar`, hold `cli-proxy-api`, start with the gateway's own configuration, answer on `/v1/models` in half a second, and end on SIGTERM. Both processors.
 
-The proof can be repeated on any Mac: `node docs/work/0013-macos-port/spike/proof.js`. Off GitHub it touches only a keychain file it creates in the temporary folder.
+The proof can be repeated on any Mac: `node docs/work/0014-macos-port/spike/proof.js`. Off GitHub it touches only a keychain file it creates in the temporary folder.
 
 ## What the Keychain does and does not protect
 
