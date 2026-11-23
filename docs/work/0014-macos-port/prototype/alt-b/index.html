@@ -7,7 +7,7 @@
 <title>DeepSeekProxy (prototype)</title>
 <!-- Prototype of option (a): the DSHProxy window as a local web page served on 127.0.0.1.
      Self-contained: inline CSS and JS, no external requests (see the CSP above), synthetic in-memory data only.
-     Logos are read from ../logos/ (LobeHub Icons, MIT; notice in ../logos/SOURCE.md); a lettered badge replaces any that is missing. -->
+     Logos are read from logos/ (LobeHub Icons, MIT; notice in logos/SOURCE.md); a lettered badge replaces any that is missing. -->
 <style>
 :root{
   --page:#02101A; --card:#0A2230; --input:#061824; --log:#04121C;
@@ -247,11 +247,11 @@ dialog.mb::backdrop{background:rgba(0,0,0,.42)}
 .mb-sep{height:1px;background:rgba(255,255,255,.14);margin:5px 8px}
 .mb-status{display:flex;align-items:center;gap:6px;padding:3px 10px 3px 6px;color:#A6AAB0;font-size:12px}
 .mb-status .tick{width:16px;text-align:center}
-.mb-caption{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:min(460px,calc(100vw - 40px));padding:16px 18px;border-radius:16px;background:rgba(10,34,48,.92);border:1px dashed #a07c3c;color:#F0DCB4;font-size:13px}
+.mb-caption{position:absolute;left:20px;bottom:20px;max-width:min(460px,calc(100vw - 40px));padding:16px 18px;border-radius:16px;background:rgba(10,34,48,.92);border:1px dashed #a07c3c;color:#F0DCB4;font-size:13px}
 .mb-caption p{margin:0 0 10px}
 
 /* toast + quit */
-.toast{position:fixed;left:50%;bottom:44px;transform:translateX(-50%);z-index:20;padding:9px 16px;border-radius:12px;background:rgba(10,34,48,.95);border:1px solid rgba(255,255,255,.2);box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:min(620px,calc(100vw - 40px));font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast{position:fixed;left:50%;bottom:4px;transform:translateX(-50%);z-index:20;padding:9px 16px;border-radius:12px;background:rgba(10,34,48,.95);border:1px solid rgba(255,255,255,.2);box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:min(620px,calc(100vw - 40px));font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.show{opacity:1}
 .quit{margin:auto;max-width:520px;text-align:center;padding:28px}
 .quit p{color:var(--muted)}
@@ -273,6 +273,8 @@ dialog.mb::backdrop{background:rgba(0,0,0,.42)}
   .page-body{padding:6px 18px 10px}
   .page-actions{padding:8px 18px 10px}
   .update{padding:6px 10px 6px 16px}
+  .legend{display:none}
+  .proto-bar{min-height:28px;padding:2px 10px}
 }
 @media (max-width:1060px){ .col-service{display:none} }
 @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
@@ -282,17 +284,17 @@ dialog.mb::backdrop{background:rgba(0,0,0,.42)}
 <canvas id="stars" aria-hidden="true"></canvas>
 
 <div class="proto-bar" role="region" aria-label="Prototype controls">
-  <span class="proto-tag">Prototype · synthetic data</span>
+  <span class="proto-tag">Prototype</span>
   <button type="button" id="mbOpen" aria-haspopup="dialog">Menu bar (mock)</button>
-  <label for="scenario">Scenario</label>
+  <label for="scenario" class="sr">Scenario</label>
   <select id="scenario">
-    <option value="sample">Sample data, gateway running</option>
-    <option value="empty">Empty: no accounts, no keys</option>
+    <option value="sample">Sample data (synthetic)</option>
+    <option value="empty">Empty: no accounts or keys</option>
     <option value="stopped">Gateway stopped</option>
     <option value="notanswering">Gateway not answering</option>
     <option value="starting">Gateway starting</option>
   </select>
-  <label><input type="checkbox" id="pUpdate" checked> Backend update available</label>
+  <label><input type="checkbox" id="pUpdate" checked> Update available</label>
   <label><input type="checkbox" id="pInflight" checked> 2 requests in flight</label>
 </div>
 
@@ -308,7 +310,7 @@ dialog.mb::backdrop{background:rgba(0,0,0,.42)}
    Everything below is synthetic and in memory. No request leaves the page.
    ===================================================================== */
 
-const LOGO_DIR = '../logos/';
+const LOGO_DIR = 'logos/';
 const ORIGIN = 'http://127.0.0.1:8417';
 const HOME = '~/.dshproxy';
 const PROGRAM = '~/DSHProxy';
@@ -399,7 +401,7 @@ function badge(text, size) {
 let toastTimer;
 function toast(text) {
   const t = $('#toast'); t.textContent = text; t.classList.add('show');
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3800);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
