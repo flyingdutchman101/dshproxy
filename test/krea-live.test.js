@@ -1,4 +1,5 @@
 'use strict';
+require("./support/keychain"); // on macOS: a throwaway keychain for this file and its children, never a login Keychain
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {run}=require(process.env.KREA_TEST_HELPER || '../src/krea-helper/mcp');

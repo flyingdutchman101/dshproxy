@@ -1,4 +1,5 @@
 'use strict';
+require("./support/keychain"); // on macOS: a throwaway keychain for this file and its children, never a login Keychain
 // Entries that can be switched on: one model at one resolution on one route.
 // They live in video-settings.json beside the per-model settings. Every test
 // works in its own throwaway folder and nothing here uses a network.

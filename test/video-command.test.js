@@ -1,3 +1,4 @@
+require("./support/keychain"); // on macOS: a throwaway keychain for this file and its children, never a login Keychain
 const test = require('node:test');
 const assert = require('node:assert/strict');
 // A command that is given no data folder uses the default one. For this file

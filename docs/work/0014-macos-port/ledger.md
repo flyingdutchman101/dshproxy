@@ -10,7 +10,7 @@
 | Spec read and approved by the user | open | The user set the goal and said to push and continue on the Mac; the document itself was not confirmed. Stages B to D are outlines and were not reviewed. |
 | Plan review, stage A | done | 23 Nov on the Mac, one fresh-context reviewer subagent (the `reviewer` role could not be started: tool error; same model family as the author, so not cross-family): 2 Blocker, 9 Major, 4 Nit. Plan revised, spec C3, C9, C10, C12 and design 4 amended; below. |
 | A0 baseline on the Mac | done | 23 Nov, user's Mac (arm64, macOS 26.6.2, Node 24.19.0). Proof: 17 passed, 1 failed (K7 after unlocking: a pending Keychain dialog blocks the next read; new fact). Tests: 914, 877 pass, 35 fail, 2 skipped; every failure explained in `research/facts.md` section 6. `package.json` and the lock allow `darwin`. |
-| A1 key wrapper | open | |
+| A1 key wrapper | done on the Mac; Windows CI pending | 23 Nov. `src/keywrap-darwin.js`; `src/secrets.js` takes it on `darwin` (DPAPI code untouched). Red first: 12 of 13 new tests failed with "Windows could not protect a new key" before `secrets.js` was wired; green after. Full suite on the Mac: 929, 901 pass, 25 fail (all A2, A3, A5/B/C), 3 skipped; the 10 key-wrapper failures of A0 pass. Locked-keychain test (C9 through the CLI) not run here: CI only, from A6. |
 | A2 private files | open | |
 | A3 backend on a Mac | open | |
 | A4 updates | open | |
@@ -21,7 +21,7 @@
 | Stage C plugin install: facts on the Mac, plan, build | open | outline in the spec |
 | Stage D app: inventory, decision, prototype, build | open | outline in the spec; decision 4 is the user's |
 
-Next step: slice A1 (`plan.md`, revised).
+Next step: slice A2 (`plan.md`, revised).
 
 ## Rulings
 

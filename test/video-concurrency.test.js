@@ -1,4 +1,5 @@
 'use strict';
+require("./support/keychain"); // on macOS: a throwaway keychain for this file and its children, never a login Keychain
 // Changes to video-keys.json and video-settings.json from several commands at
 // once: none may be lost, and none may be reported as saved when it was not.
 const { test, after } = require('node:test');
