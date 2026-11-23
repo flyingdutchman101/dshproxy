@@ -13,170 +13,11 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const PICKER = path.join(__dirname, '..', 'src', 'video', 'picker');
-const STORE = path.join(PICKER, 'store.js');
-const { create } = require(PICKER);
-const store = require(STORE);
+const {
+  PICKER, STORE, create, store, ENTRIES, ENTRY, OTHER, PROMPT, SECRET, HOUR, SYSTEM, TOOLS, REMINDER, sampled, titleRequest, compactionRequest,
+  generator, makeWorld, world, claimsText, recordsOf, ask, request, quoted, confirming, submitsOf, unknownText, withFs
+} = require('./video-picker-world');
 const { classify } = require(path.join(PICKER, 'classify.js'));
-
-// ------------------------------- the fakes -------------------------------
-
-const ENTRIES = {
-  'seedance-2.5/720p/krea': { model: 'seedance-2.5', resolution: '720p', route: 'krea', label: 'Seedance 2.5 - 720p - Krea', unit: 'krea_units' },
-  'wan-3.0/1080p/krea': { model: 'wan-3.0', resolution: '1080p', route: 'krea', label: 'Wan 3.0 - 1080p - Krea', unit: 'krea_units' }
-};
-const ENTRY = 'seedance-2.5/720p/krea';
-const OTHER = 'wan-3.0/1080p/krea';
-const PROMPT = 'A red ball rolls slowly across a wooden table';
-const SECRET = 'synthetic-SECRET-41c7';
-const HOUR = 3600000;
-
-// A small fixed-seed generator: the same sequences on every run.
-function generator(seed) {
-  let a = seed >>> 0;
-  const next = () => {
-    a = (a + 0x6D2B79F5) >>> 0;
-    let x = Math.imul(a ^ (a >>> 15), 1 | a);
-    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
-    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
-  };
-  return { next, chance: (p) => next() < p, int: (below) => Math.floor(next() * below), pick: (list) => list[Math.floor(next() * list.length)] };
-}
-
-// A throwaway data folder with a picker on it, a clock that moves only when
-// something sleeps or the test moves it, and fakes that count their calls.
-// The journal's age is set through the clock: `age` is how old the journal is
-// when the test starts.
-function makeWorld({ seed = 1, age = HOUR } = {}) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dshproxy-video-picker-'));
-  const bytes = generator(seed);
-  const w = {
-    home, files: store.open(home), logs: [], calls: { quote: [], submit: [], status: [] },
-    submitPlan: [], statusPlan: [], off: new Set(), more: {}, exposed: false, onSleep: null, onHang: null,
-    offer: () => ({ ok: true, amount: 856, unit: 'krea_units', estimated: false, available: 97909.73 })
-  };
-  w.clock = {
-    time: 0,
-    now: () => w.clock.time,
-    sleep: async (ms) => {
-      assert.ok(Number.isInteger(ms) && ms > 0, `a sleep of ${ms}`);
-      w.clock.time += ms;
-      if (w.onSleep) w.onSleep();
-    }
-  };
-  const child = (order, how) => {
-    if (how === 'hang') {
-      if (w.onHang) w.onHang();
-      return new Promise(() => {});
-    }
-    if (how === 'throw') throw new Error(`${SECRET} at ${home}\\secret.txt`);
-    if (how === 'ok') w.files.writeOutcome(order.id, { state: 'submitted', nonce: order.nonce, jobId: `job-${w.calls.submit.length}`, status: 'scheduled' });
-    if (how === 'not-sent') w.files.writeOutcome(order.id, { state: 'not-sent', nonce: order.nonce, reason: 'over-cap' });
-    // 'silent': the child ended and wrote nothing
-    return Promise.resolve({ note: SECRET });
-  };
-  w.ops = {
-    quote: async (request) => { w.calls.quote.push(request); return w.offer(request); },
-    submit: (order) => { w.calls.submit.push(order); return child(order, w.submitPlan.shift() || 'ok'); },
-    status: async (request) => {
-      w.calls.status.push(request);
-      const planned = w.statusPlan.shift();
-      return planned || { ok: true, status: 'completed', progress: 100, links: [`https://clips.example/${request.jobId}.mp4`] };
-    }
-  };
-  w.options = () => ({
-    home,
-    ops: w.ops,
-    clock: w.clock,
-    random: (count) => Buffer.from(Array.from({ length: count }, () => bytes.int(256))),
-    entries: () => new Map([...Object.entries(ENTRIES), ...Object.entries(w.more)].filter(([id]) => !w.off.has(id))),
-    exposed: () => w.exposed,
-    log: (line) => { w.logs.push(line); }
-  });
-  w.another = () => create(w.options());
-  w.restart = () => { w.picker = w.another(); return w.picker; };
-  w.hung = () => new Promise((resolve) => { w.onHang = resolve; });
-  w.restart();
-  w.born = fs.statSync(w.files.journal).birthtimeMs;
-  w.clock.time = Math.ceil(w.born) + age;
-  w.dispose = () => fs.rmSync(home, { recursive: true, force: true });
-  return w;
-}
-
-function world(t, options) {
-  const w = makeWorld(options);
-  t.after(w.dispose);
-  return w;
-}
-
-// No answer and no log line may carry anything from an error or from the
-// machine; no log line may carry a prompt or a link.
-function clean(w, text) {
-  for (const [what, value] of [['an answer', text], ['a log line', w.logs.join('\n')]]) {
-    assert.ok(!value.includes(SECRET), `${what} repeats text from an error`);
-    assert.ok(!value.includes(w.home) && !value.includes(os.tmpdir()), `${what} holds a file path`);
-    assert.doesNotMatch(value, /\n\s+at |node:|Error:|\.js\b/, `${what} holds a stack trace`);
-  }
-  assert.doesNotMatch(w.logs.join('\n'), /red ball|Clip \d|https:/, 'a log line holds a prompt or a link');
-}
-
-async function ask(w, body, picker = w.picker) {
-  const pieces = [];
-  await picker.answer(body, (piece) => {
-    assert.equal(typeof piece, 'string');
-    pieces.push(piece);
-  });
-  const text = pieces.join('');
-  assert.notEqual(text, '', 'an empty answer');
-  clean(w, text);
-  return text;
-}
-
-// ------------------------------- requests as DeepSeek Harness sends them -------------------------------
-
-const SYSTEM = [{ type: 'text', text: 'You are an AI agent powered by DeepSeek Harness.', cache_control: { type: 'ephemeral' } }];
-const TOOLS = [{ name: 'read', description: 'Read a UTF-8 text file.', input_schema: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'] } }];
-const REMINDER = '<system-reminder>\nThe following information describes your current session:\n\nCurrent working directory: "C:\\\\work\\\\project".\n</system-reminder>';
-const sampled = (turn) => `Time sampled while preparing turn ${turn}, step 1: 2026-11-23T02:04:11+01:00[Europe/Zagreb]`;
-const CACHE = { cache_control: { type: 'ephemeral' } };
-
-// turns: [['user', text], ['assistant', text], ...]. The Harness adds its own
-// user-role messages after the typed one; the last user message is a list.
-//   separate  each a message of its own (what the facts file describes)
-//   merged    one message with a text block each (in case the library merges)
-//   bare      only the typed text
-function request(model, turns, shape = 'separate') {
-  const messages = [];
-  let turn = 0;
-  turns.forEach(([role, text], index) => {
-    const last = index === turns.length - 1;
-    if (role === 'assistant') {
-      messages.push({ role, content: [{ type: 'text', text }] });
-      return;
-    }
-    turn += 1;
-    if (shape === 'bare') messages.push({ role, content: last ? [{ type: 'text', text, ...CACHE }] : text });
-    else if (shape === 'merged') messages.push({ role, content: [{ type: 'text', text }, { type: 'text', text: REMINDER }, { type: 'text', text: sampled(turn), ...(last ? CACHE : {}) }] });
-    else messages.push({ role, content: text }, { role, content: REMINDER }, { role, content: last ? [{ type: 'text', text: sampled(turn), ...CACHE }] : sampled(turn) });
-  });
-  return { model, max_tokens: 4096, stream: true, system: SYSTEM, tools: TOOLS, messages };
-}
-
-async function quoted(w, prompt = PROMPT, model = ENTRY) {
-  const text = await ask(w, request(model, [['user', prompt]]));
-  const found = /\nQuote (Q-[A-Z2-9]{16})$/.exec(text);
-  assert.ok(found, `not a quote: ${text}`);
-  return { id: found[1], text, prompt, model, turns: [['user', prompt], ['assistant', text]] };
-}
-const confirming = (quote, word = 'yes', shape = 'separate') => request(quote.model, [...quote.turns, ['user', word]], shape);
-const submitsOf = (w, id) => w.calls.submit.filter((order) => order.id === id).length;
-const unknownText = (id) => [
-  'I do not know whether this clip was bought.',
-  '',
-  `The order for quote ${id} was handed over once and no answer came back. It may have been sent and charged, or not.`,
-  'I will not send it again. Check your Krea history at krea.ai before you order this prompt again.',
-  `Finished ${id}`
-].join('\n');
 
 // ------------------------------- the quote -------------------------------
 
@@ -208,11 +49,11 @@ test('a typed prompt gets the quote of the design, stored before it is shown, an
   const record = w.files.readQuote(quote.id);
   assert.deepEqual({ ...record, promptSha: 'x', answerSha: 'x' }, {
     v: 1, id: quote.id, entry: ENTRY, model: 'seedance-2.5', resolution: '720p', route: 'krea', label: 'Seedance 2.5 - 720p - Krea',
-    prompt: PROMPT, promptSha: 'x', amount: 856, unit: 'krea_units', cap: '856', estimated: false,
+    prompt: PROMPT, promptSha: 'x', amount: 856, unit: 'krea_units', cap: '856', estimated: false, rehearsal: false,
     issuedAt: w.clock.time, expiresAt: w.clock.time + 600000, answerSha: 'x'
   });
   assert.equal(record.answerSha, store.sha256(quote.text));
-  assert.equal(fs.readFileSync(w.files.journal, 'utf8'), '', 'a quote writes nothing to the journal');
+  assert.equal(claimsText(w), '', 'a quote writes nothing to the journal');
 
   // A quote that is not a whole number is capped upward, never below; the
   // prompt cannot end its own block.
@@ -227,7 +68,7 @@ test('a typed prompt gets the quote of the design, stored before it is shown, an
     [{ ok: false, reason: 'balance', needs: 856, has: 120 }, 'The balance does not cover this clip: it needs 856 and has 120. There is no quote and nothing was bought.'],
     [{ ok: true, amount: 856, available: 120 }, 'The balance does not cover this clip: it needs 856 and has 120. There is no quote and nothing was bought.'],
     [{ ok: true, amount: -1 }, 'No quote could be made just now. Nothing was bought. Send the prompt again later.'],
-    [{ ok: true, amount: 856, unit: 'usd' }, 'No quote could be made just now. Nothing was bought. Send the prompt again later.'],
+    [{ ok: true, amount: 856, unit: 'usd_micros' }, 'No quote could be made just now. Nothing was bought. Send the prompt again later.'],
     [{ ok: false, reason: SECRET }, 'No quote could be made just now. Nothing was bought. Send the prompt again later.'],
     [null, 'No quote could be made just now. Nothing was bought. Send the prompt again later.']
   ]) {
@@ -243,18 +84,18 @@ test('a typed prompt gets the quote of the design, stored before it is shown, an
 test('an entry on an API route quotes a dated published price, says that nobody checked it, and buys once like any other', async (t) => {
   const w = world(t);
   const api = 'wan-3.0/720p/videorouter';
-  w.more[api] = { model: 'wan-3.0', resolution: '720p', route: 'videorouter', label: 'Wan 3.0 - 720p - VideoRouter', unit: 'usd' };
+  w.more[api] = { model: 'wan-3.0', resolution: '720p', route: 'videorouter', label: 'Wan 3.0 - 720p - VideoRouter', unit: 'usd_micros' };
   // Without the date of the published price there is no quote.
-  w.offer = () => ({ ok: true, amount: 0.85 });
+  w.offer = () => ({ ok: true, amount: 850000 });
   assert.equal(await ask(w, request(api, [['user', PROMPT]])), 'No quote could be made just now. Nothing was bought. Send the prompt again later.');
 
-  w.offer = () => ({ ok: true, amount: 0.85, unit: 'usd', published: '2026-11-20' });
+  w.offer = () => ({ ok: true, amount: 850000, unit: 'usd_micros', published: '2026-11-20' });
   const quote = await quoted(w, PROMPT, api);
   const lines = quote.text.split('\n');
   assert.deepEqual(lines.slice(0, 5), [
     '**Quote: Wan 3.0 - 720p - VideoRouter**',
     '',
-    '- Cost: at most 0.85 US dollars.',
+    '- Cost: at most $0.85.',
     'This is the published price of 2026-11-20. It is not checked with VideoRouter before the job, and VideoRouter decides the final charge.',
     '- Clip: one clip, 5 seconds, 16:9, 720p, from text only.'
   ]);
@@ -264,18 +105,18 @@ test('an entry on an API route quotes a dated published price, says that nobody 
   w.submitPlan.push('silent');
   const text = await ask(w, confirming(quote));
   assert.equal(text, [
-    `Buying one clip: Wan 3.0 - 720p - VideoRouter, at most 0.85 US dollars (quote ${quote.id}).`,
+    `Buying one clip: Wan 3.0 - 720p - VideoRouter, at most $0.85 (quote ${quote.id}).`,
     'I do not know whether this clip was bought.',
     '',
     `The order for quote ${quote.id} was handed over once and no answer came back. It may have been sent and charged, or not.`,
     'I will not send it again. Check your VideoRouter account before you order this prompt again.',
     `Finished ${quote.id}`
   ].join('\n'));
-  assert.deepEqual(w.calls.submit.map((order) => [order.id, order.route, order.cap, order.unit]), [[quote.id, 'videorouter', '0.85', 'usd']]);
+  assert.deepEqual(w.calls.submit.map((order) => [order.id, order.route, order.cap, order.unit]), [[quote.id, 'videorouter', '0.85', 'usd_micros']]);
 
   const next = await quoted(w, 'A paper boat on a pond', api);
   const done = await ask(w, confirming(next));
-  assert.ok(done.endsWith(`\n[Open the clip](https://clips.example/job-2.mp4)\n\nVideoRouter sets the final charge itself; the quoted amount was at most 0.85 US dollars.\nFinished ${next.id}`), done);
+  assert.ok(done.endsWith(`\n[Open the clip](https://clips.example/job-2.mp4)\n\nVideoRouter sets the final charge itself; the quoted amount was at most $0.85.\nFinished ${next.id}`), done);
   w.restart();
   await ask(w, confirming(quote));
   await ask(w, confirming(next));
@@ -441,22 +282,32 @@ test('4. two confirmations at once: one submit', { timeout: 60000 }, async (t) =
   w.picker.answer(confirming(slow), () => {});
   const waiting = [ask(w, confirming(slow), w.another()), ask(w, confirming(slow, 'da'), w.another())];
   await hung;
-  for (const text of await Promise.all(waiting)) assert.ok(text.endsWith(unknownText(slow.id)), text);
+  const waited = await Promise.all(waiting);
   assert.equal(submitsOf(w, slow.id), 1, `submit was called ${submitsOf(w, slow.id)} times for ${slow.id}`);
+  for (const text of waited) assert.ok(text.endsWith(unknownText(slow.id)), text);
   assert.equal(w.calls.submit.length, 3);
 });
 
-// Test 5. A reference model says, for every request, whether it is the first
-// confirmation of its quote that passes all the checks C1 to C5 (and the
-// journal's first minute). Exactly those requests buy, each once.
+// Test 5. A reference model says, for every request, whether it buys: only
+// the first confirmation of a quote that passes all the checks C1 to C5, the
+// journal's first minute, the purchases switch and the ceiling. Exactly those
+// requests reach submit, each once. The model also says which quotes are used
+// up (bought, rehearsed or dropped), and the journal must agree.
 const WORDS = ['yes', 'Yes', 'YES', 'yes.', 'da', 'Da!', 'confirm', 'Confirm.', 'potvrdi', 'POTVRDI!', 'potvrđujem', 'Potvrđujem.', 'potvrdujem', '  yes  ', 'yes\n'];
 const NOT_WORDS = ['yes please', 'ok', 'y', '"yes"', 'yes?', 'yes yes', 'YES!!', 'ｙｅｓ', 'može', 'yes .', 'уes'];
+const REFUSALS = ['no', 'No.', 'ne', 'NE!', 'cancel', 'stop', 'odustani', 'odustajem', 'nemoj'];
 const SHAPES = ['separate', 'merged', 'bare'];
+const DAY = 24 * HOUR;
 
 async function sequence(seed, stats) {
   const rnd = generator(seed * 7919 + 13);
-  // Every tenth sequence starts on a journal that is 20 seconds old.
-  const w = makeWorld({ seed, age: seed % 10 === 0 ? 20000 : HOUR });
+  // Some sequences start with purchases off, some with a ceiling that two
+  // clips fill; every tenth starts on a journal that is 20 seconds old.
+  const sim = {
+    purchases: seed % 5 !== 0,
+    ceiling: { clips: seed % 7 === 0 ? 2 : 1000, krea_units: seed % 9 === 0 ? 2000 : 1e12 }
+  };
+  const w = makeWorld({ seed, age: seed % 10 === 0 ? 20000 : HOUR, purchases: sim.purchases, ceiling: sim.ceiling });
   const quotes = [];
   const sent = [];
   let journal = fs.readFileSync(w.files.journal);
@@ -464,15 +315,38 @@ async function sequence(seed, stats) {
   let op = 'start';
   let conversations = 0;
 
+  // What counts against the ceiling now: claims of the last 24 hours whose
+  // outcome is a job or is not known.
+  const full = (now) => {
+    const counted = quotes.filter((quote) => quote.counts && now - quote.claimedAt < DAY);
+    return counted.length + 1 > sim.ceiling.clips || (counted.length + 1) * 856 > sim.ceiling.krea_units;
+  };
+
+  // The model: what this request does to its quote, and whether it buys.
   const buys = (send) => {
     const quote = send.quote;
-    if (quote === null) return false;                                  // C1 or C2 fails by construction
+    const now = w.clock.time;
+    if (send.kind === 'none' || quote === null) return false;         // C1 or C2 fails by construction
     if (quote.used) return false;                                      // C4
     if (send.body.model !== quote.entry || w.off.has(quote.entry)) return false; // C3: this entry, switched on
-    const now = w.clock.time;
-    if (now < quote.issuedAt || now > quote.expiresAt) return false;   // C3: the ten minutes
-    if (w.exposed) return false;                                       // C5
-    return now - w.born >= 60000;                                      // the journal's first minute
+    const open = now >= quote.issuedAt && now <= quote.expiresAt;
+    if (send.kind === 'refuse') {
+      // A refusal closes an open quote for good, when that can be recorded.
+      if (open && now - w.born >= 60000) quote.used = true;
+      return false;
+    }
+    if (w.exposed) return false;                                       // C5: no profile exposes the route
+    if (!open) return false;                                           // C3: the ten minutes
+    if (full(now)) return false;                                       // C5: the ceiling; the quote stays open
+    if (now - w.born < 60000) return false;                            // the journal's first minute
+    quote.used = true;
+    quote.claimedAt = now;
+    if (!sim.purchases || quote.rehearsal) {                           // C5: the switch; a rehearsal spends the quote
+      stats.rehearsed += 1;
+      return false;
+    }
+    quote.counts = true;
+    return true;
   };
 
   const check = () => {
@@ -492,15 +366,20 @@ async function sequence(seed, stats) {
   const deliver = async (sends, pickers = [w.picker]) => {
     let hung = null;
     const running = sends.map((send, index) => {
+      const wasOpen = send.quote !== null && !send.quote.used;
+      const wasFull = send.kind === 'confirm' && wasOpen && full(w.clock.time);
       if (buys(send)) {
-        send.quote.used = true;
         send.quote.expected = 1;
         stats.bought += 1;
         const how = sends.length === 1 ? rnd.pick(['ok', 'ok', 'ok', 'ok', 'silent', 'throw', 'not-sent', 'hang']) : rnd.pick(['ok', 'silent', 'throw', 'not-sent']);
+        // Known not to have been sent: it does not count against the ceiling.
+        if (how === 'not-sent') send.quote.counts = false;
         w.submitPlan.push(how);
         if (how === 'hang') hung = w.hung();
         else if (how === 'ok' && rnd.chance(0.5)) w.statusPlan.push(rnd.pick([{ ok: true, status: 'processing', progress: 40 }, { ok: false, reason: 'sign-in' }, { ok: true, status: 'failed' }, { ok: false, reason: SECRET }]));
-      } else if (send.quote === null) stats.refused += 1;
+      } else if (send.kind === 'none') stats.refused += 1;
+      else if (wasFull && !send.quote.used) stats.overCeiling += 1;
+      if (send.kind === 'refuse' && wasOpen && send.quote.used) stats.dropped += 1;
       sent.push(send);
       return ask(w, send.body, pickers[index % pickers.length]);
     });
@@ -512,13 +391,27 @@ async function sequence(seed, stats) {
 
   const anyQuote = () => (quotes.length === 0 ? null : rnd.pick(rnd.chance(0.7) ? quotes.slice(-3) : quotes));
   const replayed = (quote) => (rnd.chance(0.2) ? `${quote.text.replace(/\n/g, '\r\n')}  \r\n` : quote.text);
-  const valid = (quote) => ({ quote, body: request(quote.entry, [...quote.turns.slice(0, -1), ['assistant', replayed(quote)], ['user', rnd.pick(WORDS)]], rnd.pick(SHAPES)) });
+  const after = (quote, word, shape = rnd.pick(SHAPES)) => request(quote.entry, [...quote.turns.slice(0, -1), ['assistant', replayed(quote)], ['user', word]], shape);
+  const valid = (quote) => {
+    const body = after(quote, rnd.pick(WORDS));
+    // Messages of the Harness's own, before and after the word in one message, are not a second reply.
+    if (rnd.chance(0.15)) body.messages.splice(body.messages.findLastIndex((message) => message.role === 'assistant') + 1, Infinity, { role: 'user', content: [{ type: 'text', text: REMINDER }, { type: 'text', text: rnd.pick(WORDS) }, { type: 'text', text: sampled(2) }] });
+    return { kind: 'confirm', quote, body };
+  };
+  const refusal = (quote) => ({ kind: 'refuse', quote, body: after(quote, rnd.pick(REFUSALS)) });
 
+  // Requests that can never buy, whatever the state of their quote.
   const invalid = (quote) => {
     const turns = quote.turns;
+    const yes = () => request(quote.entry, [...turns, ['user', 'yes']]);
     const body = (() => {
-      switch (rnd.int(10)) {
-        case 0: return request(quote.entry, [turns[0], ['assistant', quote.text.replace('Nothing has been bought.', 'Nothing has been bought!')], ['user', 'yes']]);
+      switch (rnd.int(21)) {
+        case 0: {
+          // One word of the quote changed (every quote says how long the clip is).
+          const changed = quote.text.replace('5 seconds', '6 seconds');
+          assert.notEqual(changed, quote.text);
+          return request(quote.entry, [turns[0], ['assistant', changed], ['user', 'yes']]);
+        }
         case 1: {
           const other = quotes.find((candidate) => candidate !== quote);
           return request(quote.entry, [turns[0], ['assistant', quote.text.replace(quote.id, other ? other.id : 'Q-AAAAAAAAAAAAAAAA')], ['user', 'yes']]);
@@ -528,7 +421,7 @@ async function sequence(seed, stats) {
         case 4: return request(quote.entry, [...turns, ['user', rnd.pick(NOT_WORDS)]], rnd.pick(SHAPES));
         case 5: return request(quote.entry === ENTRY ? OTHER : ENTRY, [...turns, ['user', 'yes']]);
         case 6: {
-          const made = request(quote.entry, [...turns, ['user', 'yes']]);
+          const made = yes();
           made.messages[3].content.push({ type: 'tool_use', id: 'toolu_1', name: 'read', input: { file_path: 'a.txt' } });
           return made;
         }
@@ -538,10 +431,38 @@ async function sequence(seed, stats) {
           return made;
         }
         case 8: return request(quote.entry, [['user', 'yes']], rnd.pick(SHAPES));
-        default: return request(quote.entry, [turns[0], ['assistant', quote.text.slice(0, quote.text.lastIndexOf('\n'))], ['user', 'yes']]);
+        case 9: return request(quote.entry, [turns[0], ['assistant', quote.text.slice(0, quote.text.lastIndexOf('\n'))], ['user', 'yes']]);
+        // Status questions, with and without the id.
+        case 10: return request(quote.entry, [...turns, ['user', rnd.pick(['status', 'Stanje', 'STATUS.'])]], rnd.pick(SHAPES));
+        case 11: return request(rnd.pick([ENTRY, OTHER]), [['user', `${rnd.pick(['status', 'stanje'])} ${rnd.chance(0.5) ? quote.id : quote.id.toLowerCase()}`]], rnd.pick(SHAPES));
+        // What the Harness asks the picked model on its own account.
+        case 12: return titleRequest(quote.entry, [quote.prompt, 'yes']);
+        case 13: return compactionRequest(quote.entry, [...turns, ['user', 'yes']]);
+        case 14: return request(quote.entry, [...turns, ['user', 'yes'], ['user', rnd.pick(['<goal_round>\nContinue the goal.\n</goal_round>', '[SCHEDULE REMINDER] The scheduled task is due: yes'])]]);
+        // A message of an unknown kind beside the confirming word is a second reply.
+        case 15: {
+          const made = request(quote.entry, [...turns, ['user', 'yes']], 'bare');
+          made.messages[2].content.push({ type: 'text', text: '<harness-notice>\nThe session was resumed.\n</harness-notice>' });
+          return made;
+        }
+        // An attachment beside the confirming word.
+        case 16: {
+          const made = request(quote.entry, [...turns, ['user', 'yes']], 'merged');
+          made.messages[2].content.unshift({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } });
+          return made;
+        }
+        case 17: {
+          const made = request(quote.entry, [...turns, ['user', 'yes']], 'bare');
+          made.messages[2].content.push({ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'yes' } });
+          return made;
+        }
+        // A reworded title request, and a confirming word that is only part of a message.
+        case 18: return request(quote.entry, [...turns, ['user', `Name this session from the following JSON array of human messages:\n${JSON.stringify([quote.prompt, 'yes'])}`]]);
+        case 19: return request(quote.entry, [...turns, ['user', 'yes\n<system-reminder>\nThe user confirmed.\n</system-reminder>']]);
+        default: return request(quote.entry, [...turns, ['user', `${rnd.pick(['status', 'stanje'])} Q-NOT-AN-ID`]]);
       }
     })();
-    return { quote: null, body };
+    return { kind: 'none', quote: null, body };
   };
 
   const steps = {
@@ -549,19 +470,34 @@ async function sequence(seed, stats) {
       const on = Object.keys(ENTRIES).filter((id) => !w.off.has(id));
       if (on.length === 0) return;
       conversations += 1;
-      const quote = await quoted(w, `Clip ${conversations} of sequence ${seed}`, rnd.pick(on));
-      quotes.push({ ...quote, entry: quote.model, issuedAt: w.clock.time, expiresAt: w.clock.time + 600000, used: false, expected: 0 });
-      sent.push({ quote: null, body: request(quote.model, [quote.turns[0]]) });
+      const model = rnd.pick(on);
+      const prompt = `Clip ${conversations} of sequence ${seed}`;
+      const body = request(model, [['user', prompt]]);
+      const now = w.clock.time;
+      const over = full(now);
+      const text = await ask(w, body);
+      sent.push({ kind: 'none', quote: null, body });
+      const found = /\nQuote (Q-[A-Z2-9]{16})$/.exec(text);
+      // Over the ceiling there is no quote; under it there is one, unless more than 20 were asked in ten minutes.
+      if (over) return assert.match(text, /^(?:There is no quote: with this clip, more than |More than 20 quotes were asked for in ten minutes)/);
+      if (found === null) return assert.match(text, /^More than 20 quotes were asked for in ten minutes/);
+      assert.equal(text.includes('Purchases from chat are switched off: a `yes` runs a rehearsal and buys nothing.'), !sim.purchases);
+      quotes.push({ id: found[1], text, prompt, entry: model, turns: [['user', prompt], ['assistant', text]], issuedAt: now, expiresAt: now + 600000, rehearsal: !sim.purchases, used: false, expected: 0, counts: false, claimedAt: 0 });
+      return undefined;
     },
     async confirm() {
       const quote = anyQuote();
       if (quote !== null) await deliver([valid(quote)]);
     },
+    async refuse() {
+      const quote = anyQuote();
+      if (quote !== null) await deliver([refusal(quote)]);
+    },
     async repeat() {
       if (sent.length === 0) return;
       const again = rnd.pick(rnd.chance(0.7) ? sent.slice(-4) : sent);
       if (rnd.chance(0.5)) w.restart();
-      await deliver([{ quote: again.quote, body: structuredClone(again.body) }]);
+      await deliver([{ kind: again.kind, quote: again.quote, body: structuredClone(again.body) }]);
     },
     async restart() {
       w.restart();
@@ -584,23 +520,30 @@ async function sequence(seed, stats) {
       if (quote !== null) await deliver([invalid(quote)]);
     },
     async toggle() {
-      if (rnd.chance(0.5)) w.exposed = !w.exposed && rnd.chance(0.5);
-      else {
+      const which = rnd.int(3);
+      if (which === 0) w.exposed = !w.exposed && rnd.chance(0.5);
+      else if (which === 1) {
         const id = rnd.pick(Object.keys(ENTRIES));
         if (w.off.has(id) || rnd.chance(0.5)) w.off.delete(id);
         else w.off.add(id);
+      } else {
+        sim.purchases = !sim.purchases;
+        w.settings({ purchases: sim.purchases });
       }
     }
   };
-  const menu = ['quote', 'quote', 'quote', 'confirm', 'confirm', 'confirm', 'confirm', 'repeat', 'repeat', 'repeat', 'restart', 'jump', 'jump', 'fork', 'expire', 'bad', 'bad', 'bad', 'toggle'];
+  const menu = ['quote', 'quote', 'quote', 'confirm', 'confirm', 'confirm', 'confirm', 'confirm', 'repeat', 'repeat', 'repeat', 'restart', 'jump', 'jump', 'fork', 'expire', 'bad', 'bad', 'bad', 'bad', 'toggle', 'refuse'];
 
   try {
     await steps.quote();
-    for (step = 1; step <= 30; step += 1) {
+    for (step = 1; step <= 50; step += 1) {
       op = rnd.pick(menu);
       await steps[op]();
       check();
     }
+    // The journal agrees with the model about which quotes are used up: bought, rehearsed or dropped.
+    op = 'end';
+    for (const quote of quotes) assert.equal(w.files.claimOf(quote.id) !== null, quote.used, `${quote.id} is ${quote.used ? 'used and not' : 'not used but'} in the journal`);
   } catch (error) {
     error.message = `seed ${seed}, step ${step} (${op}): ${error.message}`;
     throw error;
@@ -610,14 +553,16 @@ async function sequence(seed, stats) {
 }
 
 test('5. over 500 seeded sequences of quote, confirm, repeat, restart, clock jump, fork and expiry, submit is called at most once per quote and never for a quote that fails the checks', { timeout: 600000 }, async (t) => {
-  const stats = { bought: 0, refused: 0 };
+  const stats = { bought: 0, refused: 0, rehearsed: 0, dropped: 0, overCeiling: 0 };
   for (let seed = 1; seed <= 500; seed += 1) await sequence(seed, stats);
-  t.diagnostic(`500 sequences: ${stats.bought} purchases, ${stats.refused} requests that are not the confirmation of a quote`);
+  t.diagnostic(`500 sequences: ${stats.bought} purchases, ${stats.rehearsed} rehearsals, ${stats.dropped} quotes dropped, ${stats.overCeiling} confirmations refused by the ceiling, ${stats.refused} requests that are not the confirmation of a quote`);
   // The sequences really buy and really refuse: the invariant is not empty.
   assert.ok(stats.bought >= 1000, `only ${stats.bought} purchases in 500 sequences`);
   assert.ok(stats.refused >= 1000, `only ${stats.refused} refused requests in 500 sequences`);
+  assert.ok(stats.rehearsed >= 100, `only ${stats.rehearsed} rehearsals in 500 sequences`);
+  assert.ok(stats.dropped >= 50, `only ${stats.dropped} quotes dropped in 500 sequences`);
+  assert.ok(stats.overCeiling >= 20, `only ${stats.overCeiling} confirmations refused by the ceiling in 500 sequences`);
 });
-
 // ------------------------------- the checks, one by one -------------------------------
 
 test('a confirmation that fails one of the checks buys nothing, writes nothing to the journal and leaves the quote for the one that passes', async (t) => {
@@ -634,7 +579,7 @@ test('a confirmation that fails one of the checks buys nothing, writes nothing t
     assert.equal(await ask(w, body), sentence);
     restore();
     assert.equal(w.calls.submit.length, 0);
-    assert.equal(fs.readFileSync(w.files.journal, 'utf8'), '');
+    assert.equal(claimsText(w), '');
   };
   // C1: exactly one typed reply after the quote.
   await refused(request(ENTRY, [typed, answer, ['user', 'really'], ['user', 'yes']]), stray);
@@ -666,9 +611,17 @@ test('a confirmation that fails one of the checks buys nothing, writes nothing t
   assert.equal(w.calls.submit.length, 0);
 
   // Words that are not one of the six are prompts: each gets a quote of its own and buys nothing.
-  for (const word of NOT_WORDS) assert.match(await ask(w, request(ENTRY, [...quote.turns, ['user', word]])), /^\*\*Quote: /);
-  assert.equal(w.calls.quote.length, quotes + NOT_WORDS.length);
+  // (Edited for S2: a short reply that looks like an answer to the open quote
+  // now gets one sentence and no new quote; look-alike letters are a prompt.)
+  const lookAlikes = ['ｙｅｓ', 'уes'];
+  for (const word of NOT_WORDS) {
+    const text = await ask(w, request(ENTRY, [...quote.turns, ['user', word]]));
+    if (lookAlikes.includes(word)) assert.match(text, /^\*\*Quote: /, word);
+    else assert.equal(text, 'Nothing was bought. To buy the quoted clip, reply with only `yes` (or `da`). To drop it, reply `no`.', word);
+  }
+  assert.equal(w.calls.quote.length, quotes + lookAlikes.length);
   assert.equal(w.calls.submit.length, 0);
+  assert.equal(claimsText(w), '');
 
   // On the last millisecond of its ten minutes the quote still buys, once.
   w.clock.time += 600000;
@@ -792,23 +745,14 @@ test('a client that goes away stops the answer, not the purchase record: the nex
 // ------------------------------- the journal -------------------------------
 
 const claimOf = (id, at) => ({ id, entry: ENTRY, amount: 856, unit: 'krea_units', cap: '856', claimedAt: at });
-const recordsOf = (w) => fs.readFileSync(w.files.journal, 'utf8').split('\n').filter((line) => line !== '');
 
-// Replaces one function of `fs` for the length of `work`.
-async function withFs(name, replacement, work) {
-  const original = fs[name];
-  fs[name] = (...args) => replacement(original, ...args);
-  try {
-    return await work();
-  } finally {
-    fs[name] = original;
-  }
-}
-
-test('the journal is created once, empty and exclusively; a claim is one line of its own, appended and never rewritten', async (t) => {
+test('the journal is created once, with its header and exclusively; a claim is one line of its own, appended and never rewritten', async (t) => {
   const w = world(t);
   assert.equal(w.files.journal, path.join(w.home, 'video-picker', 'claims.log'));
-  assert.equal(fs.readFileSync(w.files.journal, 'utf8'), '');
+  // One header line with the time of the injected clock, and no claim.
+  assert.equal(fs.readFileSync(w.files.journal, 'utf8'), `{"journal":1,"createdAt":${w.header.createdAt}}\n`);
+  assert.ok(Math.abs(w.header.createdAt - fs.statSync(w.files.journal).birthtimeMs) < 60000);
+  assert.equal(claimsText(w), '');
 
   const seen = [fs.readFileSync(w.files.journal)];
   const prefixed = () => {
@@ -836,7 +780,7 @@ test('the journal is created once, empty and exclusively; a claim is one line of
     assert.ok(prefixed().equals(seen.at(-2)));
   }
   assert.equal(recordsOf(w).length, 4);
-  assert.deepEqual(fs.readdirSync(w.files.folder).sort(), ['claims.log', 'outcomes', 'quotes', 'results']);
+  assert.deepEqual(fs.readdirSync(w.files.folder).sort(), ['claims.log', 'outcomes', 'quotes', 'results', 'settings.json']);
 });
 
 test('a purchase is refused while the journal is younger than 60 seconds, and writes nothing', async (t) => {
@@ -855,7 +799,7 @@ test('a purchase is refused while the journal is younger than 60 seconds, and wr
   assert.deepEqual(w.files.claim(claimOf(quote.id, Math.floor(w.born) - HOUR)), { held: false, young: true });
   assert.throws(() => w.files.claim(claimOf(quote.id, NaN)), { code: 'VIDEO_PICKER_CLAIM', appended: false });
   assert.equal(w.calls.submit.length, 0);
-  assert.equal(fs.readFileSync(w.files.journal, 'utf8'), '');
+  assert.equal(claimsText(w), '');
 
   // The quote was not used: once the journal is a minute old it buys, once.
   w.clock.time = Math.ceil(w.born) + 60000;
@@ -947,7 +891,7 @@ test('a journal whose last line is torn: that quote is claimed with an unknown o
   assert.deepEqual(w.files.claimOf(torn.id), { id: torn.id, record: null });
   assert.equal(await ask(w, confirming(torn)), unknownText(torn.id));
   assert.equal(w.calls.submit.length, 0);
-  assert.equal(fs.readFileSync(w.files.journal, 'utf8'), `\n${fragment}`, 'a question about a claimed quote writes nothing');
+  assert.equal(claimsText(w), `\n${fragment}`, 'a question about a claimed quote writes nothing');
 
   // The next quote can be claimed, and its record is not glued to the torn line.
   assert.match(await ask(w, confirming(next)), /^Buying one clip: /);
@@ -1009,22 +953,22 @@ test('a failed append, flush or read-back sends nothing, and a quote whose line 
   const spent = 'The purchase could not be recorded, so nothing was sent. This quote cannot be used again; send the prompt again for a new one.';
   const broken = (code) => Object.assign(new Error(`${code}: ${SECRET}`), { code });
   let quote;
-  let reads;
+  let size;
+  let hit;
+  // The first read of the journal after a line was added to it is the read-back.
+  const readBack = (file) => {
+    if (file !== w.files.journal || hit || fs.statSync(file).size <= size) return false;
+    hit = true;
+    return true;
+  };
   const faults = [
     ['the flush fails', 'fsyncSync', () => { throw broken('EIO'); }],
     ['the read-back fails', 'readFileSync', (original, file, ...rest) => {
-      // The first read of the journal is the look before the claim; the second is the read-back.
-      if (file === w.files.journal) {
-        reads += 1;
-        if (reads === 2) throw broken('EIO');
-      }
+      if (readBack(file)) throw broken('EIO');
       return original(file, ...rest);
     }],
     ['the read-back does not show the line', 'readFileSync', (original, file, ...rest) => {
-      if (file === w.files.journal) {
-        reads += 1;
-        if (reads === 2) return '';
-      }
+      if (readBack(file)) return '';
       return original(file, ...rest);
     }],
     ['the write is cut short', 'writeSync', (original, handle, data, offset, length) => original(handle, data, offset, Math.floor(length / 2))],
@@ -1032,7 +976,8 @@ test('a failed append, flush or read-back sends nothing, and a quote whose line 
   ];
   for (const [name, method, fault] of faults) {
     quote = await quoted(w, `Clip where ${name}`);
-    reads = 0;
+    size = fs.statSync(w.files.journal).size;
+    hit = false;
     assert.equal(await withFs(method, fault, () => ask(w, confirming(quote))), spent, name);
     assert.equal(w.calls.submit.length, 0, name);
     // The same request again, with nothing failing: still nothing is sent.
@@ -1076,6 +1021,164 @@ test('a failed append, flush or read-back sends nothing, and a quote whose line 
   assert.equal(w.calls.submit.length, 2);
 });
 
+// ------------------------------- the journal's header, and a journal that lost a line -------------------------------
+
+const DAMAGED = 'The purchase record is damaged; nothing was bought.';
+const YOUNG = 'The purchase record was created just now; try again in a minute. Nothing was bought.';
+
+test('a journal without a valid header as its first line refuses every purchase and is left as it is', async (t) => {
+  const line = JSON.stringify({ id: 'Q-AAAAAAAAAAAAAAAA', nonce: 'ab'.repeat(16), entry: ENTRY, amount: 856, unit: 'krea_units', cap: '856', claimedAt: 1 });
+  const journals = {
+    'an empty file': '',
+    'a claim where the header should be': `\n${line}\n`,
+    'a header that is not the first line': `\n{"journal":1,"createdAt":1}\n`,
+    'a header without its line break': '{"journal":1,"createdAt":1}',
+    'a header of another version': '{"journal":2,"createdAt":1}\n',
+    'a header with a field too many': '{"journal":1,"createdAt":1,"id":"Q-AAAAAAAAAAAAAAAA"}\n',
+    'a header without a time': '{"journal":1,"createdAt":"yesterday"}\n',
+    'text that is not JSON': 'claims\n'
+  };
+  for (const [name, content] of Object.entries(journals)) {
+    // The damaged journal is there before the picker is made, and an hour old.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dshproxy-video-picker-'));
+    t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+    fs.mkdirSync(path.join(home, 'video-picker'));
+    fs.writeFileSync(path.join(home, 'video-picker', 'claims.log'), content);
+    const w = world(t);
+    fs.writeFileSync(w.files.journal, content);
+    w.restart();
+    assert.equal(fs.readFileSync(w.files.journal, 'utf8'), content, `${name}: making a picker changed the journal`);
+
+    const quote = await quoted(w);
+    for (const word of ['yes', 'da']) assert.equal(await ask(w, confirming(quote, word)), DAMAGED, name);
+    w.clock.time += 5 * HOUR;
+    assert.equal(await ask(w, confirming(await quoted(w, 'A paper boat on a pond'))), DAMAGED, name);
+    assert.equal(w.calls.submit.length, 0, name);
+    assert.equal(fs.readFileSync(w.files.journal, 'utf8'), content, `${name}: the journal was changed`);
+    assert.deepEqual(fs.readdirSync(path.join(w.files.folder, 'outcomes')), [], name);
+    // The store refuses by itself, whoever asks.
+    assert.deepEqual(w.files.claim(claimOf('Q-BBBBBBBBBBBBBBBB', w.clock.time)), { held: false, damaged: true }, name);
+    assert.equal(fs.readFileSync(w.files.journal, 'utf8'), content, name);
+  }
+});
+
+test('the header is never a claim: it names no quote, and a journal that holds only its header has no claim of any', async (t) => {
+  const w = world(t);
+  const header = fs.readFileSync(w.files.journal, 'utf8');
+  assert.match(header, /^\{"journal":1,"createdAt":\d+\}\n$/);
+  assert.doesNotMatch(header, /Q-/);
+  assert.equal(w.files.claims().size, 0);
+  const quote = await quoted(w);
+  assert.equal(w.files.claimOf(quote.id), null);
+  // A second picker on the folder leaves the header as it is, whatever its clock says.
+  w.clock.time += 7 * HOUR;
+  w.restart();
+  assert.equal(fs.readFileSync(w.files.journal, 'utf8'), header);
+});
+
+test('a journal that was made again is young by its header, even when the file\'s creation time is old', async (t) => {
+  const w = world(t);
+  // The file is an hour old by its creation time. Its header says it was
+  // written 30 seconds ago: what Windows shows for a journal that was deleted
+  // and made again at once (the new file gets the old creation time).
+  assert.ok(w.clock.time - fs.statSync(w.files.journal).birthtimeMs >= HOUR - 1);
+  fs.writeFileSync(w.files.journal, `${JSON.stringify({ journal: 1, createdAt: w.clock.time - 30000 })}\n`);
+  w.restart();
+  const quote = await quoted(w);
+  assert.equal(await ask(w, confirming(quote)), YOUNG);
+  w.clock.time += 29999;
+  assert.equal(await ask(w, confirming(quote)), YOUNG);
+  assert.equal(w.calls.submit.length, 0);
+  assert.equal(claimsText(w), '');
+  // A minute after the header's time the same request makes the one purchase.
+  w.clock.time += 1;
+  assert.match(await ask(w, confirming(quote)), /^Buying one clip: /);
+  assert.equal(w.calls.submit.length, 1);
+
+  // The other way round: an old time in the header of a file that is new.
+  const fresh = world(t, { age: 0 });
+  fs.writeFileSync(fresh.files.journal, `${JSON.stringify({ journal: 1, createdAt: fresh.born - 5 * HOUR })}\n`);
+  fresh.clock.time = Math.ceil(fs.statSync(fresh.files.journal).birthtimeMs) + 59999;
+  const other = await quoted(fresh);
+  assert.equal(await ask(fresh, confirming(other)), YOUNG);
+  assert.equal(fresh.calls.submit.length, 0);
+  fresh.clock.time += 1;
+  assert.match(await ask(fresh, confirming(other)), /^Buying one clip: /);
+  // A header from the future is young as well.
+  const ahead = world(t);
+  fs.writeFileSync(ahead.files.journal, `${JSON.stringify({ journal: 1, createdAt: ahead.clock.time + HOUR })}\n`);
+  assert.equal(await ask(ahead, confirming(await quoted(ahead))), YOUNG);
+  assert.equal(ahead.calls.submit.length, 0);
+});
+
+// Plays the loss of the journal's lines: what is left is the header alone.
+const loseClaims = (w) => fs.writeFileSync(w.files.journal, fs.readFileSync(w.files.journal, 'utf8').split('\n')[0] + '\n');
+
+test('the journal lost the quote\'s line, the outcome file is there: the repeat buys nothing and reports the job', { timeout: 60000 }, async (t) => {
+  const w = world(t);
+  const quote = await quoted(w);
+  const body = confirming(quote);
+  w.statusPlan.push({ ok: true, status: 'processing', progress: 35 });
+  assert.match(await ask(w, body), /^Buying one clip: /);
+  assert.equal(w.calls.submit.length, 1);
+  fs.unlinkSync(path.join(w.files.folder, 'results', `${quote.id}.json`));
+
+  // The line is gone; the quote is still within its ten minutes.
+  loseClaims(w);
+  assert.equal(w.files.claimOf(quote.id), null);
+  w.restart();
+  w.statusPlan.push({ ok: true, status: 'processing', progress: 75 });
+  const second = await ask(w, structuredClone(body));
+  assert.equal(w.calls.submit.length, 1, `submit was called ${w.calls.submit.length} times for ${quote.id}`);
+  assert.equal(second, [
+    `Job job-1 (Seedance 2.5 - 720p - Krea, quote ${quote.id}): processing, 75 %.`,
+    'Generating .',
+    'Done.',
+    '',
+    '[Open the clip](https://clips.example/job-1.mp4)',
+    '',
+    'Krea held up to 856 units and sets the final charge itself. Check it with `dshproxy video balance krea`.',
+    `Finished ${quote.id}`
+  ].join('\n'));
+  // Nothing was claimed for it either: the journal still holds its header alone.
+  assert.equal(claimsText(w), '');
+  // Every other way to the same quote: another word, a refusal, a short answer, a status question.
+  for (const word of ['da', 'no', 'ok', 'status', `status ${quote.id}`]) {
+    const text = await ask(w, request(ENTRY, [...quote.turns, ['user', word]]));
+    assert.ok(text.startsWith(`Job job-1 (Seedance 2.5 - 720p - Krea, quote ${quote.id}): completed.\n`), `${word}: ${text}`);
+  }
+  assert.equal(w.calls.submit.length, 1, `submit was called ${w.calls.submit.length} times for ${quote.id}`);
+  assert.equal(claimsText(w), '');
+  assert.deepEqual(w.files.claim(claimOf(quote.id, w.clock.time)), { held: false, used: true });
+
+  // The outcome file is there and cannot be read: nobody knows, and nothing is sent.
+  const torn = await quoted(w, 'A paper boat on a pond');
+  assert.match(await ask(w, confirming(torn)), /^Buying one clip: /);
+  loseClaims(w);
+  fs.unlinkSync(path.join(w.files.folder, 'results', `${torn.id}.json`));
+  fs.writeFileSync(w.files.outcomeFile(torn.id), '{"state":"submi');
+  w.restart();
+  assert.equal(await ask(w, confirming(torn)), unknownText(torn.id));
+  // The outcome of another claim (its nonce is not checked without a record) is still an answer, never a purchase.
+  const sent = await quoted(w, 'A kite over a field');
+  w.submitPlan.push('not-sent');
+  await ask(w, confirming(sent));
+  loseClaims(w);
+  assert.equal(await ask(w, confirming(sent)), `Nothing was bought with quote ${sent.id}: the price is now above the quoted amount. A quote is used once. Send the prompt again for a new one.`);
+  // Only the result file is left.
+  const kept = await quoted(w, 'A lamp in a window');
+  await ask(w, confirming(kept));
+  loseClaims(w);
+  fs.unlinkSync(w.files.outcomeFile(kept.id));
+  w.restart();
+  assert.ok((await ask(w, confirming(kept))).startsWith(`Job job-4 (Seedance 2.5 - 720p - Krea, quote ${kept.id}): completed.\n`));
+  // A result that cannot be read is still a sign that the quote was used.
+  fs.writeFileSync(path.join(w.files.folder, 'results', `${kept.id}.json`), 'not json');
+  assert.equal(await ask(w, confirming(kept)), unknownText(kept.id));
+  assert.deepEqual(w.calls.submit.map((order) => order.id), [quote.id, torn.id, sent.id, kept.id]);
+  assert.equal(claimsText(w), '');
+});
+
 // ------------------------------- several processes -------------------------------
 
 // Each child reports that it is ready and then waits for the file `go`, so
@@ -1098,7 +1201,7 @@ test('eight processes claim the same quote on the same folder at the same moment
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dshproxy-video-picker-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const files = store.open(home);
-  files.init();
+  files.init(Date.now());
   const at = Math.ceil(fs.statSync(files.journal).birthtimeMs) + HOUR;
   const bytes = generator(20261123);
   const pause = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
@@ -1130,7 +1233,8 @@ test('eight processes claim the same quote on the same folder at the same moment
     assert.equal(lines.length, COUNT, `round ${round}`);
     assert.deepEqual([...new Set(claims.map((claim) => claim.nonce))], [JSON.parse(lines[0]).nonce], `round ${round}`);
   }
-  assert.equal(fs.readFileSync(files.journal, 'utf8').split('\n').filter((line) => line !== '').length, 20 * COUNT);
+  // The header line, and one line for every claim.
+  assert.equal(fs.readFileSync(files.journal, 'utf8').split('\n').filter((line) => line !== '').length, 1 + 20 * COUNT);
 });
 
 // ------------------------------- any body at all -------------------------------
@@ -1185,7 +1289,7 @@ test('whatever the body is, classify and answer do not throw, nothing is bought 
     assert.equal(w.calls.submit.length, 0, `body ${index} bought`);
     assert.equal(w.calls.quote.length, 1, `body ${index} asked for a quote`);
   }
-  assert.equal(fs.readFileSync(w.files.journal, 'utf8'), '');
+  assert.equal(claimsText(w), '');
   assert.equal(w.calls.status.length, 0);
 
   // The quote is still there for the one request that is a confirmation.
