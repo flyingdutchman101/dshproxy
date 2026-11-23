@@ -1,0 +1,1279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSHProxy (prototype)</title>
+<!-- Prototype of option (a): the DSHProxy window as a local web page served on 127.0.0.1.
+     Self-contained: inline CSS and JS, no external requests, synthetic in-memory data only. -->
+<style>
+:root{
+  --page:#02101A; --card:#0A2230; --input:#061824; --log:#04121C;
+  --text:#F5FCFB; --muted:#B4CCD4; --faint:#7E98A2;
+  --brass:#E4B26A; --brass-hi:#F3CB8B; --brass-deep:#B8873F; --ink:#1E1403; --dim:#15303E;
+  --teal:#57D9C9; --ok:#5BDCA8; --warn:#F2C14E; --bad:#F27C6C; --bad-dim:#3A1A18;
+  --line:rgba(180,204,212,.16); --line-hi:rgba(180,204,212,.30);
+  --glass:linear-gradient(180deg,rgba(22,58,76,.62),rgba(10,34,48,.70));
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --r:14px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:radial-gradient(1200px 500px at 50% -120px,#0B2A3A 0%,transparent 70%),linear-gradient(180deg,#061A24,#020B11);
+  color:var(--text);font:13.5px/1.42 var(--font);min-width:860px;min-height:600px;overflow:hidden;-webkit-font-smoothing:antialiased}
+#stars{position:fixed;inset:0 0 38% 0;pointer-events:none;opacity:.55}
+#app{position:relative;height:100vh;min-height:600px;display:flex;flex-direction:column}
+.col{width:100%;max-width:1240px;margin:0 auto;padding-left:20px;padding-right:20px}
+h1,h2,h3{margin:0;font-weight:600}
+p{margin:0}
+button,input,select{font:inherit;color:inherit}
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--brass-hi);outline-offset:2px;border-radius:8px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.muted{color:var(--muted)} .faint{color:var(--faint)} .okc{color:var(--ok)} .warnc{color:var(--warn)} .badc{color:var(--bad)} .brassc{color:var(--brass)}
+.mono{font-family:var(--mono)}
+
+/* prototype strip: clearly not part of the product */
+#proto{flex:none;border-bottom:1px dashed rgba(228,178,106,.45);background:repeating-linear-gradient(135deg,rgba(228,178,106,.07) 0 10px,rgba(228,178,106,.03) 10px 20px)}
+#proto .col{display:flex;align-items:center;gap:10px;height:34px;font-size:12px;color:var(--muted)}
+#proto .tag{font-weight:700;letter-spacing:.08em;color:var(--brass);font-size:11px}
+#proto label{display:flex;align-items:center;gap:6px}
+#proto select{background:var(--input);border:1px solid var(--line-hi);border-radius:6px;padding:2px 6px;font-size:12px}
+#proto .sp{flex:1}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 14px;border-radius:999px;border:1px solid var(--line-hi);
+  background:rgba(255,255,255,.06);color:var(--text);cursor:pointer;white-space:nowrap;font-size:13px;font-weight:500;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.btn:hover:not(:disabled){background:rgba(255,255,255,.11);border-color:rgba(180,204,212,.45)}
+.btn.primary{background:linear-gradient(180deg,var(--brass-hi),var(--brass));color:var(--ink);border-color:var(--brass-deep);font-weight:600}
+.btn.primary:hover:not(:disabled){background:linear-gradient(180deg,#F8D9A5,var(--brass-hi))}
+.btn.danger{color:var(--bad);border-color:rgba(242,124,108,.45)}
+.btn.danger:hover:not(:disabled){background:rgba(242,124,108,.12)}
+.btn.danger-strong{background:var(--bad);color:#2B0905;border-color:#C9594A;font-weight:600}
+.btn.danger-strong:hover:not(:disabled){background:#FF9282}
+.btn.outline{border-color:var(--brass);color:var(--brass);background:transparent}
+.btn.small{height:28px;padding:0 11px;font-size:12.5px}
+.btn.big{height:38px;min-width:96px;padding:0 18px}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.btn.mock{border-style:dashed;border-color:rgba(228,178,106,.6);color:var(--brass-hi);background:transparent}
+.linkish{background:none;border:0;padding:0;color:var(--teal);text-decoration:underline;cursor:pointer}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;
+  background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--muted)}
+.chip.ok{color:var(--ok);border-color:rgba(91,220,168,.40);background:rgba(91,220,168,.08)}
+.chip.warn{color:var(--warn);border-color:rgba(242,193,78,.40);background:rgba(242,193,78,.08)}
+.chip.bad{color:var(--bad);border-color:rgba(242,124,108,.45);background:rgba(242,124,108,.10)}
+.chip.teal{color:var(--teal);border-color:rgba(87,217,201,.40);background:rgba(87,217,201,.08);font-weight:500}
+.chip.big{height:26px;font-size:13px;padding:0 11px}
+
+/* letter badges instead of logos */
+.badge{flex:none;display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;font-size:11.5px;font-weight:700;letter-spacing:.02em;
+  color:#06131A;background:hsl(var(--h,190) 62% 70%);box-shadow:inset 0 -2px 0 rgba(0,0,0,.18)}
+.badge.sm{width:22px;height:22px;border-radius:6px;font-size:10px}
+.badge.lg{width:44px;height:44px;border-radius:12px;font-size:16px}
+
+.glass{background:var(--glass);border:1px solid var(--line);border-radius:var(--r);box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 8px 24px rgba(0,0,0,.25)}
+
+/* header */
+header{flex:none}
+.hdr{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;padding-top:16px;padding-bottom:12px}
+.mark{width:56px;height:56px;border-radius:15px;background:radial-gradient(circle at 50% 35%,#103447,#051923);border:1px solid rgba(228,178,106,.35);
+  box-shadow:0 0 22px rgba(228,178,106,.18),inset 0 1px 0 rgba(255,255,255,.08);display:grid;place-items:center}
+.mark svg{width:70%;height:70%}
+.hdr-title{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.hdr-title h1{font-size:22px;font-weight:300;letter-spacing:.01em}
+.detail{color:var(--muted);margin-top:3px;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lowest{font-size:12.5px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdr-text{min-width:0}
+.hdr-btns{display:flex;gap:8px;align-items:center}
+
+/* update bar */
+#upd .bar{display:flex;align-items:center;gap:12px;padding:8px 10px 8px 14px;margin-bottom:10px;border-radius:12px;
+  background:rgba(228,178,106,.07);border:1px solid rgba(228,178,106,.28);font-size:12.5px}
+#upd .bar p{flex:1;min-width:0}
+#upd .bar .btns{display:flex;gap:8px;flex:none}
+
+/* nav */
+nav{flex:none}
+.navrow{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding-bottom:12px}
+.wsl{font-weight:700;font-size:12.5px}
+.seg{display:inline-flex;padding:3px;border-radius:999px;border:1px solid var(--line);background:rgba(4,18,28,.65)}
+.seg button{height:30px;min-width:82px;border-radius:999px;border:0;background:transparent;color:var(--muted);cursor:pointer;font-weight:600;padding:0 14px}
+.seg button:disabled{opacity:.45;cursor:default}
+.seg button[aria-checked="true"],.seg button[aria-pressed="true"]{background:linear-gradient(180deg,rgba(228,178,106,.28),rgba(228,178,106,.16));color:var(--brass-hi);box-shadow:inset 0 0 0 1px rgba(228,178,106,.45)}
+.pills{display:inline-flex;gap:2px;padding:3px;border-radius:999px;border:1px solid var(--line);background:rgba(4,18,28,.65)}
+.pills button{height:30px;padding:0 13px;border-radius:999px;border:0;background:transparent;color:var(--muted);cursor:pointer;font-weight:500;white-space:nowrap}
+.pills button:hover{color:var(--text);background:rgba(255,255,255,.05)}
+.pills button[aria-selected="true"]{background:rgba(87,217,201,.14);color:var(--text);box-shadow:inset 0 0 0 1px rgba(87,217,201,.40)}
+.hint{color:var(--muted);font-size:12px;flex:1;min-width:180px}
+
+/* main */
+main{flex:1;min-height:0;overflow:auto;padding-bottom:20px}
+main:focus-visible{outline:none}
+.page-head{display:flex;align-items:flex-start;gap:10px 16px;margin:2px 0 12px;flex-wrap:wrap}
+.page-head .t{flex:1 1 440px;min-width:0}
+.page-head .actions{margin-left:auto}
+.page-head h2{font-size:17px;font-weight:600}
+.note{color:var(--muted);font-size:12.5px;margin-top:3px;max-width:820px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+.toolbar .note{margin:0}
+
+/* cards */
+.cards{display:flex;flex-direction:column;gap:10px}
+.card{padding:14px 16px}
+.card-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.who{display:flex;align-items:baseline;gap:8px;min-width:0;flex-wrap:wrap}
+.who h3{font-size:14.5px}
+.email{color:var(--muted);font-size:12.5px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.card-btns{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.wins{margin-top:10px;display:grid;grid-template-columns:minmax(90px,140px) 1fr 330px;gap:6px 14px;align-items:center}
+.wt{font-size:12.5px}
+.meter{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,.4)}
+.meter i{display:block;height:100%;border-radius:999px}
+.wl{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.wl b{font-weight:600}
+.reset{margin-top:12px;display:flex;align-items:center;gap:12px;padding:8px 10px 8px 12px;border-radius:12px;background:linear-gradient(180deg,rgba(242,124,108,.16),rgba(58,26,24,.55));border:1px solid rgba(242,124,108,.40)}
+.reset p{flex:1;font-size:12.5px}
+.cnote{margin-top:10px;font-size:12.5px;color:var(--muted)}
+
+/* tables */
+.tablewrap{padding:4px 0;overflow:hidden}
+table.list{width:100%;border-collapse:collapse;font-size:13px}
+table.list th{text-align:left;font-size:11.5px;font-weight:600;color:var(--muted);text-transform:none;padding:8px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.list td{padding:9px 12px;border-bottom:1px solid rgba(180,204,212,.08);vertical-align:middle}
+table.list tr:last-child td{border-bottom:0}
+table.list tbody tr:hover td{background:rgba(255,255,255,.025)}
+.cellflex{display:flex;align-items:center;gap:9px}
+table.list td.right,table.list th.right{text-align:right}
+.rowbtns{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.num{font-variant-numeric:tabular-nums}
+
+/* lanes */
+.presets{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.presets .lbl{font-weight:600}
+.ladder{display:flex;flex-wrap:wrap;align-items:center;gap:4px 4px}
+.lchip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px 0 7px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.05);font-size:12.5px;white-space:nowrap}
+.lchip .d{width:16px;height:16px;border-radius:50%;display:inline-grid;place-items:center;font-size:10px;font-weight:800;color:#06131A}
+.lchip.ok .d{background:var(--ok)} .lchip.cool .d{background:var(--warn)} .lchip.bad .d{background:var(--bad)}
+.lchip.bad .n{color:var(--faint);text-decoration:line-through;text-decoration-color:rgba(242,124,108,.6)}
+.sep{color:var(--faint);font-size:13px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:2px 0 10px}
+
+/* switch */
+.switch{position:relative;width:38px;height:22px;border-radius:999px;border:1px solid var(--line-hi);background:rgba(255,255,255,.08);cursor:pointer;padding:0;flex:none}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:left .12s}
+.switch[aria-checked="true"]{background:rgba(91,220,168,.30);border-color:rgba(91,220,168,.6)}
+.switch[aria-checked="true"]::after{left:18px;background:var(--ok)}
+.switch:disabled{opacity:.4;cursor:not-allowed}
+.swlabel{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px}
+
+.suggest{display:flex;align-items:center;gap:12px;padding:10px 12px;margin-bottom:12px;border-radius:12px;background:rgba(87,217,201,.07);border:1px solid rgba(87,217,201,.32)}
+.suggest p{flex:1}
+
+/* empty / not running */
+.empty{padding:34px 24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px}
+.empty h3{font-size:15px}
+.empty p{color:var(--muted);max-width:520px}
+.banner{display:flex;align-items:center;gap:12px;padding:9px 10px 9px 14px;margin-bottom:12px;border-radius:12px;background:rgba(242,124,108,.08);border:1px solid rgba(242,124,108,.35);font-size:12.5px}
+.banner.warn{background:rgba(242,193,78,.07);border-color:rgba(242,193,78,.35)}
+.banner p{flex:1}
+.spin{width:22px;height:22px;border-radius:50%;border:2px solid rgba(228,178,106,.25);border-top-color:var(--brass);animation:sp 0.9s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.marquee{height:6px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;position:relative}
+.marquee i{position:absolute;top:0;bottom:0;width:35%;border-radius:999px;background:linear-gradient(90deg,transparent,var(--brass),transparent);animation:mq 1.4s ease-in-out infinite}
+@keyframes mq{from{left:-35%}to{left:100%}}
+@media (prefers-reduced-motion:reduce){.spin,.marquee i{animation-duration:4s}}
+
+/* log */
+.log{background:var(--log);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:12px/1.55 var(--mono);color:#CFE3E8;white-space:pre;overflow:auto;height:calc(100vh - 360px);min-height:180px;margin:0}
+.log .e{color:var(--bad)} .log .w{color:var(--warn)} .log .a{color:var(--brass-hi)}
+
+/* footer */
+footer{flex:none;border-top:1px solid var(--line);background:rgba(2,11,17,.6)}
+footer .col{display:flex;align-items:center;gap:16px;height:36px;font-size:11.5px;color:var(--faint)}
+footer .paths{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* dialogs */
+dialog{padding:0;border:1px solid var(--line-hi);border-radius:16px;background:linear-gradient(180deg,#0E2C3C,#081D29);color:var(--text);
+  width:min(560px,calc(100vw - 48px));max-height:calc(100vh - 48px);box-shadow:0 30px 80px rgba(0,0,0,.6)}
+dialog.wide{width:min(680px,calc(100vw - 48px))}
+dialog::backdrop{background:rgba(1,8,12,.62);backdrop-filter:blur(2px)}
+.dlg{display:flex;flex-direction:column;max-height:calc(100vh - 50px)}
+.dlg-h{padding:18px 22px 6px;display:flex;align-items:center;gap:12px}
+.dlg-h h2{font-size:16.5px}
+.dlg-b{padding:8px 22px 14px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.dlg-f{padding:12px 22px 18px;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line)}
+.dlg-f .left{margin-right:auto;display:flex;gap:8px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-weight:600;font-size:12.5px}
+.field input[type=text],.field input[type=password],.field select{height:34px;border-radius:9px;border:1px solid var(--line-hi);background:var(--input);padding:0 10px}
+.field input:focus-visible,.field select:focus-visible{outline:2px solid var(--brass-hi);outline-offset:1px}
+.err{color:var(--bad);font-size:12.5px}
+.danger-banner{padding:12px 14px;border-radius:12px;background:linear-gradient(180deg,rgba(242,124,108,.22),rgba(58,26,24,.8));border:1px solid rgba(242,124,108,.55)}
+.danger-banner strong{display:block;color:#FFB3A8;letter-spacing:.06em;margin-bottom:3px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:12px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.04);cursor:pointer;color:var(--text)}
+.tile:hover{border-color:rgba(228,178,106,.55);background:rgba(228,178,106,.06)}
+.tile b{display:block;font-size:14px;margin-bottom:2px}
+.tile span.d{font-size:12px;color:var(--muted)}
+.code{font:600 26px/1 var(--mono);letter-spacing:.12em;color:var(--brass-hi);padding:12px 14px;border-radius:10px;background:var(--input);border:1px solid var(--line);align-self:flex-start}
+.check{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.check li{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:start;font-size:13px}
+.check .m{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;color:#06131A}
+.m.ok{background:var(--ok)} .m.todo{background:var(--brass)} .m.no{background:var(--bad)} .m.note{background:var(--warn)}
+pre.out{margin:0;background:var(--log);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:12px/1.5 var(--mono);white-space:pre-wrap;max-height:260px;overflow:auto}
+.radios{display:flex;flex-direction:column;gap:6px}
+.radios label{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:10px;border:1px solid var(--line);cursor:pointer}
+.radios input{margin-top:3px;accent-color:var(--bad)}
+.mockline{font-size:12px;color:var(--brass-hi);border:1px dashed rgba(228,178,106,.5);border-radius:10px;padding:8px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* toast */
+#toast{position:fixed;right:20px;bottom:48px;z-index:5;max-width:420px;padding:10px 14px;border-radius:12px;background:#0F3142;border:1px solid var(--line-hi);box-shadow:0 10px 30px rgba(0,0,0,.5);font-size:12.5px;display:none}
+#toast.show{display:block}
+
+/* menu-bar mock */
+#menuMock{width:100vw;max-width:100vw;height:100vh;max-height:100vh;margin:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+#menuMock::backdrop{background:rgba(1,8,12,.5)}
+.mbar{height:28px;display:flex;align-items:center;gap:18px;padding:0 12px;background:rgba(32,40,46,.86);backdrop-filter:blur(20px);color:#EEF2F4;font-size:13px;border-bottom:1px solid rgba(0,0,0,.4)}
+.mbar .app{font-weight:700}
+.mbar .dimm{opacity:.85}
+.mbar .sp{flex:1}
+.mbar .item{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 7px;border-radius:5px;border:0;background:transparent;color:inherit;cursor:pointer}
+.mbar .item[aria-expanded="true"]{background:rgba(255,255,255,.22)}
+.mbar .glyph{position:relative;width:16px;height:16px}
+.mbar .glyph i{position:absolute;right:-2px;bottom:-1px;width:7px;height:7px;border-radius:50%;border:1px solid rgba(32,40,46,1)}
+.mmenu{position:absolute;top:30px;min-width:250px;padding:5px;border-radius:9px;background:rgba(42,50,56,.96);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 18px 50px rgba(0,0,0,.55);color:#EEF2F4;font-size:13px}
+.mmenu .hd{padding:4px 10px 4px 26px;color:#9DA8AE;font-size:12px}
+.mmenu hr{border:0;border-top:1px solid rgba(255,255,255,.12);margin:5px 8px}
+.mmenu [role=menuitem],.mmenu [role=menuitemcheckbox]{display:flex;width:100%;align-items:center;height:24px;padding:0 10px 0 26px;border-radius:5px;border:0;background:transparent;color:inherit;text-align:left;cursor:default;position:relative}
+.mmenu [role=menuitem]:focus,.mmenu [role=menuitemcheckbox]:focus,.mmenu [role=menuitem]:hover:not([aria-disabled=true]),.mmenu [role=menuitemcheckbox]:hover{background:#2F6FD6;color:#fff;outline:none}
+.mmenu [aria-disabled=true]{color:#7C878D}
+.mmenu .ck{position:absolute;left:9px}
+.mmenu .kbd{margin-left:auto;color:#9DA8AE;font-size:12px}
+.mm-note{position:absolute;left:24px;bottom:24px;max-width:440px;padding:12px 14px;border-radius:12px;background:#0F3142;border:1px dashed rgba(228,178,106,.6);font-size:12.5px;color:var(--muted)}
+.mm-note b{color:var(--brass-hi)}
+
+/* quit screen */
+.quit{height:100vh;display:grid;place-items:center;text-align:center}
+.quit div{display:flex;flex-direction:column;gap:12px;align-items:center;max-width:460px}
+
+/* short window (height < 760): tighter header like the Windows app */
+@media (max-height:760px){
+  .hdr{padding-top:10px;padding-bottom:8px;gap:12px}
+  .mark{width:42px;height:42px;border-radius:12px}
+  .hdr-title h1{font-size:18px}
+  .navrow{padding-bottom:9px}
+  .page-head{margin-bottom:9px}
+  .hint{display:none}
+  .card{padding:11px 14px}
+  .log{height:calc(100vh - 300px)}
+}
+@media (max-width:1100px){
+  .hint{display:none}
+  .wins{grid-template-columns:minmax(80px,120px) 1fr 300px}
+}
+</style>
+</head>
+<body>
+<canvas id="stars" aria-hidden="true"></canvas>
+<div id="app">
+  <div id="proto" role="region" aria-label="Prototype controls (not part of the product)">
+    <div class="col">
+      <span class="tag">PROTOTYPE</span><span>Synthetic data · nothing runs</span>
+      <span class="sp"></span>
+      <label>Gateway <select id="pState" aria-label="Simulate gateway state">
+        <option value="running">Running</option><option value="starting">Starting</option><option value="notanswering">Not answering</option><option value="stopped">Stopped</option></select></label>
+      <label>Data <select id="pData" aria-label="Simulate data set"><option value="sample">Sample</option><option value="empty">Empty (first run)</option></select></label>
+      <button class="btn small mock" id="pMenu" type="button">Menu bar (mock)</button>
+    </div>
+  </div>
+  <header id="hdr"></header>
+  <div id="upd"></div>
+  <nav id="nav" aria-label="Sections"></nav>
+  <main id="main" tabindex="-1"></main>
+  <footer id="ftr"></footer>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="sr" class="sr" aria-live="polite"></div>
+<dialog id="dlg"></dialog>
+<dialog id="menuMock" aria-label="Mock of the macOS menu bar"></dialog>
+
+<script>
+"use strict";
+/* ---------- helpers ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pad = n => String(n).padStart(2, "0");
+const hm = d => pad(d.getHours()) + ":" + pad(d.getMinutes());
+const hms = d => hm(d) + ":" + pad(d.getSeconds());
+const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], MONS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const sameDay = (a, b) => a.toDateString() === b.toDateString();
+const clone = o => JSON.parse(JSON.stringify(o));
+const later = (ms, f) => setTimeout(f, ms);
+function dayText(d) {
+  const t = new Date(), tm = new Date(); tm.setDate(t.getDate() + 1);
+  return sameDay(d, t) ? "today" : sameDay(d, tm) ? "tomorrow" : `${DAYS[d.getDay()]} ${d.getDate()} ${MONS[d.getMonth()]}`;
+}
+function resetText(min) {
+  if (min == null) return "reset time not reported";
+  const d = new Date(Date.now() + min * 60000);
+  const rel = min < 60 ? `${min} min` : min < 1440 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${Math.floor(min / 1440)} d ${Math.floor((min % 1440) / 60)} h`;
+  return `resets in ${rel} (${dayText(d)} ${hm(d)})`;
+}
+const levelColor = left => left < 10 ? "#F27C6C" : left < 30 ? "#F2C14E" : "#5BDCA8";
+const levelClass = left => left < 10 ? "badc" : left < 30 ? "warnc" : "okc";
+let seed = 1846; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+/* ---------- static catalogue ---------- */
+const SERVICES = {
+  claude: { label: "Claude", badge: "Cl", h: 22, desc: "Claude Pro or Max. Opens claude.ai.", tile: "Claude" },
+  codex: { label: "ChatGPT", badge: "Ch", h: 160, desc: "ChatGPT Plus or Pro. Opens chatgpt.com.", tile: "ChatGPT (Codex)" },
+  antigravity: { label: "Gemini", badge: "Ge", h: 215, desc: "Google AI Pro or Ultra. Opens accounts.google.com.", tile: "Gemini (Antigravity)" },
+  kimi: { label: "Kimi", badge: "Ki", h: 270, desc: "Kimi Code. You type a short code on kimi.com.", tile: "Kimi", device: true },
+};
+const KEYPROV = {
+  deepseek: { label: "DeepSeek", badge: "DS", h: 205 }, moonshot: { label: "Moonshot", badge: "Mo", h: 250 },
+  zai: { label: "Z.ai", badge: "Z", h: 120, regions: ["International", "China"] }, qwen: { label: "Qwen", badge: "Qw", h: 285, regions: ["International", "China"] },
+  minimax: { label: "MiniMax", badge: "MM", h: 340, regions: ["International", "China"] }, mistral: { label: "Mistral", badge: "Mi", h: 30 },
+  openrouter: { label: "OpenRouter", badge: "OR", h: 180 },
+};
+const PRESETS = {
+  performance: { label: "Max performance", summary: "The strongest model each lane can reach, whatever it costs. Slowest and most quota-hungry.",
+    lanes: { main: ["gpt-6-astra","claude-opus-5-5","claude-fable-5-2","gemini-4-carbon-high"], scout: ["claude-sonnet-5-5","gpt-6.1-sol","gemini-4-argon-high","deepseek/deepseek-v4-pro"],
+      builder: ["gpt-6-astra","claude-sonnet-5-5","claude-fable-5-2","gemini-4-argon-high"], architect: ["claude-fable-5-2","gpt-6.1-terra","claude-opus-5-5","gemini-4-carbon-high"],
+      reviewer: ["gemini-4-carbon-high","claude-opus-5-5","deepseek/deepseek-v4-pro"], google: ["gemini-4-carbon-high","gemini-4-hydrogen-xhigh","gemini-3.8-flash-high","gemini-3.8-flash-tiered"] } },
+  balanced: { label: "Balanced", summary: "Strong models first with cheaper ones as failover. The working default.",
+    lanes: { main: ["gpt-6-astra","claude-fable-5-2","claude-opus-5-5","gemini-4-carbon-high","deepseek/deepseek-v4-pro"], scout: ["claude-haiku-5-5","gemini-3.8-flash-high","gpt-6-luna","deepseek/deepseek-flash","qwen/qwen3.8-flash"],
+      builder: ["gpt-6-astra","claude-sonnet-5-5","deepseek/deepseek-v4-pro","gemini-4-argon-high"], architect: ["claude-fable-5-2","gpt-6.1-terra","claude-opus-5-5","deepseek/deepseek-v4-pro","gemini-4-argon-high"],
+      reviewer: ["gemini-4-carbon-high","deepseek/deepseek-v4-pro","claude-opus-5-5"], google: ["gemini-3.8-flash-high","gemini-4-carbon-high","gemini-4-hydrogen-xhigh","gemini-3.8-flash-tiered"] } },
+  cheap: { label: "Cheap production", summary: "Subscription quota first, then the cheapest paid models. Leaves GPT and Opus out.",
+    lanes: { main: ["claude-haiku-5-5","gemini-3.8-flash-high","gemini-4-carbon-high","deepseek/deepseek-flash"], scout: ["gemini-3.8-flash-high","claude-haiku-5-5","deepseek/deepseek-flash","qwen/qwen3.8-flash"],
+      builder: ["claude-haiku-5-5","gemini-4-argon-high","deepseek/deepseek-v4-pro","qwen/qwen3.8-flash"], architect: ["claude-sonnet-5-5","gemini-4-carbon-high","deepseek/deepseek-v4-pro","gemini-4-argon-high"],
+      reviewer: ["gemini-3.8-flash-high","deepseek/deepseek-flash","claude-haiku-5-5"], google: ["gemini-3.8-flash-high","gemini-3.1-flash-lite","gemini-3-flash","gemini-4-hydrogen-xhigh"] } },
+};
+function serviceOf(id) {
+  if (id.startsWith("claude")) return "claude"; if (id.startsWith("gpt")) return "codex"; if (id.startsWith("gemini")) return "antigravity";
+  if (id.startsWith("kimi")) return "kimi"; return id.split("/")[0];
+}
+const svcLabel = s => (SERVICES[s] || KEYPROV[s] || { label: s }).label;
+const VROUTES = {
+  krea: { label: "Krea workspace", units: "workspace compute units" }, videorouter: { label: "VideoRouter", units: "USD" },
+  kovapi: { label: "KovAPI", units: "KovAPI credits" }, callirra: { label: "Callirra", units: "USD" },
+};
+const COMPANY = { alibaba: { label: "Alibaba", badge: "Al", h: 25 }, minimax: { label: "MiniMax", badge: "MM", h: 340 }, bytedance: { label: "ByteDance", badge: "BD", h: 200 } };
+
+/* ---------- synthetic data sets ---------- */
+function modelRow(id, ctx, out, reasoning, reason, offered) { return { id, service: serviceOf(id), ctx, out, reasoning, reason, offered }; }
+function sampleData() {
+  return {
+    accounts: [
+      { id: "a1", provider: "claude", email: "a@example.com", plan: "max_20x", primary: true, disabled: false, supported: true,
+        windows: [{ title: "5-hour", left: 64, min: 132 }, { title: "Weekly", left: 27, min: 3 * 1440 + 305 }, { title: "Weekly · Opus", left: 81, min: 3 * 1440 + 305 }], resets: null },
+      { id: "a2", provider: "claude", email: "b@example.com", plan: "pro", primary: false, disabled: false, supported: true,
+        windows: [{ title: "5-hour", left: 8, min: 41 }, { title: "Weekly", left: 46, min: 5 * 1440 + 70 }], resets: null },
+      { id: "a3", provider: "codex", email: "c@example.com", plan: "pro", primary: false, disabled: false, supported: true,
+        windows: [{ title: "5-hour", left: 91, min: 250 }, { title: "Weekly", left: 14, min: 1440 + 600 }, { title: "Code review", left: null, min: null }],
+        resets: { credits: [{ id: "cr1", title: "Weekly limit reset", description: "Included with ChatGPT Pro", expires: "31 Dec 2026" }, { id: "cr2", title: "Weekly limit reset", description: "Promotional credit", expires: "15 Jan 2027" }] } },
+      { id: "a4", provider: "antigravity", email: "d@example.com", plan: "google_ai_ultra", primary: false, disabled: false, supported: true,
+        windows: [{ title: "Daily", left: 72, min: 610 }], resets: null },
+      { id: "a5", provider: "kimi", email: "e@example.com", plan: "kimi_code", primary: false, disabled: true, supported: false, windows: [], resets: null },
+    ],
+    keys: { deepseek: { state: "saved" }, moonshot: { state: "none" }, zai: { state: "unreadable", region: "International" }, qwen: { state: "none", region: "International" },
+      minimax: { state: "none", region: "China" }, mistral: { state: "none" }, openrouter: { state: "saved" } },
+    preset: "balanced", lanes: clone(PRESETS.balanced.lanes), cooling: { "gpt-6.1-terra": 23 },
+    models: [
+      modelRow("claude-opus-5-6", 1000000, 128000, "low, medium, high, max", "new", true),
+      modelRow("gpt-6-astra", 400000, 128000, "low, medium, high, xhigh", "auto", true),
+      modelRow("gpt-6.1-terra", 400000, 128000, "low, medium, high, xhigh", "auto", true),
+      modelRow("gpt-6.1-sol", 400000, 128000, "low, medium, high", "auto", true),
+      modelRow("gpt-6-luna", 272000, 64000, "minimal, low, medium", "user-off", false),
+      modelRow("claude-opus-5-5", 1000000, 128000, "low, medium, high, max", "auto", true),
+      modelRow("claude-fable-5-2", 1000000, 64000, "low, medium, high", "auto", true),
+      modelRow("claude-sonnet-5-5", 1000000, 64000, "low, medium, high", "auto", true),
+      modelRow("claude-haiku-5-5", 200000, 64000, "none", "auto", true),
+      modelRow("gemini-4-carbon-high", 2000000, 65000, "high", "auto", true),
+      modelRow("gemini-4-argon-high", 1000000, 65000, "high", "auto", true),
+      modelRow("gemini-4-hydrogen-xhigh", 1000000, 65000, "xhigh", "auto", true),
+      modelRow("gemini-3.8-flash-high", 1000000, 65000, "high", "auto", true),
+      modelRow("gemini-3.8-flash-tiered", 1000000, 65000, "low, medium, high", "user-on", true),
+      modelRow("gemini-3.1-flash-lite", 1000000, 65000, "none", "older", false),
+      modelRow("gemini-3-flash", 1000000, 65000, "none", "older", false),
+      modelRow("kimi-k3", 256000, 32000, "none", "auto", true),
+      modelRow("deepseek/deepseek-v4-pro", 1000000, 64000, "high", "auto", true),
+      modelRow("deepseek/deepseek-flash", 256000, 32000, "none", "auto", true),
+      modelRow("qwen/qwen3.8-flash", 1000000, 32000, "none", "auto", true),
+      modelRow("gemini-embedding-3", 8000, 0, "none", "notchat", false),
+    ],
+    suggestion: { to: "claude-opus-5-6", from: "claude-opus-5-5" },
+    showHidden: false, modelsChecked: 42,
+    profiles: [{ name: "desktop", routes: 6, models: 19, points: "yes" }, { name: "work", routes: 6, models: 18, points: "stale" }],
+    videoTools: "installed",
+    krea: { state: "signedin", until: new Date(Date.now() + 89 * 86400000) },
+    vkeys: { videorouter: { state: "saved", env: false }, kovapi: { state: "none", env: false }, callirra: { state: "none", env: true } },
+    vmodels: [
+      { id: "wan-3.0", company: "alibaba", enabled: true, route: "krea", allowed: ["krea", "videorouter", "kovapi"] },
+      { id: "minimax-h3", company: "minimax", enabled: true, route: null, allowed: ["krea", "callirra"] },
+      { id: "seedance-2-pro", company: "bytedance", enabled: false, route: "videorouter", allowed: ["videorouter", "kovapi", "callirra"] },
+      { id: "seedance-2-lite", company: "bytedance", enabled: false, route: null, allowed: ["videorouter", "kovapi", "callirra"] },
+    ],
+    vRead: new Date(),
+  };
+}
+function emptyData() {
+  const d = sampleData();
+  d.accounts = []; for (const k in d.keys) d.keys[k] = { state: "none", region: d.keys[k].region };
+  d.cooling = {}; d.suggestion = null; d.models = d.models.filter(m => m.id !== "claude-opus-5-6").map(m => ({ ...m, reason: m.reason === "user-off" || m.reason === "user-on" ? "auto" : m.reason, offered: !["older", "notchat"].includes(m.reason) }));
+  d.modelsChecked = null; d.profiles = []; d.videoTools = "notinstalled"; d.krea = { state: "none" };
+  for (const k in d.vkeys) d.vkeys[k] = { state: "none", env: false };
+  d.vmodels.forEach(m => { m.enabled = false; m.route = null; });
+  return d;
+}
+
+/* ---------- state ---------- */
+const S = {
+  gw: "running", ws: "chat", section: 0, inFlight: 2, loginItem: true, quit: false,
+  backend: { current: "6.9.2", latest: "6.10.0", released: "21 Nov 14:05", previous: null, busy: false },
+  limitsNote: "Limits updated just now. They refresh every minute.",
+  kreaBusy: false, harnessChecked: new Date(),
+  log: [], D: sampleData(),
+};
+const SECTIONS = ["Accounts", "API keys", "Lanes", "Models", "DeepSeek Harness", "Log"];
+const HINTS = { chat: "Chat accounts, keys, lanes and models.", video: "Video routing setup. Nothing is generated or charged from this window.", log: "The log is shared by the Chat and Video workspaces." };
+const running = () => S.gw === "running";
+
+/* ---------- log ---------- */
+function log(text, cls = "") {
+  S.log.push({ t: hms(new Date()), text, cls });
+  if (S.log.length > 400) S.log.splice(0, S.log.length - 300);
+  const pre = $("#logpre");
+  if (pre) {
+    const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
+    pre.insertAdjacentHTML("beforeend", lineHtml(S.log[S.log.length - 1]));
+    if (atBottom) pre.scrollTop = pre.scrollHeight;
+  }
+}
+const lineHtml = l => `<span class="${l.cls}">${esc(l.t)}  ${esc(l.text)}</span>\n`;
+(function seedLog() {
+  const base = Date.now() - 6 * 60000;
+  const lines = [
+    ["Starting the gateway...", "a"], ["CLIProxyAPI 6.9.2 started on 127.0.0.1:8419 (backend)", ""], ["DSHProxy gateway listening on http://127.0.0.1:8417", ""],
+    ["Window served on http://127.0.0.1:8418 (this page)", ""], ["Accounts: 5 (Claude ×2, ChatGPT, Gemini, Kimi paused)", ""],
+    ["Model catalog checked: 1 new model (claude-opus-5-6)", "a"],
+  ];
+  lines.forEach((l, i) => S.log.push({ t: hms(new Date(base + i * 900)), text: l[0], cls: l[1] }));
+})();
+const LANES = ["main", "scout", "builder", "architect", "reviewer", "google"];
+function fakeRequest() {
+  const lane = LANES[Math.floor(rnd() * LANES.length)];
+  const ladder = S.D.lanes[lane] || [];
+  const model = ladder.find(m => laneState(m) === "ok") || ladder[0] || "none";
+  const secs = (0.6 + rnd() * 9).toFixed(1), toks = Math.floor(200 + rnd() * 4000);
+  if (rnd() < 0.08) return log(`POST /v1/messages lane=${lane} → ${model} 429 quota; trying next on the ladder`, "w");
+  log(`POST /v1/messages lane=${lane} → ${model} 200 ${secs} s ${toks} tokens out`);
+}
+setInterval(() => { if (running() && !S.quit) fakeRequest(); }, 2600);
+
+/* ---------- gateway actions ---------- */
+function setGw(state, quiet) {
+  if (S.quit) return;
+  S.gw = state; $("#pState").value = state;
+  if (!quiet) announce({ running: "Gateway running", starting: "Gateway starting", stopped: "Gateway stopped", notanswering: "Gateway not answering" }[state]);
+  render();
+}
+let startTimer = null;
+function startGateway() {
+  if (S.gw === "running" || S.gw === "starting") return;
+  log("Starting the gateway...", "a"); setGw("starting");
+  clearTimeout(startTimer);
+  startTimer = later(1800, () => { if (S.gw !== "starting") return; log("DSHProxy gateway listening on http://127.0.0.1:8417"); setGw("running"); });
+}
+function stopGateway(afterStop) {
+  const doStop = () => { clearTimeout(startTimer); log("Stopping the gateway...", "a"); log("Gateway stopped."); setGw("stopped"); afterStop && afterStop(); };
+  const cut = confirmCutText("Stop");
+  if (cut) confirmDlg({ title: "Stop gateway", text: cut, ok: "Stop gateway", kind: "danger-strong", onOk: doStop });
+  else doStop();
+}
+function confirmCutText(verb) {
+  const q = verb === "Quit";
+  if (S.gw === "notanswering")
+    return `The gateway did not answer when it was last checked, so requests may be in flight. ${S.inFlight} model requests were in flight when it last answered. ${q ? "Quitting stops the gateway now and cuts" : "Stopping the gateway now cuts"} any that are.\n\n${q ? "Quit" : "Stop"} anyway?`;
+  if (S.gw === "running" && S.inFlight > 0)
+    return `${S.inFlight} model requests were in flight when the gateway was last checked, a few seconds ago at most. ${q ? "Quitting stops the gateway now and cuts" : "Stopping the gateway now cuts"} them.\n\n${q ? "Quit" : "Stop"} anyway?`;
+  return null;
+}
+function needRunning(title) {
+  if (running()) return true;
+  msgDlg({ title, text: "Start the gateway first.", extra: { label: "Start gateway", kind: "primary", onClick: () => { closeDlg(); startGateway(); } } });
+  return false;
+}
+
+/* ---------- rendering ---------- */
+function stateChip() {
+  return { running: `<span class="chip ok big">● Running</span>`, starting: `<span class="chip warn big">● Starting</span>`,
+    notanswering: `<span class="chip warn big">● Not answering</span>`, stopped: `<span class="chip bad big">● Stopped</span>` }[S.gw];
+}
+function detailLine() {
+  const offered = S.D.models.filter(m => m.offered).length, n = S.D.accounts.length;
+  return { running: `http://127.0.0.1:8417  ·  CLIProxyAPI ${S.backend.current}  ·  ${n} account${n === 1 ? "" : "s"}  ·  ${offered} models offered`,
+    starting: "The gateway is starting.", notanswering: "The gateway process is running but does not answer. Stop asks before it cuts anything.",
+    stopped: "The gateway is not running. Press Start." }[S.gw];
+}
+function lowestLine() {
+  if (!running()) return "";
+  let low = null;
+  for (const a of S.D.accounts) if (!a.disabled) for (const w of a.windows) if (w.left != null && (!low || w.left < low.w.left)) low = { a, w };
+  if (!low) return "";
+  return `<span class="muted">Lowest limit:</span> <span class="${levelClass(low.w.left)}">${esc(svcLabel(low.a.provider))} (${esc(low.a.email)}) ${esc(low.w.title)}, ${low.w.left}% left</span>`;
+}
+const MARK = `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="16" fill="none" stroke="rgba(228,178,106,.35)" stroke-width="1.2"/>
+<path d="M20 4 L24 20 L20 36 L16 20 Z" fill="#E4B26A"/><path d="M20 4 L24 20 L16 20 Z" fill="#F3CB8B"/><path d="M20 36 L16 20 L24 20 Z" fill="#15303E" stroke="#B8873F" stroke-width=".8"/><circle cx="20" cy="20" r="2" fill="#1E1403"/></svg>`;
+
+function renderHeader() {
+  const canStart = S.gw === "stopped", canStop = S.gw !== "stopped";
+  $("#hdr").innerHTML = `<div class="col hdr">
+    <div class="mark">${MARK}</div>
+    <div class="hdr-text">
+      <div class="hdr-title"><h1>DSHProxy</h1><span id="stateChip">${stateChip()}</span></div>
+      <p class="detail" title="${esc(detailLine())}">${esc(detailLine())}</p>
+      <p class="lowest">${lowestLine() || "&nbsp;"}</p>
+    </div>
+    <div class="hdr-btns">
+      <button class="btn primary big" id="hApply" type="button" aria-describedby="hApplyD">Apply to DeepSeek Harness</button>
+      <span id="hApplyD" class="sr">Writes the DSHProxy routes into every DeepSeek Harness profile and installs the video tools.</span>
+      <button class="btn primary big" id="hStart" type="button" ${canStart ? "" : "disabled"}>Start</button>
+      <button class="btn danger big" id="hStop" type="button" ${canStop ? "" : "disabled"}>Stop</button>
+    </div></div>`;
+  const b = S.backend;
+  let upd = "";
+  if (running() && (b.latest || b.previous)) {
+    const txt = b.busy ? `Downloading and trying CLIProxyAPI ${b.latest}... this takes up to a minute.`
+      : b.latest ? `CLIProxyAPI ${b.latest} is available (you run ${b.current}), released ${b.released}. Updating tries it first and keeps ${b.current} for rollback.`
+      : `Running CLIProxyAPI ${b.current}. The previous version ${b.previous} is kept.`;
+    upd = `<div class="col"><div class="bar" role="region" aria-label="Backend update"><p>${esc(txt)}</p><div class="btns">
+      ${b.latest ? `<button class="btn primary small" id="uUpdate" type="button" ${b.busy ? "disabled" : ""}>Update…</button>` : ""}
+      ${b.previous ? `<button class="btn small" id="uRollback" type="button" ${b.busy ? "disabled" : ""}>Roll back…</button>` : ""}</div></div></div>`;
+  }
+  $("#upd").innerHTML = upd;
+}
+function renderNav() {
+  const hint = S.section === 5 ? HINTS.log : HINTS[S.ws];
+  $("#nav").innerHTML = `<div class="col navrow">
+    <span class="wsl" id="wsLabel">Workspace</span>
+    <div class="seg" role="radiogroup" aria-labelledby="wsLabel">
+      <button type="button" role="radio" id="ws-chat" aria-checked="${S.ws === "chat"}" tabindex="${S.ws === "chat" ? 0 : -1}" aria-label="Chat workspace">Chat</button>
+      <button type="button" role="radio" id="ws-video" aria-checked="${S.ws === "video"}" tabindex="${S.ws === "video" ? 0 : -1}" aria-label="Video workspace">Video</button>
+    </div>
+    <div class="pills" role="tablist" aria-label="${S.ws === "chat" ? "Chat" : "Video"} sections">
+      ${SECTIONS.map((s, i) => `<button type="button" role="tab" id="tab-${i}" aria-controls="main" aria-selected="${i === S.section}" tabindex="${i === S.section ? 0 : -1}">${s}</button>`).join("")}
+    </div>
+    <span class="hint">${esc(hint)}</span></div>`;
+}
+function renderFooter() {
+  $("#ftr").innerHTML = `<div class="col">
+    <span class="paths" title="Data: ~/.dshproxy   Window: http://127.0.0.1:8418   Program: /Applications/DSHProxy.app   Build: 2026-11-23 21:00 c721af1">Data: ~/.dshproxy &nbsp;&nbsp; Window: http://127.0.0.1:8418 &nbsp;&nbsp; Program: /Applications/DSHProxy.app &nbsp;&nbsp; Build: 2026-11-23 21:00 c721af1</span>
+    <span class="swlabel"><button type="button" class="switch" role="switch" id="fLogin" aria-checked="${S.loginItem}" aria-labelledby="fLoginL"></button><span id="fLoginL">Start at login</span></span></div>`;
+}
+
+/* --- page frame helpers --- */
+const pageHead = (title, note, actions = "") => `<div class="page-head"><div class="t"><h2 id="pageTitle">${esc(title)}</h2>${note ? `<p class="note">${note}</p>` : ""}</div>${actions ? `<div class="actions">${actions}</div>` : ""}</div>`;
+const badge = (o, cls = "") => `<span class="badge ${cls}" style="--h:${o.h}" aria-hidden="true">${esc(o.badge)}</span>`;
+function notRunningPanel(what) {
+  if (S.gw === "starting") return `<div class="glass empty"><div class="spin" aria-hidden="true"></div><h3>The gateway is starting.</h3><p>${esc(what)} are shown when it answers.</p></div>`;
+  if (S.gw === "notanswering") return `<div class="glass empty"><h3>The gateway is not answering.</h3><p>${esc(what)} are shown again when it does. Stop asks before it cuts anything.</p></div>`;
+  return `<div class="glass empty"><h3>The gateway is not running.</h3><p>Press Start to see ${esc(what.toLowerCase())}. The window keeps working without it; it only shows what it can read.</p>
+    <button class="btn primary big" type="button" id="npStart">Start the gateway</button></div>`;
+}
+function notRunningBanner(text) {
+  if (running()) return "";
+  const cls = S.gw === "stopped" ? "" : "warn";
+  return `<div class="banner ${cls}" role="note"><p>${esc(S.gw === "stopped" ? "The gateway is not running. " : S.gw === "starting" ? "The gateway is starting. " : "The gateway is not answering. ")}${esc(text)}</p>
+    ${S.gw === "stopped" ? `<button class="btn primary small" type="button" id="nbStart">Start</button>` : ""}</div>`;
+}
+
+/* --- Chat › Accounts --- */
+function pageAccounts() {
+  const acts = `<button class="btn primary" type="button" id="accAdd">+ Add account</button>
+    <button class="btn" type="button" id="accRefresh" ${running() ? "" : "disabled"}>Refresh limits</button>
+    <button class="btn" type="button" id="accFolder">Show credentials in Finder</button>`;
+  let h = pageHead("Accounts", "Subscription accounts and how much of each limit is left. Bars turn amber below 30% and red below 10%.", acts);
+  if (!running()) return h + notRunningPanel("Accounts and limits");
+  if (!S.D.accounts.length) return h + `<div class="glass empty"><h3>No accounts yet</h3><p>Press “+ Add account” to sign in to Claude, ChatGPT, Gemini or Kimi. Your browser opens the provider's own sign-in page; DSHProxy never sees your password.</p><button class="btn primary big" type="button" id="accAdd2">+ Add account</button></div>`;
+  h += `<p class="note" id="limitsNote" style="margin:-4px 0 10px" aria-live="polite">${esc(S.limitsNote)}</p><div class="cards">`;
+  const counts = {}; S.D.accounts.forEach(a => counts[a.provider] = (counts[a.provider] || 0) + 1);
+  for (const a of S.D.accounts) {
+    const svc = SERVICES[a.provider], sib = counts[a.provider], who = `${svc.label} ${a.email}`;
+    let plan = a.plan.replace(/_/g, " "); if (plan.length > 16) plan = plan.slice(0, 15) + "…";
+    h += `<article class="glass card" aria-labelledby="acc-h-${a.id}">
+      <div class="card-top">${badge(svc)}
+        <div class="who"><h3 id="acc-h-${a.id}">${esc(svc.label)}</h3><span class="email">${esc(a.email)}</span></div>
+        <div class="chips"><span class="chip teal">${esc(plan)}</span>${a.primary && sib > 1 ? `<span class="chip ok">Primary</span>` : ""}
+          ${a.disabled ? `<span class="chip">● Paused</span>` : `<span class="chip ok">● Active</span>`}</div>
+        <div class="card-btns">
+          ${sib > 1 && a.primary ? `<button class="btn small" type="button" id="acc-np-${a.id}" aria-label="Not primary: let the ${esc(svc.label)} accounts take turns">Not primary</button>` : ""}
+          ${sib > 1 && !a.primary && !a.disabled ? `<button class="btn small" type="button" id="acc-mp-${a.id}" aria-label="Make ${esc(who)} primary">Make primary</button>` : ""}
+          <button class="btn small" type="button" id="acc-pz-${a.id}" aria-label="${a.disabled ? "Resume" : "Pause"} ${esc(who)}">${a.disabled ? "Resume" : "Pause"}</button>
+          <button class="btn small danger" type="button" id="acc-so-${a.id}" aria-label="Sign out of ${esc(who)}…">Sign out…</button>
+        </div></div>`;
+    if (a.windows.length && !a.disabled) {
+      h += `<div class="wins">`;
+      for (const w of a.windows) {
+        if (w.left == null) { h += `<span class="wt muted">${esc(w.title)}</span><div class="meter" aria-hidden="true"></div><span class="wl">Not reported for this plan</span>`; continue; }
+        h += `<span class="wt">${esc(w.title)}</span><div class="meter" aria-hidden="true"><i style="width:${w.left}%;background:linear-gradient(90deg,${levelColor(w.left)}b3,${levelColor(w.left)})"></i></div>
+          <span class="wl"><b class="${levelClass(w.left)}">${w.left}% left</b> · ${esc(resetText(w.min))}</span>`;
+      }
+      h += `</div>`;
+    }
+    const nres = a.resets ? a.resets.credits.length : 0;
+    if (nres && !a.disabled) h += `<div class="reset"><span class="chip bad">⚠ ${nres === 1 ? "1 limit reset" : nres + " limit resets"}</span><p>Danger zone: spending one cannot be undone.</p>
+      <button class="btn small danger-strong" type="button" id="acc-rs-${a.id}" aria-label="Use a limit reset on ${esc(who)}…">Use a reset…</button></div>`;
+    if (a.disabled) h += `<p class="cnote">Paused: DSHProxy does not use this account until you resume it.</p>`;
+    else if (!a.supported) h += `<p class="cnote">${esc(svc.label)} does not report its limits.</p>`;
+    h += `</article>`;
+  }
+  return h + `</div>`;
+}
+
+/* --- Chat › API keys --- */
+function pageKeys() {
+  let h = pageHead("API keys", "Pay-per-use API keys. Keys are stored encrypted in the DSHProxy data folder; the key that unlocks them is kept in your macOS Keychain. Restart the gateway after a change.");
+  h += notRunningBanner("Keys can still be saved; the gateway uses them when it starts.");
+  h += `<div class="glass tablewrap"><table class="list" aria-labelledby="pageTitle"><thead><tr><th scope="col">Provider</th><th scope="col">Region</th><th scope="col">State</th><th scope="col" class="right"><span class="sr">Actions</span></th></tr></thead><tbody>`;
+  for (const [id, p] of Object.entries(KEYPROV)) {
+    const k = S.D.keys[id];
+    const st = k.state === "saved" ? `<span class="okc">Saved</span>` : k.state === "unreadable" ? `<span class="badc">Saved, cannot be read: add it again</span>` : `<span class="muted">Not set</span>`;
+    h += `<tr><td><span class="cellflex">${badge(p, "sm")}<span>${esc(p.label)}</span></span></td><td>${p.regions ? esc(k.region || p.regions[0]) : `<span class="faint">—</span>`}</td><td>${st}</td>
+      <td class="right"><div class="rowbtns"><button class="btn small ${k.state === "none" ? "primary" : ""}" type="button" id="key-set-${id}" aria-label="${k.state === "none" ? "Add" : "Replace"} the ${esc(p.label)} key…">${k.state === "none" ? "Add key…" : "Replace key…"}</button>
+      ${k.state !== "none" ? `<button class="btn small danger" type="button" id="key-rm-${id}" aria-label="Remove the ${esc(p.label)} key…">Remove…</button>` : ""}</div></td></tr>`;
+  }
+  return h + `</tbody></table></div>`;
+}
+
+/* --- Chat › Lanes --- */
+function laneState(m) {
+  if (S.D.cooling[m] != null) return "cool";
+  const s = serviceOf(m);
+  if (SERVICES[s]) return S.D.accounts.some(a => a.provider === s && !a.disabled) ? "ok" : "bad";
+  return S.D.keys[s] && S.D.keys[s].state === "saved" ? "ok" : "bad";
+}
+function pageLanes() {
+  let h = pageHead("Lanes", "A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key.",
+    `<button class="btn" type="button" id="lnEdit">Edit lanes (settings.json)</button>`);
+  if (!running()) return h + notRunningPanel("Lanes and their models");
+  const p = S.D.preset;
+  h += `<div class="glass" style="padding:12px 14px;margin-bottom:12px"><div class="presets"><span class="lbl" id="routingL">Routing:</span>
+    <div class="seg" role="group" aria-labelledby="routingL">${Object.entries(PRESETS).map(([k, v]) => `<button type="button" id="pr-${k}" aria-pressed="${p === k}" title="${esc(v.summary)}">${esc(v.label)}</button>`).join("")}
+      <button type="button" id="pr-custom" aria-pressed="${p === "custom"}" ${p === "custom" ? "" : "disabled"} title="Ladders edited in settings.json">Custom</button></div></div>
+    <p class="note">${p === "custom" ? "Custom ladders, edited in settings.json. Pick a preset to replace them." : `Active: ${esc(PRESETS[p].label)}. ${esc(PRESETS[p].summary)}`}</p></div>`;
+  h += `<div class="legend" aria-hidden="true"><span><span class="lchip ok" style="height:20px"><span class="d">✓</span>can serve</span></span><span><span class="lchip cool" style="height:20px"><span class="d">⏸</span>sitting out</span></span><span><span class="lchip bad" style="height:20px"><span class="d">✗</span><span class="n">no account or key</span></span></span></div>`;
+  h += `<div class="glass tablewrap"><table class="list" aria-labelledby="pageTitle"><thead><tr><th scope="col" style="width:110px">Lane</th><th scope="col">Ladder (first to last)</th></tr></thead><tbody>`;
+  for (const lane of LANES) {
+    const ladder = S.D.lanes[lane] || [];
+    h += `<tr><th scope="row" style="font-weight:600;color:var(--text);border-bottom:1px solid rgba(180,204,212,.08)">lane-${esc(lane)}</th><td><ol class="ladder" style="list-style:none;margin:0;padding:0">${ladder.map((m, i) => {
+      const st = laneState(m); const sym = { ok: "✓", cool: "⏸", bad: "✗" }[st];
+      const why = { ok: "can serve", cool: `sitting out after running out of quota, back in ${S.D.cooling[m]} min`, bad: "no account or key" }[st];
+      return `<li style="display:contents">${i ? `<span class="sep" aria-hidden="true">›</span>` : ""}<span class="lchip ${st}" title="${esc(m + ": " + why)}"><span class="d" aria-hidden="true">${sym}</span><span class="n">${esc(m)}</span><span class="sr">: ${esc(why)}</span></span></li>`;
+    }).join("")}</ol></td></tr>`;
+  }
+  return h + `</tbody></table></div>`;
+}
+
+/* --- Chat › Models --- */
+const fmtTok = n => !n ? "—" : n >= 1e6 ? (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + "M" : Math.round(n / 1000) + "K";
+const REASON = { new: "NEW · found automatically", auto: "Offered", "user-on": "Offered (you switched it on)", "user-off": "Off (you switched it off)", older: "Hidden: older generation", notchat: "Hidden: not a chat model", nodetails: "Hidden: no details known" };
+function pageModels() {
+  const acts = `<span class="swlabel"><button type="button" class="switch" role="switch" id="mdHidden" aria-checked="${S.D.showHidden}" aria-labelledby="mdHiddenL"></button><span id="mdHiddenL">Show hidden models</span></span>
+    <button class="btn primary" type="button" id="mdCheck" ${running() ? "" : "disabled"}>Check for new models</button>`;
+  let h = pageHead("Models", "Switched-on models are offered to DeepSeek Harness. New models are found automatically every 3 hours; when the list changes, the DSHProxy routes in DeepSeek Harness are updated (restart DeepSeek Harness to see them).", acts);
+  if (!running()) return h + notRunningPanel("Models");
+  const sg = S.D.suggestion;
+  if (sg) {
+    const lanes = LANES.filter(l => (S.D.lanes[l] || []).includes(sg.from));
+    if (lanes.length) h += `<div class="suggest" role="region" aria-label="Newer model suggestion"><span class="chip teal">Newer version</span><p><b>${esc(sg.to)}</b> could replace ${esc(sg.from)} on lane ${esc(lanes.join(", "))}.</p>
+      <button class="btn primary small" type="button" id="mdUse">Use ${esc(sg.to)}</button></div>`;
+  }
+  h += `<p class="note" style="margin:-2px 0 10px">${S.D.modelsChecked == null ? "Not checked yet." : S.D.modelsChecked === 0 ? "Last checked just now." : `Last checked ${S.D.modelsChecked} min ago.`}</p>`;
+  const rows = S.D.models.filter(m => m.offered || S.D.showHidden || m.reason === "user-off");
+  if (!rows.length) return h + `<div class="glass empty"><h3>No models yet</h3><p>Sign in to an account or add an API key; its models appear here. Press “Check for new models” to look now.</p></div>`;
+  rows.sort((a, b) => (b.reason === "new") - (a.reason === "new") || a.service.localeCompare(b.service) || a.id.localeCompare(b.id));
+  h += `<div class="glass tablewrap"><table class="list" aria-labelledby="pageTitle"><thead><tr><th scope="col" style="width:56px">Offer</th><th scope="col">Model</th><th scope="col">Service</th><th scope="col" class="right">Context</th><th scope="col" class="right">Output</th><th scope="col">Reasoning</th><th scope="col">Status</th></tr></thead><tbody>`;
+  for (const m of rows) {
+    const cls = m.reason === "new" && m.offered ? "brassc" : !m.offered ? "muted" : "";
+    h += `<tr><td><button type="button" class="switch" role="switch" id="md-${esc(m.id)}" aria-checked="${m.offered}" aria-label="Offer ${esc(m.id)}"></button></td>
+      <td class="${cls}" style="${m.reason === "new" ? "font-weight:700" : ""}">${esc(m.id)}</td><td class="muted">${esc(svcLabel(m.service))}</td>
+      <td class="right num">${fmtTok(m.ctx)}</td><td class="right num">${fmtTok(m.out)}</td><td class="muted">${esc(m.reasoning)}</td><td class="${cls}">${esc(REASON[m.reason] || m.reason)}</td></tr>`;
+  }
+  return h + `</tbody></table></div>`;
+}
+
+/* --- Chat › DeepSeek Harness --- */
+function toolsState() {
+  return { installed: ["Installed and switched on", "okc"], off: ["Installed, switched off", "warnc"], notinstalled: ["Not installed: press Apply to DeepSeek Harness", "warnc"], na: ["Not available on macOS yet", "badc"] }[S.D.videoTools];
+}
+function pageHarness() {
+  const acts = `<button class="btn" type="button" id="hvPreview">Preview changes</button><button class="btn outline" type="button" id="hvVerify">Verify</button>
+    <button class="btn danger" type="button" id="hvRemove" ${S.D.profiles.some(p => p.points !== "none") ? "" : "disabled"}>Remove from DeepSeek Harness</button>`;
+  let h = pageHead("DeepSeek Harness", "Apply to DeepSeek Harness, at the top of the window, writes the DSHProxy routes into every DeepSeek Harness profile and keeps everything else. Preview shows what it would change. Verify checks the profiles back: routes, models, default model and credential. Restart DeepSeek Harness after a change.", acts);
+  h += notRunningBanner("Profiles can be read, but they point at a gateway that is not answering until you start it.");
+  if (!S.D.profiles.length) h += `<div class="glass empty"><h3>No DeepSeek Harness profile found</h3><p>Open DeepSeek Harness once so it creates its profile, then press Apply to DeepSeek Harness at the top.</p></div>`;
+  else {
+    h += `<div class="glass tablewrap"><table class="list" aria-labelledby="pageTitle"><thead><tr><th scope="col">Profile</th><th scope="col" class="right">Routes</th><th scope="col" class="right">Models</th><th scope="col">Points at this gateway</th></tr></thead><tbody>`;
+    for (const p of S.D.profiles) {
+      const pt = { yes: `<span class="okc">Yes</span>`, stale: `<span class="warnc">No: apply again</span>`, none: `<span class="muted">Not applied</span>` }[p.points];
+      h += `<tr><td>${esc(p.name)}</td><td class="right num">${p.points === "none" ? "—" : p.routes}</td><td class="right num">${p.points === "none" ? "—" : p.models}</td><td>${pt}</td></tr>`;
+    }
+    h += `</tbody></table></div>`;
+  }
+  const [t, c] = toolsState();
+  h += `<div class="glass" style="padding:12px 14px;margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><b>Video tools (plugin)</b><span class="${c}">${esc(t)}</span>
+    <span class="muted" style="flex:1;min-width:200px;font-size:12.5px">Installed by Apply, together with the chat routes. Details on Video › DeepSeek Harness.</span>
+    <button class="btn small" type="button" id="hvToVideo">Open Video › DeepSeek Harness</button></div>`;
+  return h;
+}
+
+/* --- Log --- */
+function pageLog() {
+  return pageHead("Log", "Gateway output and what this window did. The gateway also writes dshproxy.log in the data folder.",
+    `<button class="btn" type="button" id="logFolder">Show data folder in Finder</button>`)
+    + `<pre class="log" id="logpre" role="log" aria-live="off" aria-label="Log" tabindex="0">${S.log.map(lineHtml).join("")}</pre>`;
+}
+
+/* --- Video › Accounts --- */
+function pageVAccounts() {
+  const k = S.D.krea;
+  const acts = `<button class="btn primary" type="button" id="kSignIn" ${k.state === "signing" ? "disabled" : ""}>Sign in to Krea…</button>
+    <button class="btn" type="button" id="kCancel" ${k.state === "signing" ? "" : "disabled"}>Cancel</button>
+    <button class="btn danger" type="button" id="kSignOut" ${k.state === "signedin" ? "" : "disabled"}>Sign out…</button>`;
+  let h = pageHead("Video accounts", "Video has one signed-in service, a Krea workspace. Sign in to Krea opens Krea's consent page in your browser; DSHProxy's Krea helper keeps the sign-in, and this window sees only whether one is present and until when. The chat accounts are not used for video.", acts);
+  const st = k.state === "signedin" ? `<span class="okc">Signed in · until ${DAYS[k.until.getDay()]} ${k.until.getDate()} ${MONS[k.until.getMonth()]} ${k.until.getFullYear()}, ${hm(k.until)}</span>`
+    : k.state === "signing" ? `<span class="warnc">Signing in...</span>` : `<span class="muted">Not signed in</span>`;
+  h += `<div class="glass tablewrap"><table class="list" aria-labelledby="pageTitle"><thead><tr><th scope="col">Service</th><th scope="col">Billed in</th><th scope="col">Sign-in</th><th scope="col">State</th></tr></thead><tbody>
+    <tr><td><span class="cellflex">${badge({ badge: "Kr", h: 300 }, "sm")}<span>Krea workspace <span class="faint">· krea</span></span></span></td><td>workspace compute units</td><td>In your browser</td><td aria-live="polite">${st}</td></tr></tbody></table></div>`;
+  if (k.state === "signing") h += `<div class="glass" style="padding:14px;margin-top:12px;display:flex;flex-direction:column;gap:10px">
+    <b>Your browser opened Krea's consent page.</b><p class="muted">Approve access there. This page updates by itself; the helper gives up after 4 minutes.</p><div class="marquee" aria-hidden="true"><i></i></div>
+    <div class="mockline">Prototype only: <button class="btn small mock" type="button" id="kMockOk">Simulate: approved in browser</button><button class="btn small mock" type="button" id="kMockFail">Simulate: refused</button></div></div>`;
+  h += `<p class="note" style="margin-top:10px">State read from the Krea helper at ${hms(S.D.vRead)}; it is read when this page opens, not kept up to date.</p>`;
+  return h;
+}
+
+/* --- Video › API keys --- */
+const VKEYS = { videorouter: { label: "VideoRouter", badge: "VR", h: 45, v: "VIDEOROUTER_API_KEY" }, kovapi: { label: "KovAPI", badge: "Ka", h: 95, v: "KOVAPI_API_KEY" }, callirra: { label: "Callirra", badge: "Ca", h: 325, v: "CALLIRRA_API_KEY" } };
+function pageVKeys() {
+  let h = pageHead("Video API keys", "Save the key of a pay-per-use video provider here. It is stored encrypted in the DSHProxy data folder, like the Chat API keys; a key in the provider's environment variable is used instead when that is set. A saved key is not checked against the provider.");
+  h += `<div class="glass tablewrap"><table class="list" aria-labelledby="pageTitle"><thead><tr><th scope="col">Provider</th><th scope="col">Environment variable</th><th scope="col">Billed in</th><th scope="col">State</th><th scope="col" class="right"><span class="sr">Actions</span></th></tr></thead><tbody>`;
+  for (const [id, p] of Object.entries(VKEYS)) {
+    const k = S.D.vkeys[id];
+    const st = (k.state === "saved" ? `<span>Saved</span>` : k.state === "unreadable" ? `<span class="warnc">Saved, cannot be read: enter it again</span>` : `<span class="muted">Not saved</span>`) + (k.env ? `<span class="muted"> · also set in the environment</span>` : "");
+    h += `<tr><td><span class="cellflex">${badge(p, "sm")}<span>${esc(p.label)}</span></span></td><td class="mono" style="font-size:12px">${p.v}</td><td>${esc(VROUTES[id].units)}</td><td>${st}</td>
+      <td class="right"><div class="rowbtns"><button class="btn small ${k.state === "none" ? "primary" : ""}" type="button" id="vkey-set-${id}" aria-label="Add or replace the ${p.label} key…">Add or replace…</button>
+      ${k.state !== "none" ? `<button class="btn small danger" type="button" id="vkey-rm-${id}" aria-label="Remove the ${p.label} key…">Remove…</button>` : ""}</div></td></tr>`;
+  }
+  h += `</tbody></table></div><p class="note" style="margin-top:10px">The Krea workspace route uses a sign-in instead of a key: see <button type="button" class="linkish" id="vkToAcc">Accounts</button>.</p>`;
+  return h;
+}
+
+/* --- Video › Lanes --- */
+function routeCell(m) {
+  if (!m.route) return `<span class="warnc">Not configured</span>`;
+  if (!m.allowed.includes(m.route)) return `<span class="badc">Not allowed: ${esc(m.route)}</span>`;
+  return `${esc(VROUTES[m.route].label)} <span class="faint">· ${esc(m.route)}</span>`;
+}
+const billedCell = m => m.route && m.allowed.includes(m.route) ? esc(VROUTES[m.route].units) : `<span class="warnc">Choose a billing route</span>`;
+const companyCell = m => `<span class="cellflex">${badge(COMPANY[m.company], "sm")}<span>${esc(COMPANY[m.company].label)}</span></span>`;
+function pageVLanes() {
+  let h = pageHead("Video lanes", "Each enabled model has exactly one billing route. A paid job is never retried automatically, moved to another provider or passed on to another route. A saved route is a setting: it does not prove a sign-in, a key, availability or a price.",
+    `<button class="btn" type="button" id="vReload">Reload video settings</button>`);
+  const en = S.D.vmodels.filter(m => m.enabled);
+  if (!en.length) h += `<div class="glass empty"><h3>None enabled</h3><p>Switch a model on in the Models tab; its billing route is chosen here.</p><button class="btn" type="button" id="vlToModels">Go to Models</button></div>`;
+  else {
+    h += `<div class="glass tablewrap"><table class="list" aria-labelledby="pageTitle"><thead><tr><th scope="col">Model</th><th scope="col">Company</th><th scope="col">Billing route</th><th scope="col">Billed in</th><th scope="col" class="right"><span class="sr">Actions</span></th></tr></thead><tbody>`;
+    for (const m of en) h += `<tr><td>${esc(m.id)}</td><td>${companyCell(m)}</td><td>${routeCell(m)}</td><td>${billedCell(m)}</td>
+      <td class="right"><button class="btn small ${m.route ? "" : "primary"}" type="button" id="vroute-${esc(m.id)}" aria-label="Change the billing route of ${esc(m.id)}…">Change billing route…</button></td></tr>`;
+    h += `</tbody></table></div>`;
+  }
+  return h + `<p class="note" style="margin-top:10px">${esc(S.vStatus || `Video settings read from DSHProxy at ${hms(S.D.vRead)}.`)} Letter badges show the company behind each model, not a model mark.</p>`;
+}
+
+/* --- Video › Models --- */
+function pageVModels() {
+  let h = pageHead("Video models", "Switched-on models with a billing route are what the DeepSeek Harness video tools may offer; new models start switched off. A switch is a setting only: it checks no sign-in, key, availability or price, it is not a spending limit, and nothing is generated or charged here.",
+    `<button class="btn" type="button" id="vReload">Reload video settings</button>`);
+  h += `<div class="glass tablewrap"><table class="list" aria-labelledby="pageTitle"><thead><tr><th scope="col" style="width:56px">On</th><th scope="col">Model</th><th scope="col">Company</th><th scope="col">Billing route</th><th scope="col">Billed in</th><th scope="col">State</th></tr></thead><tbody>`;
+  for (const m of S.D.vmodels) {
+    const valid = m.route && m.allowed.includes(m.route);
+    const st = !m.enabled ? `<span class="muted">Off</span>` : valid ? `<span class="okc">Enabled</span>` : `<span class="warnc">No valid route</span>`;
+    h += `<tr><td><button type="button" class="switch" role="switch" id="vm-${esc(m.id)}" aria-checked="${m.enabled}" aria-label="Enable ${esc(m.id)}"></button></td><td>${esc(m.id)}</td><td>${companyCell(m)}</td>
+      <td>${routeCell(m)}</td><td>${m.route ? billedCell(m) : `<span class="muted">—</span>`}</td><td>${st}</td></tr>`;
+  }
+  return h + `</tbody></table></div><p class="note" style="margin-top:10px">${esc(S.vStatus || `Video settings read from DSHProxy at ${hms(S.D.vRead)}.`)} Choose the billing route under Lanes.</p>`;
+}
+
+/* --- Video › DeepSeek Harness --- */
+function pageVHarness() {
+  let h = pageHead("Video in DeepSeek Harness", "Video reaches DeepSeek Harness through the video tools, a plugin in integrations/dsh-video of the DSHProxy folder. Apply to DeepSeek Harness, at the top of the window, installs it in the DeepSeek Harness desktop app, together with the Chat routes.");
+  const [t, c] = toolsState();
+  const en = S.D.vmodels.filter(m => m.enabled), good = en.filter(m => m.route && m.allowed.includes(m.route)), bad = en.filter(m => !(m.route && m.allowed.includes(m.route)));
+  const rows = [
+    ["Video tools installed in DeepSeek Harness?", `<span class="${c}">${esc(t)}</span>`],
+    ["Enabled, with a billing route", good.length ? esc(good.map(m => m.id).join(", ")) : `<span class="muted">None</span>`],
+    ["Enabled, no valid route (not offered)", bad.length ? `<span class="warnc">${esc(bad.map(m => m.id).join(", "))}</span>` : `<span class="muted">None</span>`],
+    ["Video tools in this DSHProxy folder", `<span class="okc">Found: integrations/dsh-video</span>`],
+  ];
+  h += `<div class="glass tablewrap"><table class="list" aria-labelledby="pageTitle"><thead><tr><th scope="col" style="width:40%">What</th><th scope="col">State</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("")}</tbody></table></div>
+    <p class="note" style="margin-top:10px">Checked at ${hms(S.harnessChecked)}. The video tools offer the enabled models above. Their README says what they can do and how far that has been checked.</p>`;
+  return h;
+}
+
+const PAGES = { chat: [pageAccounts, pageKeys, pageLanes, pageModels, pageHarness, pageLog], video: [pageVAccounts, pageVKeys, pageVLanes, pageVModels, pageVHarness, pageLog] };
+
+function render() {
+  if (S.quit) return renderQuit();
+  const fid = document.activeElement && document.activeElement.id;
+  const main = $("#main"), key = S.ws + S.section, scroll = main.dataset.key === key ? main.scrollTop : 0;
+  renderHeader(); renderNav(); renderFooter();
+  main.innerHTML = `<div class="col">${PAGES[S.ws][S.section]()}</div>`;
+  main.setAttribute("role", "tabpanel"); main.setAttribute("aria-labelledby", "tab-" + S.section);
+  main.dataset.key = key; main.scrollTop = scroll;
+  const pre = $("#logpre"); if (pre) pre.scrollTop = pre.scrollHeight;
+  if (fid && !$("#dlg").open && document.activeElement === document.body) { const el = document.getElementById(fid); if (el && !el.disabled) el.focus(); }
+}
+function renderQuit() {
+  $("#app").innerHTML = `<div class="quit"><div>${MARK.replace("<svg", '<svg width="64" height="64"')}<h1 style="font-weight:300">DSHProxy has quit</h1>
+    <p class="muted">The gateway is stopped and the menu-bar item is gone. In a real build this browser tab would now show “cannot connect”; opening DSHProxy from Applications starts it again.</p>
+    <button class="btn primary big" type="button" id="qRestart" autofocus>Restart prototype</button></div></div>`;
+  $("#qRestart").focus();
+  $("#qRestart").onclick = () => location.reload();
+}
+
+/* ---------- toast + announce ---------- */
+let toastT;
+function toast(text) { const t = $("#toast"); t.textContent = text; t.classList.add("show"); clearTimeout(toastT); toastT = later(3800, () => t.classList.remove("show")); }
+function announce(text) { $("#sr").textContent = ""; later(30, () => $("#sr").textContent = text); }
+
+/* ---------- dialogs (native <dialog>, focus trapped, Escape closes) ---------- */
+const FOCUSABLE = 'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea,[href],[tabindex]:not([tabindex="-1"])';
+const dlg = $("#dlg");
+let D = null; // current dialog spec
+function openDlg(spec) {
+  const opener = dlg.open ? (D && D.opener) : document.activeElement;
+  D = { ...spec, opener, openerId: opener && opener.id };
+  dlg.className = spec.wide ? "wide" : ""; dlg.setAttribute("aria-labelledby", "dlgTitle");
+  dlg.innerHTML = `<div class="dlg"><div class="dlg-h">${spec.icon || ""}<h2 id="dlgTitle">${esc(spec.title)}</h2></div>
+    <div class="dlg-b" id="dlgBody">${spec.body}</div>
+    <div class="dlg-f">${spec.left ? `<div class="left">${spec.left}</div>` : ""}${(spec.buttons || []).map((b, i) => `<button type="button" class="btn ${b.kind || ""}" id="${b.id || "dlgb" + i}" ${b.disabled ? "disabled" : ""}>${esc(b.label)}</button>`).join("")}</div></div>`;
+  (spec.buttons || []).forEach((b, i) => { const el = document.getElementById(b.id || "dlgb" + i); el.onclick = () => b.onClick ? b.onClick(el) : closeDlg(); });
+  if (!dlg.open) dlg.showModal();
+  spec.onOpen && spec.onOpen();
+  const first = spec.focus ? $(spec.focus, dlg) : dlg.querySelector(FOCUSABLE);
+  (first || dlg).focus();
+}
+function closeDlg(reason) {
+  if (!dlg.open) return;
+  const spec = D; D = null;
+  dlg.close(); dlg.innerHTML = ""; dlg.removeAttribute("aria-labelledby"); render();
+  spec && spec.onClose && spec.onClose(reason);
+  const target = (spec && spec.openerId && document.getElementById(spec.openerId)) || (spec && spec.opener && document.contains(spec.opener) && spec.opener);
+  if (target && !target.disabled) target.focus(); else $("#main").focus();
+}
+dlg.addEventListener("cancel", e => { e.preventDefault(); if (D && D.busy) return; closeDlg("escape"); });
+function trap(container, e) {
+  if (e.key !== "Tab") return;
+  const f = [...container.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null || el === document.activeElement);
+  if (!f.length) { e.preventDefault(); return; }
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && (document.activeElement === first || !container.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (document.activeElement === last || !container.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+}
+dlg.addEventListener("keydown", e => trap(dlg, e));
+const para = t => esc(t).split("\n\n").map(p => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+const GLYPH = { warn: `<span class="badge" style="background:var(--warn)" aria-hidden="true">!</span>`, info: `<span class="badge" style="background:var(--teal)" aria-hidden="true">i</span>`,
+  ask: `<span class="badge" style="background:var(--brass)" aria-hidden="true">?</span>`, bad: `<span class="badge" style="background:var(--bad)" aria-hidden="true">×</span>`, ok: `<span class="badge" style="background:var(--ok)" aria-hidden="true">✓</span>` };
+// Confirmation: the safe button (Cancel) has focus by default, as in the Windows app.
+function confirmDlg({ title, text, body, ok, kind = "primary", onOk, cancel = "Cancel", icon = "warn" }) {
+  openDlg({ title, icon: GLYPH[icon], body: body || para(text), focus: "#dlgCancel",
+    buttons: [{ id: "dlgCancel", label: cancel }, { id: "dlgOk", label: ok, kind, onClick: () => { closeDlg("ok"); onOk && onOk(); } }] });
+}
+function msgDlg({ title, text, body, icon = "info", extra }) {
+  const buttons = []; if (extra) buttons.push({ id: "dlgExtra", label: extra.label, kind: extra.kind, onClick: extra.onClick });
+  buttons.push({ id: "dlgOkOnly", label: "OK", kind: extra ? "" : "primary" });
+  openDlg({ title, icon: GLYPH[icon], body: body || para(text), buttons, focus: "#dlgOkOnly" });
+}
+
+/* ---------- Add account (sign-in) flow ---------- */
+function addAccount() {
+  if (!running()) return msgDlg({ title: "Add account", icon: "info", text: "Start the gateway first. Sign-in runs through it.", extra: { label: "Start gateway", kind: "primary", onClick: () => { closeDlg(); startGateway(); } } });
+  if (S.ws !== "chat" || S.section !== 0) { S.ws = "chat"; S.section = 0; render(); }
+  signinChoose();
+}
+let signin = null;
+function signinChoose() {
+  signin = null;
+  openDlg({ title: "Add an account", wide: true, body: `<p class="muted">Pick the subscription to sign in to. Your browser opens to the provider's own sign-in page; DSHProxy never sees your password.</p>
+    <div class="tiles">${Object.entries(SERVICES).map(([k, s]) => `<button type="button" class="tile" id="tile-${k}">${badge(s)}<span><b>${esc(s.tile)}</b><span class="d">${esc(s.desc)}</span></span></button>`).join("")}</div>`,
+    buttons: [{ id: "siCancel", label: "Cancel" }],
+    onOpen: () => Object.keys(SERVICES).forEach(k => $("#tile-" + k).onclick = () => signinStart(k)),
+    onClose: r => { if (signin && signin.step === "wait") log(`Sign-in to ${SERVICES[signin.p].label} cancelled.`); signin = null; } });
+}
+function signinStart(p) {
+  signin = { p, step: "ask" }; const s = SERVICES[p];
+  openDlg({ title: "Add an account", wide: true, body: `<div style="display:flex;gap:12px;align-items:center;padding:30px 0"><div class="spin" aria-hidden="true"></div><p role="status">Asking ${esc(s.label)} for a sign-in link...</p></div>`,
+    buttons: [{ id: "siCancel", label: "Cancel", onClick: () => signinChoose() }], onClose: D && D.onClose });
+  later(700, () => { if (signin && signin.p === p && signin.step === "ask") signinWait(p); });
+}
+function signinWait(p) {
+  signin = { p, step: "wait" }; const s = SERVICES[p];
+  const instr = s.device ? `<p>Enter this code on the ${esc(s.label)} page that opened:</p><div class="code" aria-label="Code K Q 7 M dash 4 X P D">KQ7M-4XPD</div>`
+    : `<p>Sign in on the ${esc(s.label)} page that opened in your browser and approve access. When it says you are signed in, come back here.</p>`;
+  openDlg({ title: `Signing in to ${s.label}`, wide: true, icon: badge(s, "lg"),
+    body: `<p class="chip ok" style="align-self:flex-start">Your browser opened</p>${instr}<div class="marquee" aria-hidden="true"><i></i></div>
+      <p class="muted" style="font-size:12.5px">Waiting for you to finish in your browser. This window updates by itself; the sign-in expires after 5 minutes.</p>
+      <div class="mockline">Prototype only: <button class="btn small mock" type="button" id="siMockOk">Simulate: finished in browser</button><button class="btn small mock" type="button" id="siMockFail">Simulate: failed</button></div>`,
+    left: s.device ? `<button type="button" class="btn" id="siCopyCode">Copy code</button>` : `<button type="button" class="btn" id="siCopyLink">Copy link</button>`,
+    buttons: [{ id: "siCancel2", label: "Cancel", onClick: () => { log(`Sign-in to ${s.label} cancelled.`); signinChoose(); } }, { id: "siReopen", label: "Open page again", kind: "primary", onClick: () => toast(`Opened the ${s.label} sign-in page again (mock: no browser was opened).`) }],
+    focus: "#siReopen",
+    onOpen: () => {
+      $("#siMockOk").onclick = () => signinDone(p, true); $("#siMockFail").onclick = () => signinDone(p, false);
+      const c = $("#siCopyCode") || $("#siCopyLink"); c.onclick = () => { c.textContent = "Copied"; toast("Copied (mock: the clipboard was not touched)."); };
+    },
+    onClose: r => { if (signin && signin.step === "wait") log(`Sign-in to ${s.label} cancelled.`); signin = null; } });
+}
+function signinDone(p, ok) {
+  const s = SERVICES[p];
+  if (!ok) {
+    signin = { p, step: "fail" };
+    return openDlg({ title: `Sign-in to ${s.label} did not finish`, icon: GLYPH.bad, body: `<p class="badc" style="font-weight:600">Sign-in to ${esc(s.label)} did not finish</p><p class="muted">${esc(s.label)} said: access was denied in the browser. (Synthetic message.)</p>`,
+      buttons: [{ id: "siClose", label: "Close" }, { id: "siBack", label: "Back", onClick: () => signinChoose() }, { id: "siRetry", label: "Try again", kind: "primary", onClick: () => signinStart(p) }], focus: "#siRetry" });
+  }
+  const used = new Set(S.D.accounts.map(a => a.email)); let email = "f@example.com";
+  for (const c of "fghijklmnopqrstuvw") if (!used.has(c + "@example.com")) { email = c + "@example.com"; break; }
+  const sib = S.D.accounts.some(a => a.provider === p);
+  S.D.accounts.push({ id: "n" + Date.now(), provider: p, email, plan: p === "claude" ? "pro" : p === "codex" ? "plus" : p === "kimi" ? "kimi_code" : "google_ai_pro", primary: false, disabled: false, supported: p !== "kimi",
+    windows: p === "kimi" ? [] : [{ title: p === "antigravity" ? "Daily" : "5-hour", left: 100, min: 300 }, ...(p === "antigravity" ? [] : [{ title: "Weekly", left: 100, min: 7 * 1440 }])], resets: null });
+  void sib;
+  log(`Signed in: ${s.label} (${email})`, "a");
+  signin = { p, step: "ok" };
+  openDlg({ title: "Add an account", icon: badge(s, "lg"), body: `<p class="okc" style="font-size:16px;font-weight:600">✓  Signed in to ${esc(s.label)}</p><p>${esc(email)}</p>
+    <p class="muted">DSHProxy can now use this subscription. Its limits appear on the Accounts tab within a minute.</p>`,
+    buttons: [{ id: "siAnother", label: "Add another", onClick: () => signinChoose() }, { id: "siDone", label: "Done", kind: "primary" }], focus: "#siDone" });
+}
+
+/* ---------- Limit reset (ChatGPT) ---------- */
+function resetDialog(a) {
+  const s = SERVICES[a.provider], n = a.resets.credits.length;
+  openDlg({ title: "Danger zone: use a limit reset", icon: GLYPH.bad, wide: true,
+    body: `<div class="danger-banner" role="note"><strong>⚠ DANGER ZONE</strong>Using a reset spends it for good. There is no undo, and it cannot be moved to another account.<br>${n} reset${n === 1 ? "" : "s"} left on this account.</div>
+      <p><b>${esc(s.label)}</b> · ${esc(a.email)}</p>
+      <p class="muted">A reset makes your used-up limits full again straight away. ChatGPT keeps it only if you have nothing used up.</p>
+      <div>${a.windows.filter(w => w.left != null).map(w => `<p style="font-size:12.5px">Now: ${esc(w.title)} <span class="${levelClass(w.left)}">${w.left}% left</span> · ${esc(resetText(w.min))}</p>`).join("")}</div>
+      <fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Resets you have:</legend><div class="radios">
+      ${a.resets.credits.map((c, i) => `<label><input type="radio" name="credit" value="${c.id}" ${i ? "" : "checked"}><span><b>${esc(c.title)}</b><br><span class="muted" style="font-size:12.5px">${esc(c.description)} · expires ${esc(c.expires)}</span></span></label>`).join("")}</div></fieldset>
+      <div class="field"><label for="resetConfirm">Type RESET to confirm:</label><input type="text" id="resetConfirm" autocomplete="off" spellcheck="false" aria-describedby="resetHelp"><span id="resetHelp" class="muted" style="font-size:12px">Capital letters. The button stays off until the word matches.</span></div>`,
+    buttons: [{ id: "rsCancel", label: "Cancel" }, { id: "rsUse", label: "Use this reset", kind: "danger-strong", disabled: true, onClick: () => {
+      const cid = (dlg.querySelector("input[name=credit]:checked") || {}).value;
+      a.resets.credits = a.resets.credits.filter(c => c.id !== cid); if (!a.resets.credits.length) a.resets = null;
+      a.windows.forEach(w => { if (w.left != null) w.left = 100; });
+      log(`Limit reset used on ChatGPT (${a.email}): limits are full again.`, "a");
+      closeDlg("ok");
+      msgDlg({ title: "Limit reset", icon: "ok", text: "The reset was used. ChatGPT reports your limits as full again." });
+    } }],
+    focus: "#resetConfirm",
+    onOpen: () => { const inp = $("#resetConfirm"), btn = $("#rsUse"); inp.oninput = () => { btn.disabled = inp.value.trim() !== "RESET"; }; } });
+}
+
+/* ---------- key dialog (chat + video) ---------- */
+function keyDialog({ label, regions, region, video, onSave }) {
+  openDlg({ title: video ? "Video API key" : "API key",
+    body: `${regions ? `<div class="field"><label for="kRegion">Region</label><select id="kRegion">${regions.map(r => `<option ${r === region ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></div>` : ""}
+      <div class="field"><label for="kValue">API key for ${esc(label)}:</label><input type="password" id="kValue" autocomplete="off" spellcheck="false" aria-describedby="kHelp kErr">
+      <span id="kHelp" class="muted" style="font-size:12px">Paste the key. It is not shown again${video ? " and not checked against " + esc(label) : ""}. Synthetic prototype: anything typed stays in this page's memory.</span>
+      <span id="kErr" class="err" role="alert"></span></div>
+      <label class="swlabel"><input type="checkbox" id="kShow"> Show key</label>`,
+    buttons: [{ id: "kdCancel", label: "Cancel" }, { id: "kSave", label: "Save", kind: "primary", disabled: true, onClick: () => {
+      const v = $("#kValue").value.trim();
+      if (video && (v.length > 512 || /[^\x21-\x7E]/.test(v))) { $("#kErr").textContent = v.length > 512 ? "The key is longer than 512 characters." : "The key may only contain printable characters without spaces."; return; }
+      const r = $("#kRegion") && $("#kRegion").value; closeDlg("ok"); onSave(r);
+    } }],
+    focus: regions ? "#kRegion" : "#kValue",
+    onOpen: () => { const v = $("#kValue"); v.oninput = () => { $("#kSave").disabled = !v.value.trim(); $("#kErr").textContent = ""; }; $("#kShow").onchange = e => v.type = e.target.checked ? "text" : "password"; } });
+}
+function restartQuestion(what) {
+  if (!running()) { toast(`${what} The gateway uses it when it starts.`); return; }
+  const inflight = S.inFlight > 0 ? `\n\n${S.inFlight} requests are in flight: the restart waits for a moment with none, at most 5 minutes, and cuts nothing.` : "";
+  openDlg({ title: "Restart gateway?", icon: GLYPH.ask, body: para(`${what}\n\nRestart the gateway now so it uses the change?${inflight}`),
+    buttons: [{ id: "rqLater", label: "Later", onClick: () => { closeDlg(); log("The key change is used after the next restart of the gateway."); } },
+      { id: "rqNow", label: "Restart now", kind: "primary", onClick: () => restartWait() }], focus: "#rqNow" });
+}
+function restartWait() {
+  if (S.inFlight === 0) { closeDlg(); log("Restarting the gateway for the key change.", "a"); setGw("stopped", true); startGateway(); return; }
+  let left = S.inFlight, cancelled = false;
+  const body = () => `<p role="status">${left > 0 ? `Waiting for ${left} request${left === 1 ? "" : "s"} to finish before restarting` : "Nothing is in flight now. Waiting for the gateway to stop before restarting."}</p><div class="marquee" aria-hidden="true"><i></i></div>
+    <p class="muted" style="font-size:12.5px">The gateway keeps serving until a moment with nothing in flight, for at most 5 minutes. Cancel leaves it running; the key change is then used after the next restart.</p>`;
+  openDlg({ title: "Restart gateway", body: body(), buttons: [{ id: "rwCancel", label: "Cancel", onClick: () => { cancelled = true; closeDlg(); log("Restart cancelled: the gateway keeps running as it was."); } }],
+    onClose: r => { if (r === "escape") { cancelled = true; log("Restart cancelled: the gateway keeps running as it was."); } } });
+  const tick = () => {
+    if (cancelled || !dlg.open) return;
+    left--; $("#dlgBody").innerHTML = body();
+    if (left >= 0) later(900, tick);
+    else { closeDlg(); log("Restart: the gateway stopped at a moment with nothing in flight. Starting it again.", "a"); setGw("stopped", true); startGateway(); }
+  };
+  later(900, tick);
+}
+
+/* ---------- Apply to DeepSeek Harness ---------- */
+function applyHarness() {
+  const toolsTodo = S.D.videoTools !== "installed";
+  const items = [["ok", "DeepSeek Harness is installed and has been opened once."],
+    ["todo", "The chat routes will be written into every DeepSeek Harness profile.", "Each profile is backed up first. Nothing else in it is changed."],
+    toolsTodo ? ["todo", "The video tools will be installed in DeepSeek Harness.", "Only while DeepSeek Harness is closed; Apply waits for you to quit it."] : ["ok", "The video tools are installed and switched on."],
+    ["note", "Restart DeepSeek Harness afterwards. DSHProxy does not do that for you."]];
+  const mk = { ok: "✓", todo: "→", no: "✗", note: "!" }, lbl = { ok: "In place", todo: "To do", no: "Cannot", note: "Note" };
+  openDlg({ title: "Apply to DeepSeek Harness", wide: true, body: `<p style="font-weight:600">What is in place, and what Apply will do</p><ul class="check">${items.map(i => `<li><span class="m ${i[0]}" aria-hidden="true">${mk[i[0]]}</span><span><span class="sr">${lbl[i[0]]}: </span>${esc(i[1])}${i[2] ? `<br><span class="muted" style="font-size:12.5px">${esc(i[2])}</span>` : ""}</span></li>`).join("")}</ul>`,
+    buttons: [{ id: "apCancel", label: "Cancel" }, { id: "apGo", label: "Apply", kind: "primary", onClick: () => {
+      D.busy = true; $("#apGo").disabled = true; $("#apCancel").disabled = true;
+      $("#dlgBody").insertAdjacentHTML("beforeend", `<div style="display:flex;gap:10px;align-items:center"><div class="spin" aria-hidden="true"></div><span role="status">Writing the routes…</span></div>`);
+      later(1100, () => {
+        S.D.profiles = S.D.profiles.length ? S.D.profiles.map(p => ({ ...p, points: "yes", routes: 6, models: S.D.models.filter(m => m.offered).length })) : [{ name: "desktop", routes: 6, models: S.D.models.filter(m => m.offered).length, points: "yes" }];
+        S.D.videoTools = "installed"; S.harnessChecked = new Date();
+        const out = ["Profile desktop: backed up to profiles/desktop.json.bak-20261123", "Profile desktop: 6 routes, " + S.D.models.filter(m => m.offered).length + " models, default model main", ...(S.D.profiles.length > 1 ? ["Profile work: backed up", "Profile work: 6 routes written"] : []), "Credential: points at http://127.0.0.1:8417", toolsTodo ? "Video tools: installed in DeepSeek Harness." : "Video tools: already installed."];
+        out.forEach(l => log("dsh apply: " + l));
+        closeDlg("ok");
+        openDlg({ title: "DeepSeek Harness is set up", icon: GLYPH.ok, wide: true, body: `<p>The chat routes were applied. DSHProxy reported:</p><pre class="out">${esc(out.join("\n"))}</pre><p class="muted">Restart DeepSeek Harness to see the routes.</p>`,
+          left: `<button type="button" class="btn" id="apCopy">Copy folder path</button>`, buttons: [{ id: "apOk", label: "OK", kind: "primary" }], focus: "#apOk",
+          onOpen: () => $("#apCopy").onclick = e => { e.target.textContent = "Copied"; } });
+      });
+    } }], focus: "#apGo" });
+}
+
+/* ---------- Krea ---------- */
+function kreaSignIn() {
+  S.D.krea = { state: "signing" }; log("Krea: helper started; consent page opened in the browser (mock).", "a"); render();
+  later(50, () => $("#kMockOk") && $("#kMockOk").focus());
+}
+function kreaFinish(ok) {
+  if (ok) { S.D.krea = { state: "signedin", until: new Date(Date.now() + 90 * 86400000) }; log("Signed in to Krea.", "a"); announce("Signed in to Krea"); }
+  else { S.D.krea = { state: "none" }; log("Krea sign-in did not complete (KREA_REFUSED): consent was refused in the browser.", "e"); announce("Krea sign-in did not complete"); }
+  S.D.vRead = new Date(); render(); later(30, () => $("#kSignIn") && !$("#kSignIn").disabled ? $("#kSignIn").focus() : $("#kSignOut").focus());
+}
+
+/* ---------- video route dialog ---------- */
+function routeDialog(m, then) {
+  openDlg({ title: "Video billing route", body: `<div class="field"><label for="rtSel">Charge ${esc(m.id)} to:</label><select id="rtSel">
+      ${m.route ? "" : `<option value="" selected disabled>Choose a route…</option>`}${m.allowed.map(r => `<option value="${r}" ${r === m.route ? "selected" : ""}>${esc(VROUTES[r].label)} · ${r} · billed in ${esc(VROUTES[r].units)}</option>`).join("")}</select></div>
+      <p class="muted" style="font-size:12.5px">One route for each model. A paid job is never retried automatically or moved to another route.</p>
+      <p class="muted" style="font-size:12.5px">Saving a route does not check a sign-in, a key or a price, and charges nothing.${m.enabled || then ? "" : " The model stays switched off."}</p>`,
+    buttons: [{ id: "rtCancel", label: "Cancel" }, { id: "rtSave", label: "Save route", kind: "primary", disabled: !m.route, onClick: () => {
+      m.route = $("#rtSel").value; if (then) then();
+      S.vStatus = `Saved: ${m.id} → ${m.route}, ${m.enabled ? "enabled" : "disabled"}. This is a setting only; nothing was checked or charged.`;
+      log(`video settings set ${m.id.toUpperCase()} ${m.route.toUpperCase()} ${m.enabled ? "enabled" : "disabled"}`); closeDlg("ok");
+    } }], focus: "#rtSel",
+    onOpen: () => $("#rtSel").onchange = e => $("#rtSave").disabled = !e.target.value });
+}
+
+/* ---------- menu-bar mock ---------- */
+const mm = $("#menuMock");
+function openMenuMock() {
+  const dot = { running: "var(--ok)", starting: "var(--warn)", notanswering: "var(--warn)", stopped: "var(--bad)" }[S.gw];
+  const stateTxt = { running: "DSHProxy: running", starting: "DSHProxy: starting", notanswering: "DSHProxy: not answering", stopped: "DSHProxy: stopped" }[S.gw];
+  const d = new Date();
+  mm.innerHTML = `<div class="mbar"><span aria-hidden="true" style="font-size:15px"></span><span class="app">Safari</span><span class="dimm">File</span><span class="dimm">Edit</span><span class="dimm">View</span><span class="dimm">Window</span><span class="sp"></span>
+    <span style="position:relative"><button type="button" class="item" id="mmItem" aria-haspopup="menu" aria-expanded="true" aria-controls="mmMenu" title="${esc(stateTxt)}">
+      <span class="glyph" aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 1 L10 8 L8 15 L6 8 Z" fill="#EEF2F4"/><circle cx="8" cy="8" r="6.3" fill="none" stroke="#EEF2F4" stroke-width="1"/></svg><i style="background:${dot}"></i></span>
+      <span class="sr">DSHProxy menu-bar item, ${esc(stateTxt)}</span></button>
+      <div class="mmenu" id="mmMenu" role="menu" aria-label="DSHProxy" style="right:-150px">
+        <div class="hd" aria-hidden="true">${esc(stateTxt)}</div><hr>
+        <button type="button" role="menuitem" data-a="open" tabindex="-1">Open DSHProxy</button>
+        <button type="button" role="menuitem" data-a="add" tabindex="-1">Add account…</button><hr>
+        <button type="button" role="menuitem" data-a="start" tabindex="-1" aria-disabled="${S.gw !== "stopped"}">Start gateway</button>
+        <button type="button" role="menuitem" data-a="stop" tabindex="-1" aria-disabled="${S.gw === "stopped"}">Stop gateway</button><hr>
+        <button type="button" role="menuitemcheckbox" data-a="login" tabindex="-1" aria-checked="${S.loginItem}"><span class="ck" aria-hidden="true">${S.loginItem ? "✓" : ""}</span>Start at login</button><hr>
+        <button type="button" role="menuitem" data-a="quit" tabindex="-1">Quit DSHProxy<span class="kbd" aria-hidden="true">⌘Q</span></button>
+      </div></span>
+    <span class="dimm" aria-hidden="true">◐</span><span class="dimm" aria-hidden="true">${DAYS[d.getDay()]} ${d.getDate()} ${MONS[d.getMonth()]} ${hm(d)}</span></div>
+    <div class="mm-note"><b>Mock of the macOS menu bar.</b> The menu-bar item is the only native part of option (a). Its dot shows the gateway state. Use ↑ ↓ and Return, or click; Escape or a click outside closes it.
+      <div style="margin-top:8px"><button type="button" class="btn small mock" id="mmClose">Close mock</button></div></div>`;
+  mm.showModal();
+  const items = () => [...mm.querySelectorAll("[role^=menuitem]")].filter(el => el.getAttribute("aria-disabled") !== "true");
+  items()[0].focus();
+  mm.querySelectorAll("[role^=menuitem]").forEach(el => el.onclick = () => menuAction(el));
+  $("#mmClose").onclick = () => closeMenuMock();
+  $("#mmItem").onclick = () => closeMenuMock();
+  mm.onkeydown = e => {
+    const list = items(), i = list.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); const n = list.length; list[((i < 0 ? (e.key === "ArrowDown" ? -1 : 0) : i) + (e.key === "ArrowDown" ? 1 : -1) + n) % n].focus(); }
+    else if (e.key === "Home") { e.preventDefault(); list[0].focus(); } else if (e.key === "End") { e.preventDefault(); list[list.length - 1].focus(); }
+    else trap(mm, e);
+  };
+}
+mm.addEventListener("cancel", e => { e.preventDefault(); closeMenuMock(); });
+mm.addEventListener("click", e => { if (e.target === mm) closeMenuMock(); });
+function closeMenuMock(then) { if (mm.open) mm.close(); if (then) then(); else $("#pMenu").focus(); }
+function menuAction(el) {
+  if (el.getAttribute("aria-disabled") === "true") return;
+  const a = el.dataset.a;
+  if (a === "login") { S.loginItem = !S.loginItem; log(`Start at login: ${S.loginItem ? "on (login item added)" : "off (login item removed)"} (mock).`); render(); closeMenuMock(); toast(`Start at login is ${S.loginItem ? "on" : "off"}.`); return; }
+  closeMenuMock(() => {
+    if (a === "open") { toast("Open DSHProxy: brings this page to the front (a real build opens or focuses http://127.0.0.1:8418 in the default browser)."); $("#main").focus(); }
+    if (a === "add") addAccount();
+    if (a === "start") startGateway();
+    if (a === "stop") stopGateway();
+    if (a === "quit") {
+      const cut = confirmCutText("Quit"), q = () => { log("Quitting DSHProxy."); S.quit = true; render(); };
+      if (cut) confirmDlg({ title: "Quit DSHProxy", text: cut, ok: "Quit", kind: "danger-strong", onOk: q }); else q();
+    }
+  });
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b || b.disabled || dlg.contains(b) || mm.contains(b)) return;
+  const id = b.id || "";
+  const acc = id.match(/^acc-(np|mp|pz|so|rs)-(.+)$/);
+  if (acc) return accountAction(acc[1], S.D.accounts.find(a => a.id === acc[2]));
+  let m;
+  if (/^tab-\d$/.test(id)) { S.section = +id.slice(4); render(); return $("#tab-" + S.section).focus(); }
+  if (id === "ws-chat" || id === "ws-video") return switchWs(id.slice(3));
+  if ((m = id.match(/^key-(set|rm)-(.+)$/))) return keyAction(m[1], m[2]);
+  if ((m = id.match(/^vkey-(set|rm)-(.+)$/))) return vkeyAction(m[1], m[2]);
+  if ((m = id.match(/^pr-(.+)$/))) return presetAction(m[1]);
+  if ((m = id.match(/^md-(.+)$/))) return modelToggle(m[1]);
+  if ((m = id.match(/^vroute-(.+)$/))) return routeDialog(S.D.vmodels.find(x => x.id === m[1]));
+  if ((m = id.match(/^vm-(.+)$/))) return vmodelToggle(S.D.vmodels.find(x => x.id === m[1]));
+  const A = {
+    hStart: startGateway, hStop: () => stopGateway(), npStart: startGateway, nbStart: startGateway, hApply: applyHarness,
+    uUpdate: updateBackend, uRollback: rollbackBackend, pMenu: openMenuMock,
+    fLogin: () => { S.loginItem = !S.loginItem; log(`Start at login: ${S.loginItem ? "on (login item added)" : "off (login item removed)"} (mock).`); render(); },
+    accAdd: addAccount, accAdd2: addAccount,
+    accRefresh: () => { S.limitsNote = "Reading limits..."; render(); later(700, () => { S.limitsNote = "Limits updated just now. They refresh every minute."; render(); }); },
+    accFolder: () => toast("Would show ~/.dshproxy/auth in Finder (mock: nothing opened)."),
+    logFolder: () => toast("Would show ~/.dshproxy in Finder (mock: nothing opened)."),
+    lnEdit: () => confirmDlg({ title: "Lanes", icon: "info", text: "Opens settings.json in your text editor.\n\nPrototype: no editor opens. Continue to pretend the ladders were edited (the routing then shows as Custom).", ok: "Pretend edited", onOk: () => {
+      S.D.lanes.main = ["claude-opus-5-5", "gpt-6-astra", "claude-fable-5-2", "deepseek/deepseek-v4-pro"]; S.D.preset = "custom"; log("settings.json changed: routing is now Custom."); render(); } }),
+    mdHidden: () => { S.D.showHidden = !S.D.showHidden; render(); },
+    mdCheck: () => { if (!needRunning("Models")) return; b.disabled = true; b.textContent = "Checking for new models..."; later(900, () => { S.D.modelsChecked = 0; log("Checked for new models; nothing new since the last check."); render(); toast("Checked for new models: nothing new."); }); },
+    mdUse: useSuggestion, hvPreview: previewHarness, hvVerify: verifyHarness, hvRemove: removeHarness,
+    hvToVideo: () => { S.ws = "video"; S.section = 4; render(); $("#tab-4").focus(); },
+    kSignIn: kreaSignIn, kCancel: () => { S.D.krea = { state: "none" }; log("Krea sign-in cancelled: the helper was stopped."); render(); $("#kSignIn").focus(); },
+    kMockOk: () => kreaFinish(true), kMockFail: () => kreaFinish(false),
+    kSignOut: () => confirmDlg({ title: "Krea", text: "Sign out of Krea?\n\nThe Krea sign-in stored on this computer is removed. Video on the Krea workspace route then needs a new sign-in.", ok: "Sign out", kind: "danger-strong",
+      onOk: () => { S.D.krea = { state: "none" }; log("Signed out of Krea."); render(); } }),
+    vkToAcc: () => { S.section = 0; render(); $("#tab-0").focus(); },
+    vlToModels: () => { S.section = 3; render(); $("#tab-3").focus(); },
+    vReload: () => { S.vStatus = "Reading video settings..."; render(); later(500, () => { S.vStatus = null; S.D.vRead = new Date(); render(); }); },
+  };
+  if (A[id]) A[id]();
+});
+function switchWs(ws) { if (S.ws === ws) return; S.ws = ws; S.vStatus = null; if (ws === "video") S.D.vRead = new Date(); render(); $("#ws-" + ws).focus(); }
+document.addEventListener("keydown", e => {
+  const t = e.target; if (!t.id) return;
+  if (/^tab-\d$/.test(t.id) && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+    e.preventDefault(); const i = +t.id.slice(4);
+    S.section = e.key === "Home" ? 0 : e.key === "End" ? 5 : (i + (e.key === "ArrowRight" ? 1 : 5)) % 6; render(); $("#tab-" + S.section).focus();
+  }
+  if (/^ws-/.test(t.id) && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) { e.preventDefault(); switchWs(S.ws === "chat" ? "video" : "chat"); }
+});
+$("#pState").onchange = e => { clearTimeout(startTimer); setGw(e.target.value); };
+$("#pData").onchange = e => { S.D = e.target.value === "empty" ? emptyData() : sampleData(); render(); };
+
+function accountAction(kind, a) {
+  if (!a) return; const s = SERVICES[a.provider], who = `${s.label} (${a.email})`;
+  if (kind === "so") return confirmDlg({ title: "Sign out", text: `Sign out of ${who}?\n\nDSHProxy stops using this account and deletes its saved sign-in. Lanes move to their other models. You can sign in again at any time.`, ok: "Sign out", kind: "danger-strong",
+    onOk: () => { S.D.accounts = S.D.accounts.filter(x => x !== a); log(`Signed out of ${who}.`); render(); toast(`Signed out of ${who}.`); $("#accAdd").focus(); } });
+  if (kind === "pz") { a.disabled = !a.disabled; if (a.disabled) a.primary = false; log(`${a.disabled ? "Paused" : "Resumed"} ${who}.`); toast(`${a.disabled ? "Paused" : "Resumed"} ${who}.`); return render(); }
+  if (kind === "mp") { S.D.accounts.forEach(x => { if (x.provider === a.provider) x.primary = x === a; }); log(`${who} is now the primary account: it is used until it runs out, then the other one takes over.`); toast(`${who} is now primary.`); render(); return $(`#acc-np-${a.id}`) && $(`#acc-np-${a.id}`).focus(); }
+  if (kind === "np") { a.primary = false; log(`${s.label} has no primary account now: its accounts take turns.`); toast(`${s.label} accounts now take turns.`); return render(); }
+  if (kind === "rs") return resetDialog(a);
+}
+function keyAction(kind, id) {
+  const p = KEYPROV[id], k = S.D.keys[id];
+  if (kind === "set") return keyDialog({ label: p.label, regions: p.regions, region: k.region, onSave: r => { k.state = "saved"; if (r) k.region = r; log(`key set ${id}${r ? " " + r : ""}: saved (encrypted).`); render(); restartQuestion(`Saved the ${p.label} key.`); } });
+  confirmDlg({ title: "API key", text: `Remove the saved ${p.label} key?`, ok: "Remove", kind: "danger-strong", onOk: () => { k.state = "none"; log(`key remove ${id}: removed.`); render(); restartQuestion(`Removed the ${p.label} key.`); } });
+}
+function vkeyAction(kind, id) {
+  const p = VKEYS[id], k = S.D.vkeys[id];
+  if (kind === "set") return keyDialog({ label: p.label, video: true, onSave: () => { k.state = "saved"; log(`video key set ${id}: saved.`); render(); toast(`Saved the ${p.label} key. It was not checked against ${p.label}.`); } });
+  confirmDlg({ title: "Video API key", text: `Remove the saved ${p.label} video key?\n\nDSHProxy's video command can then use ${p.label} only with a key in ${p.v}.`, ok: "Remove", kind: "danger-strong",
+    onOk: () => { k.state = "none"; log(`video key remove ${id}: removed.`); render(); } });
+}
+function presetAction(name) {
+  if (name === "custom" || name === S.D.preset) return;
+  if (!needRunning("Routing preset")) return;
+  const p = PRESETS[name];
+  confirmDlg({ title: "Routing preset", icon: "ask", text: `Use the ${p.label} routing preset?\n\nThis replaces the ladders of all lanes. You can switch back or edit them at any time.`, ok: `Use ${p.label}`,
+    onOk: () => { S.D.preset = name; S.D.lanes = clone(p.lanes); log(`Routing preset: ${p.label}.`); log("DeepSeek Harness routes updated. Restart DeepSeek Harness to see them."); render(); toast(`Routing preset: ${p.label}.`); $("#pr-" + name).focus(); } });
+}
+function modelToggle(id) {
+  const m = S.D.models.find(x => x.id === id); if (!m) return;
+  if (!needRunning("Models")) return;
+  m.offered = !m.offered; m.reason = m.offered ? "user-on" : "user-off";
+  log(`${m.offered ? "Offering" : "No longer offering"} ${id}; DeepSeek Harness routes updated. Restart DeepSeek Harness to see it.`);
+  render(); announce(`${id} ${m.offered ? "offered" : "switched off"}`);
+}
+function useSuggestion() {
+  const sg = S.D.suggestion, lanes = LANES.filter(l => (S.D.lanes[l] || []).includes(sg.from));
+  confirmDlg({ title: "Lanes", icon: "ask", text: `Put ${sg.to} in place of ${sg.from} on lane ${lanes.join(", ")}?\n\nThe rest of each ladder stays as it is. You can change it back in settings.json.`, ok: `Use ${sg.to}`,
+    onOk: () => { lanes.forEach(l => S.D.lanes[l] = S.D.lanes[l].map(x => x === sg.from ? sg.to : x)); S.D.preset = "custom"; S.D.suggestion = null;
+      const m = S.D.models.find(x => x.id === sg.to); if (m) m.reason = "auto";
+      log(`${sg.to} now replaces ${sg.from} on lane ${lanes.join(", ")}.`); render(); toast(`${sg.to} now replaces ${sg.from}.`); $("#mdCheck").focus(); } });
+}
+function vmodelToggle(m) {
+  if (!m) return;
+  const valid = m.route && m.allowed.includes(m.route);
+  if (!m.enabled && !valid) return routeDialog(m, () => { m.enabled = true; });
+  m.enabled = !m.enabled;
+  S.vStatus = `Saved: ${m.id} ${m.enabled ? "enabled" : "disabled"}${m.route ? " on " + m.route : ""}. This is a setting only; nothing was checked or charged.`;
+  log(`video settings set ${m.id.toUpperCase()} ${(m.enabled || valid ? m.route : "none").toUpperCase()} ${m.enabled ? "enabled" : "disabled"}`);
+  render();
+}
+function previewHarness() {
+  const lines = S.D.profiles.length ? S.D.profiles.map(p => p.points === "yes" ? `Profile ${p.name}: up to date, nothing to change.` : `Profile ${p.name}: would write 6 routes and ${S.D.models.filter(m => m.offered).length} models\n  + route dshproxy-main  → http://127.0.0.1:8417/v1 (model lane-main)\n  + route dshproxy-scout → http://127.0.0.1:8417/v1 (model lane-scout)\n  ~ default model: lane-main\n  (backup first; nothing else changes)`).join("\n\n")
+    : "No DeepSeek Harness profile found. Open DeepSeek Harness once, then preview again.";
+  msgDlg({ title: "Preview", icon: "info", body: `<p class="muted">dsh apply --dry-run (synthetic output):</p><pre class="out">${esc(lines)}</pre>` });
+}
+function verifyHarness() {
+  const bad = S.D.profiles.filter(p => p.points !== "yes");
+  const lines = S.D.profiles.length ? S.D.profiles.map(p => p.points === "yes" ? `✓ ${p.name}: routes, models, default model and credential match.` : p.points === "stale" ? `✗ ${p.name}: 2 routes point at an older model list. Apply again.` : `✗ ${p.name}: no DSHProxy routes.`).join("\n") : "✗ No DeepSeek Harness profile found.";
+  log("dsh verify: " + (bad.length || !S.D.profiles.length ? "problems found" : "all profiles match"), bad.length ? "w" : "");
+  msgDlg({ title: "Verify DeepSeek Harness", icon: bad.length || !S.D.profiles.length ? "warn" : "ok", body: `<pre class="out">${esc(lines)}</pre>${bad.length ? `<p class="muted">Press Apply to DeepSeek Harness at the top to fix it.</p>` : ""}` });
+}
+function removeHarness() {
+  confirmDlg({ title: "DeepSeek Harness", text: "Remove the DSHProxy routes from every DeepSeek Harness profile?", ok: "Remove routes", kind: "danger-strong",
+    onOk: () => { S.D.profiles.forEach(p => p.points = "none"); log("dsh remove: DSHProxy routes removed from every profile."); render();
+      msgDlg({ title: "DeepSeek Harness", icon: "info", body: `<pre class="out">${esc(S.D.profiles.map(p => `Profile ${p.name}: DSHProxy routes removed (backup kept).`).join("\n"))}</pre><p class="muted">Restart DeepSeek Harness to see the change.</p>` }); } });
+}
+function updateBackend() {
+  const b = S.backend, v = b.latest;
+  confirmDlg({ title: "Update CLIProxyAPI", icon: "ask", ok: "Update", text: `Update the backend to CLIProxyAPI ${v}?\n\n1. Download it and check it against the release's published checksum.\n2. Start it on a spare port and send one short request through each signed-in account (uses a tiny bit of quota).\n3. Only if that passes: restart DSHProxy on ${v}, about 5 seconds offline.\n\nIf anything fails, DSHProxy stays on the version you have.`,
+    onOk: () => {
+      b.busy = true; render(); log(`Downloading CLIProxyAPI ${v}...`, "a");
+      later(2200, () => {
+        const checks = S.D.accounts.filter(a => !a.disabled).map(a => `• ${svcLabel(a.provider)} (${a.email}): answered`);
+        b.busy = false; b.previous = b.current; b.current = v; b.latest = null;
+        log(`CLIProxyAPI ${v}: trial run passed; restarting.`, "a");
+        msgDlg({ title: "Update CLIProxyAPI", icon: "ok", text: `CLIProxyAPI ${v} passed its trial run.\n\nTrial run:\n${checks.join("\n") || "• no signed-in account to try"}\n\nDSHProxy is restarting on the new version.` });
+        S.gw = "starting"; $("#pState").value = "starting"; render(); later(1500, () => { if (S.gw === "starting") setGw("running"); });
+      });
+    } });
+}
+function rollbackBackend() {
+  const b = S.backend;
+  confirmDlg({ title: "Roll back", icon: "ask", ok: "Roll back", text: `Go back to CLIProxyAPI ${b.previous}?\n\nDSHProxy restarts, about 5 seconds offline.`,
+    onOk: () => { log(`Rolled back to CLIProxyAPI ${b.previous}.`); b.latest = b.current; b.current = b.previous; b.previous = null; setGw("starting"); later(1500, () => { if (S.gw === "starting") setGw("running"); }); } });
+}
+
+/* ---------- stars backdrop (seeded, like the Windows skin) ---------- */
+function stars() {
+  const c = $("#stars"), w = c.width = innerWidth, h = c.height = Math.round(innerHeight * 0.62), x = c.getContext("2d");
+  let s = 1846; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 150; i++) { x.globalAlpha = 0.25 + r() * 0.6; x.fillStyle = r() < 0.15 ? "#F3CB8B" : "#CFE3E8"; x.beginPath(); x.arc(r() * w, r() * h, r() * 1.1 + 0.2, 0, 7); x.fill(); }
+}
+addEventListener("resize", stars); stars();
+render();
+</script>
+</body>
+</html>
