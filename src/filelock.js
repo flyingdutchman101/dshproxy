@@ -151,8 +151,8 @@ function inspect(lockFile) {
 
 // A lock may be taken from its holder when the holder's process is gone, or
 // when the lock is older than any change takes.
-function abandoned(lock, now) {
-  return (lock.pid !== null && !alive(lock.pid)) || now - lock.at > STALE_MS;
+function abandoned(lock, now, staleMs) {
+  return (lock.pid !== null && !alive(lock.pid)) || now - lock.at > staleMs;
 }
 
 // Removing a lock that someone else may be removing or replacing at the same
@@ -165,7 +165,7 @@ function abandoned(lock, now) {
 // A claim whose process died is superseded by the next number, again created
 // exclusively. Returns the claim files to remove afterwards, or null when
 // another process holds the claim.
-function claim(lockFile, id, now) {
+function claim(lockFile, id, now, staleMs) {
   const dir = path.dirname(lockFile);
   const prefix = `${path.basename(lockFile)}.${id}.t`;
   let levels;
@@ -180,7 +180,7 @@ function claim(lockFile, id, now) {
       const file = path.join(dir, `${prefix}${top}`);
       const pid = Number(fs.readFileSync(file, 'utf8').trim());
       const gone = Number.isSafeInteger(pid) && pid > 0 && !alive(pid);
-      if (!gone && now - fs.statSync(file).mtimeMs <= STALE_MS) return null;
+      if (!gone && now - fs.statSync(file).mtimeMs <= staleMs) return null;
     } catch {
       return null;
     }
@@ -197,8 +197,8 @@ function claim(lockFile, id, now) {
 // Removes the lock with this ID, if that is still the lock at the path.
 // Returns "removed", "other" when another lock or none is there, or "claimed"
 // when another process is removing this very lock.
-function removeLock(lockFile, id, now) {
-  const claims = claim(lockFile, id, now);
+function removeLock(lockFile, id, now, staleMs) {
+  const claims = claim(lockFile, id, now, staleMs);
   if (!claims) return 'claimed';
   try {
     let current = null;
@@ -235,7 +235,7 @@ function clearOldClaims(lockFile, id) {
 
 // One attempt to take the lock. True when taken; otherwise false, or the
 // error Windows gave when the path could not be written to just now.
-function acquire(lockFile, id, now, link) {
+function acquire(lockFile, id, now, link, staleMs) {
   for (let pass = 0; pass < 3; pass += 1) {
     const temporary = temporaryName(lockFile);
     const text = `${JSON.stringify({ id, pid: process.pid, at: now() })}\n`;
@@ -256,7 +256,7 @@ function acquire(lockFile, id, now, link) {
       return false;
     }
     // Gone meanwhile, or removed here because its holder is: try again at once.
-    if (lock && (!abandoned(lock, now()) || removeLock(lockFile, lock.id, now()) === 'claimed')) return false;
+    if (lock && (!abandoned(lock, now(), staleMs) || removeLock(lockFile, lock.id, now(), staleMs) === 'claimed')) return false;
   }
   return false;
 }
@@ -274,15 +274,18 @@ function pause(attempt) {
 // although `work` succeeded: its change may have been overwritten.
 //
 // Take the lock late and hold it briefly: do slow things, like unlocking the
-// master key, before the call.
-async function withLock(target, work, { waitMs = WAIT_MS, now = Date.now, sleep = realSleep, link = fs.linkSync } = {}) {
+// master key, before the call. A caller whose work cannot be that brief says
+// with `staleMs` how old the lock of a holder that is still running must be
+// before it is taken over; it must be longer than the work can take.
+async function withLock(target, work, { waitMs = WAIT_MS, staleMs = STALE_MS, now = Date.now, sleep = realSleep, link = fs.linkSync } = {}) {
+  const stale = Number.isFinite(staleMs) && staleMs >= STALE_MS ? staleMs : STALE_MS;
   const lockFile = `${target}.lock`;
   const id = crypto.randomBytes(12).toString('hex');
   const limit = Number.isFinite(waitMs) && waitMs >= 0 ? waitMs : WAIT_MS;
   fs.mkdirSync(path.dirname(lockFile), { recursive: true });
   const deadline = now() + limit;
   for (let attempt = 0; ; attempt += 1) {
-    const taken = acquire(lockFile, id, now, link);
+    const taken = acquire(lockFile, id, now, link, stale);
     if (taken === true) break;
     const left = deadline - now();
     if (left <= 0) {
@@ -296,10 +299,10 @@ async function withLock(target, work, { waitMs = WAIT_MS, now = Date.now, sleep 
     clearOldClaims(lockFile, id);
     result = await work();
   } catch (error) {
-    removeLock(lockFile, id, now());
+    removeLock(lockFile, id, now(), stale);
     throw error;
   }
-  if (removeLock(lockFile, id, now()) !== 'removed') {
+  if (removeLock(lockFile, id, now(), stale) !== 'removed') {
     throw Object.assign(new Error(`Another DSHProxy command took over ${target} while it was being changed, so the change may not have been kept. Run the command again.`), { code: 'DSHPROXY_LOCK_LOST' });
   }
   return result;

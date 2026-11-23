@@ -213,6 +213,48 @@ test('no credential is in anything a failed renewal throws', async () => {
   }
 });
 
+test('a refusal does not undo a renewal that another helper made meanwhile', async () => {
+  // This helper read the old sign-in under a lock that was then taken over;
+  // the other helper renewed, so Krea refuses the old renewal token here.
+  const s = store();
+  const renewedElsewhere = { ...ended, accessToken: 'synthetic-other-access', refreshToken: 'synthetic-other-refresh', expiresAt: NOW + 3600000 };
+  const krea = endpoint(() => { s.value = { ...renewedElsewhere }; return Response.json({ error: 'invalid_grant' }, { status: 400 }); });
+  assert.equal(await access(s, now, krea), 'synthetic-other-access');
+  assert.deepEqual(s.value, renewedElsewhere, 'the other helper\'s renewal is still there, renewal token included');
+  assert.equal(krea.calls.length, 1);
+});
+
+test('a renewed token that lasts less than two minutes is taken all the same', async () => {
+  const s = store();
+  assert.equal(await access(s, now, endpoint(() => granted({ expires_in: 60 }))), 'synthetic-new-access');
+  assert.equal(s.value.expiresAt, NOW + 60000);
+  await assert.rejects(access(store(), now, endpoint(() => granted({ expires_in: 30 }))), /^Error: KREA_REFUSED$/);
+});
+
+test('a sign-in that cannot be read for a moment under the lock is not taken for "signed out"', async () => {
+  const flaky = store();
+  const inner = flaky.transaction;
+  flaky.transaction = (work) => inner((locked) => work({ ...locked, load: async () => { throw Object.assign(new Error('the key could not be unlocked in time'), { code: 'ETIMEDOUT' }); } }));
+  const krea = endpoint(granted);
+  await assert.rejects(access(flaky, now, krea), /^Error: KREA_REFUSED$/);
+  assert.equal(krea.calls.length, 0);
+  assert.deepEqual(flaky.value, ended);
+
+  // Signed out by another helper while this one waited: that is "sign in".
+  const gone = store();
+  const innerGone = gone.transaction;
+  gone.transaction = (work) => innerGone((locked) => work({ ...locked, load: async () => { throw Object.assign(new Error('no file'), { code: 'ENOENT' }); } }));
+  await assert.rejects(access(gone, now, krea), /^Error: KREA_LOGIN_REQUIRED$/);
+});
+
+test('status waits five seconds for the lock at most, a call for the store\'s own time', async () => {
+  const waits = [];
+  const watched = () => { const s = store(); const inner = s.transaction; s.transaction = (work, options) => { waits.push(options); return inner(work); }; return s; };
+  await status(watched(), now, endpoint(granted));
+  await access(watched(), now, endpoint(granted));
+  assert.deepEqual(waits, [{ waitMs: 5000 }, undefined]);
+});
+
 // ------------------------------- status -------------------------------
 
 test('status renews a sign-in that is about to end, so that "signed in" means the next call works', async () => {

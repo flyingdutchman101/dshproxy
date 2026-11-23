@@ -499,3 +499,28 @@ test('any other failure to replace a file is passed on at once', async (t) => {
   assert.equal(calls, 1);
   assert.deepEqual(names(dir), []);
 });
+
+test('a caller whose work takes longer can say how old a live holder\'s lock must be before it is taken over', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshproxy-filelock-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const target = path.join(dir, 'state.json');
+  // Held by a process that is running (this one), for 40 seconds.
+  const held = (age) => fs.writeFileSync(lockOf(target), `${JSON.stringify({ id: ID, pid: process.pid, at: Date.now() - age })}\n`);
+  let ran = 0;
+
+  held(40000);
+  await assert.rejects(withLock(target, async () => { ran += 1; }, { waitMs: 150, staleMs: 120000 }), (error) => error.code === 'DSHPROXY_BUSY');
+  assert.equal(ran, 0);
+  assert.ok(fs.existsSync(lockOf(target)), 'the holder keeps its lock');
+
+  // Older than the caller's limit: taken over.
+  held(121000);
+  await withLock(target, async () => { ran += 1; }, { waitMs: 150, staleMs: 120000 });
+  assert.equal(ran, 1);
+
+  // Without a limit of its own a caller keeps the 30 seconds.
+  held(40000);
+  await withLock(target, async () => { ran += 1; }, { waitMs: 150 });
+  assert.equal(ran, 2);
+  assert.deepEqual(names(dir), []);
+});

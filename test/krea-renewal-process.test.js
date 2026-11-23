@@ -129,6 +129,27 @@ if (process.argv[2] === 'worker') {
     assert.deepEqual(await fs.readdir(w.folder), ['session.v1']);
   });
 
+  test('the lock of a helper that is alive is left alone for two minutes, longer than any renewal takes', async (t) => {
+    const w = await world(t);
+    await w.store.save(ended);
+    const lock = path.join(w.folder, 'session.v1.lock');
+    const held = (age) => fs.writeFile(lock, `${JSON.stringify({ id: 'a'.repeat(24), pid: process.pid, at: Date.now() - age })}\n`);
+    const impatient = w.oauth.windowsStore({ lockWaitMs: 300 });
+    let asked = 0;
+    const fetchImpl = async () => { asked += 1; return Response.json({ access_token: 'invented-new-access', refresh_token: 'invented-new-refresh', token_type: 'Bearer', expires_in: 3600 }); };
+
+    // Held for 40 seconds by a process that is running: this helper waits, gives up, and asks nobody.
+    await held(40000);
+    await assert.rejects(w.oauth.access(impatient, () => NOW, { fetchImpl }), /^Error: KREA_REFUSED$/);
+    assert.equal(asked, 0);
+    assert.deepEqual(await w.store.load(), ended);
+
+    // Held for more than two minutes: nobody renews that long. Taken over.
+    await held(121000);
+    assert.equal(await w.oauth.access(impatient, () => NOW, { fetchImpl }), 'invented-new-access');
+    assert.equal(asked, 1);
+  });
+
   test('a sign-out during a renewal waits for it and then removes the sign-in', async (t) => {
     const w = await world(t);
     await w.store.save(ended);
