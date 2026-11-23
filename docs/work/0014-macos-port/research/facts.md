@@ -130,6 +130,12 @@ Compared with the forecast (section 3): `cli.test.js` and `video-picker-callers.
 - Harness home `~/.dsh` with `profiles/desktop`, `profiles/headless`, `profiles/web`. `~/.dsh/.credentials.yaml` is `-rw-------`.
 - No `~/.dshproxy` on this Mac yet.
 
+## 9. For decision 4 (stage D), read 23 Nov on the user's Mac
+
+- **DroidProxy** (`github.com/nikships/droidproxy`, bundle id `com.droidproxy.app`): a native Swift menu-bar app. `LSUIElement` is true (no Dock icon). Program `Contents/MacOS/CLIProxyMenuBar`; the CLIProxyAPI program and its `config.yaml` are inside the application (`Contents/Resources/cli-proxy-api`). Sources (`src/Sources/`): `AppDelegate.swift` (menu bar), `SettingsView.swift` (the window, SwiftUI), `ServerManager.swift` (starts and stops the backend), `ThinkingProxy.swift` (its own HTTP proxy in Swift), `OAuthUsageTracker.swift` (limits). Built with Swift Package Manager (`swift build -c release`) and `create-app-bundle.sh`, which makes the `.app` by hand; no Xcode project. Its releases are signed and notarised by its author and update through Sparkle.
+- **A SwiftUI menu-bar app builds on this Mac without Xcode:** with the Command Line Tools (Swift 5.10, SDK 14.4), `swiftc -parse-as-library -target arm64-apple-macos13` compiled a probe with a `MenuBarExtra` and a `Window` scene (23 Nov; the probe was deleted). Earlier in this work it was said that option (b) needs Xcode; that was wrong for building on this Mac. Signing and notarising for other people's Macs still need an Apple developer account.
+- The control API refuses any request with an `Origin` header (`src/control.js`), which a page in a browser always sends: option (a) needs its own way to authenticate the page (noted by the second prototype's author).
+
 ## 8. `fsync` in Node on macOS (for stage B, the purchase journal)
 
 - Node 24.19.0 on the user's Mac reports libuv 1.52.1 (`process.versions.uv`, proof output, section 6).
