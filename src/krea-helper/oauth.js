@@ -136,9 +136,11 @@ function keychainProtect(given) {
   return async (mode,bytes)=>{
     const keywrap=given||require('../keywrap-darwin').defaultKeywrap();
     try {
-      if(mode==='Protect') return Buffer.from(await keywrap.wrap(Buffer.from(bytes)),'utf8');
+      // The store's own key is handed over, not a copy: the store wipes it.
+      if(mode==='Protect') return Buffer.from(await keywrap.wrap(bytes),'utf8');
       const key=await keywrap.unwrap(Buffer.from(bytes).toString('utf8'));
-      check(key && key.length===32);return key;
+      if(!key || key.length!==32){if(key)key.fill(0);check(false);}
+      return key;
     } catch { throw Error('KREA_REFUSED'); }
   };
 }

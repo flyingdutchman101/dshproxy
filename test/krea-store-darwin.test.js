@@ -52,3 +52,17 @@ test('on macOS the store needs a home folder, and is refused on other systems', 
   assert.throws(() => macStore({ home: '' }), /KREA_REFUSED/);
   assert.throws(() => macStore({ home: 'relative/folder' }), /KREA_REFUSED/);
 });
+
+test('on macOS the key handed to the Keychain wrapper is wiped after saving, also when wrapping fails', macOnly, async (t) => {
+  const { macStore } = require('../src/krea-helper/oauth');
+  const dir = home(t);
+  const handed = [];
+  const keywrap = (fail) => ({
+    wrap: async (bytes) => { handed.push(bytes); if (fail) throw new Error('locked'); return 'kc1:AAAA'; },
+    unwrap: async () => null
+  });
+  await macStore({ home: dir, keywrap: keywrap(false) }).save(session);
+  await assert.rejects(macStore({ home: dir, keywrap: keywrap(true) }).save(session), /KREA_REFUSED/);
+  assert.equal(handed.length, 2);
+  for (const bytes of handed) assert.ok(Buffer.isBuffer(bytes) && bytes.length === 32 && bytes.every((byte) => byte === 0), 'a copy of the key was left in memory');
+});
