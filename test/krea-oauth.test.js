@@ -126,7 +126,7 @@ test('helper status takes no further argument, and sign-out still clears the sto
  const touched=[];const x=statusRun(()=>({load:async()=>{touched.push('load');return session()},clear:async()=>{touched.push('clear')}}),['logout']);
  await main(x.params);assert.deepEqual(touched,['clear']);assert.deepEqual(x.output,[]);
 });
-test('the real helper with an empty or damaged temporary store answers signed out, exits 0 and writes nothing',async()=>{
+test('the real helper with an empty or damaged temporary store answers signed out, exits 0 and writes nothing', { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false },async()=>{
  const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
  const {spawnSync}=require('node:child_process');
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'dshproxy-krea-status-'));

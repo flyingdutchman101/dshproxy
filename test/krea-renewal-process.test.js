@@ -80,7 +80,7 @@ if (process.argv[2] === 'worker') {
     return { dir, oauth, store: oauth.windowsStore({ protect }), start, heard, folder: path.join(dir, 'DSHProxy', 'KreaOAuth') };
   }
 
-  test('the real store renews a sign-in whose hour has ended, and what it stored can be read back', async (t) => {
+  test('the real store renews a sign-in whose hour has ended, and what it stored can be read back', { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
     const w = await world(t);
     await w.store.save(ended);
     const sent = [];
@@ -95,7 +95,7 @@ if (process.argv[2] === 'worker') {
     assert.ok(!(await fs.readFile(path.join(w.folder, 'session.v1'), 'utf8')).includes('invented-'));
   });
 
-  test('two helpers at the same moment: one renews, the other waits and uses what the first stored', async (t) => {
+  test('two helpers at the same moment: one renews, the other waits and uses what the first stored', { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
     const w = await world(t);
     await w.store.save(ended);
     const first = w.start('renew');
@@ -113,7 +113,7 @@ if (process.argv[2] === 'worker') {
     assert.equal((await w.store.load()).refreshToken, 'invented-new-refresh');
   });
 
-  test('a helper that dies in the middle of a renewal holds nothing up: the next call renews at once, with nobody clearing anything by hand', async (t) => {
+  test('a helper that dies in the middle of a renewal holds nothing up: the next call renews at once, with nobody clearing anything by hand', { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
     const w = await world(t);
     await w.store.save(ended);
     const doomed = w.start('renew');
@@ -134,7 +134,7 @@ if (process.argv[2] === 'worker') {
     assert.deepEqual(await fs.readdir(w.folder), ['session.v1']);
   });
 
-  test('the lock of a helper that is alive is left alone for two minutes, longer than any renewal takes', async (t) => {
+  test('the lock of a helper that is alive is left alone for two minutes, longer than any renewal takes', { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
     const w = await world(t);
     await w.store.save(ended);
     const lock = path.join(w.folder, 'session.v1.lock');
@@ -155,7 +155,7 @@ if (process.argv[2] === 'worker') {
     assert.equal(asked, 1);
   });
 
-  test('a sign-out during a renewal waits for it and then removes the sign-in', async (t) => {
+  test('a sign-out during a renewal waits for it and then removes the sign-in', { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
     const w = await world(t);
     await w.store.save(ended);
     const renewing = w.start('renew');
@@ -167,7 +167,7 @@ if (process.argv[2] === 'worker') {
     await assert.rejects(w.store.load(), (error) => error.code === 'ENOENT');
   });
 
-  test('a sign-in waiting at the consent page holds nothing up: calls with the present sign-in go on', async (t) => {
+  test('a sign-in waiting at the consent page holds nothing up: calls with the present sign-in go on', { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
     const w = await world(t);
     const good = { ...ended, expiresAt: NOW + 3000000 };
     await w.store.save(good);

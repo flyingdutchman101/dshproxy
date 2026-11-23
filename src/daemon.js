@@ -19,6 +19,7 @@ const { createLogins } = require("./login");
 const catalog = require("./catalog");
 const profile = require("./dsh/profile");
 const videoPicker = require("./video/picker");
+const { notYet } = require("./not-yet");
 const { fetchCatalog } = require("./models");
 const { checkForUpdate, createUpdater } = require("./backend/updater");
 const { runTrial } = require("./backend/trial");
@@ -498,7 +499,14 @@ async function start({ home, print = console.log, restart = null, exit = null, b
   // Paid video entries picked in DeepSeek Harness are answered here and never
   // forwarded. Every other request reaches the gateway's own handler
   // untouched. This must come before the request counter below.
-  videoPicker.mount(gateway, { home: state.home, origin: state.origin, log });
+  // On macOS the video path answers "not found" until stage B of 0014.
+  const videoWaits = notYet("video");
+  if (videoWaits) require("./video/picker/http").mount(gateway, { handler: (_req, res) => {
+    const text = JSON.stringify({ type: "error", error: { type: "not_found_error", message: videoWaits } });
+    res.writeHead(404, { "content-type": "application/json", "content-length": Buffer.byteLength(text) });
+    res.end(text);
+  }, log });
+  else videoPicker.mount(gateway, { home: state.home, origin: state.origin, log });
 
   // ---- Requests in flight, and stopping when there are none ----
   // Everything the gateway forwards is counted. What it answers itself is

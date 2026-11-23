@@ -26,5 +26,8 @@ async function main({args=process.argv.slice(2),input=process.stdin,output=s=>pr
     if(!json || json[0]!=='{' || Buffer.byteLength(json)>65536)unsafe();output(json);
   } catch {unsafe();}
 }
-if(require.main===module)main().catch(e=>{process.stderr.write((codes.has(e?.message)?e.message:'KREA_REFUSED')+'\n');process.exitCode=1;});
+// On macOS the Krea sign-in comes with stage B of 0014; until then it says so.
+const waits=require.main===module&&require('../src/not-yet').notYet('krea');
+if(waits){process.stderr.write(waits+'\n');process.exitCode=1;}
+else if(require.main===module)main().catch(e=>{process.stderr.write((codes.has(e?.message)?e.message:'KREA_REFUSED')+'\n');process.exitCode=1;});
 module.exports={main};

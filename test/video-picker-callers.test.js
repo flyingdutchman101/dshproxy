@@ -53,7 +53,7 @@ function run(found, args, input = "") {
 
 const providers = (found) => YAML.parse(fs.readFileSync(found.patch, "utf8")).find((item) => item.id === "llm-pi-ai").config.providers;
 
-test("a snapshot lists the video entries that are switched on, apart from the chat models", async (t) => {
+test("a snapshot lists the video entries that are switched on, apart from the chat models", { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
   const found = box(t);
   assert.deepEqual((await app.snapshot(found.data)).video, []);
 
@@ -70,7 +70,7 @@ test("a snapshot lists the video entries that are switched on, apart from the ch
   assert.deepEqual(app.profileModels(state), [...state.models, ...state.video]);
 });
 
-test("video settings that cannot be read leave the chat models alone and offer no video entry", async (t) => {
+test("video settings that cannot be read leave the chat models alone and offer no video entry", { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
   const found = box(t);
   fs.writeFileSync(path.join(found.data, "video-settings.json"), "{ not json");
   const state = await app.snapshot(found.data);
@@ -79,7 +79,7 @@ test("video settings that cannot be read leave the chat models alone and offer n
   assert.deepEqual(app.profileModels(state), state.models);
 });
 
-test("dsh apply writes the entries that are switched on, verify compares against them, and switching the last one off takes the route out", (t) => {
+test("dsh apply writes the entries that are switched on, verify compares against them, and switching the last one off takes the route out", { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
   const found = box(t);
   const key = run(found, ["key", "set", "deepseek"], "sk-test-key-for-the-picker-callers-0123456789\n");
   assert.equal(key.status, 0, key.stderr);
