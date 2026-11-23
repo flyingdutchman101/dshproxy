@@ -91,6 +91,27 @@ async function startGateway(t, backendPort, { lanes = LANES, now, supportsImages
 const post = (url, body, headers = {}, signal = undefined) => fetch(`${url}/v1/messages`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: typeof body === "string" ? body : JSON.stringify(body), signal });
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+test("gateway receipt distinguishes forced refusals, lane failover, and local rejection", async (t) => {
+  const forged = { "x-dshproxy-receipt": "not gateway evidence" };
+  const backend = await startBackend(t, model => ({ status: model === "gpt-6-astra" ? 429 : 200, headers: forged, body: { model } }));
+  const { url } = await startGateway(t, backend.port, { accountOf: () => "private@example.invalid" });
+  for (const [requested, mode, forwarded, attempts, status] of [
+    ["gpt-6-astra", "forced", "gpt-6-astra", 1, 429],
+    ["lane-main", "lane", "claude-fable-5-2", 1, 200], // previous refusal cooled the first rung
+    ["lane-empty", "lane", null, 0, 503]
+  ]) {
+    const res = await post(url, { model: requested });
+    assert.equal(res.status, status);
+    const r = JSON.parse(res.headers.get("x-dshproxy-receipt"));
+    assert.deepEqual([r.requested, r.mode, r.forwarded, r.attempts], [requested, mode, forwarded, attempts]);
+    assert.equal(r.confirmedModel, null);
+    if (attempts) assert.match(r.configuredAccount, /^acct-[a-f0-9]{16}$/);
+    else assert.equal(r.configuredAccount, null);
+    await res.arrayBuffer();
+  }
+  assert.deepEqual(backend.seen.map(v => v.model), ["gpt-6-astra", "claude-fable-5-2"]);
+});
+
 test("a lane request is served by the first rung", async (t) => {
   const backend = await startBackend(t, (model) => ({ status: 200, body: { served: model } }));
   const { url } = await startGateway(t, backend.port);
@@ -109,6 +130,7 @@ test("a rung that is out of quota is skipped and the next rung serves the same r
   assert.deepEqual(await response.json(), { served: "claude-fable-5-2" });
   assert.deepEqual(backend.seen.map((request) => request.model), ["gpt-6-astra", "claude-fable-5-2"]);
   assert.deepEqual(JSON.parse(backend.seen[1].raw.toString("utf8")).messages, [{ role: "user", content: "hi" }]);
+  assert.deepEqual(JSON.parse(response.headers.get("x-dshproxy-receipt")), { version: 1, requested: "lane-main", mode: "lane", forwarded: "claude-fable-5-2", attempts: 2, configuredAccount: null, confirmedModel: null });
   assert.ok(logs.some((line) => line.includes("gpt-6-astra") && line.includes("claude-fable-5-2")), "the move is logged");
 });
 

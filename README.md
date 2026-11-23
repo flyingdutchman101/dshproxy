@@ -9,6 +9,12 @@ DeepSeek Harness gets two kinds of model from it:
 
 It is a standalone project. It shares no code or git history with DroidProxy or VeryCuteDroidProxy, and it can run beside VeryCuteDroidProxy (which uses ports 8317 and 8318).
 
+### Inspect a routing decision
+
+For a parsed model request, read the JSON `X-DSHProxy-Receipt` response header (also present on routed errors). Example: `{"version":1,"requested":"lane-main","mode":"lane","forwarded":"claude-fable-5-2","attempts":2,"configuredAccount":null,"confirmedModel":null}`. `forwarded` is the last model the gateway attempted, not proof of delivery or execution. Zero attempts means it refused locally. Same-model retries count as attempts. Model IDs that cannot safely fit in the header are reported as `null`.
+
+`configuredAccount` is an opaque alias for the last attempted model's catalog account, when known; aliases change after gateway restart. It is not the credential selected by the backend. `confirmedModel` remains `null` because this gateway has no authoritative provider execution metadata. The receipt does not enforce account isolation or change billing. Streaming and error bodies remain available as before.
+
 ## Requirements
 
 - Windows, x64 or arm64

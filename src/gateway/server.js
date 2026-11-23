@@ -1,5 +1,8 @@
 const { carriesImage } = require("./content");
 const fs = require("fs");
+const { createHmac, randomBytes } = require("node:crypto");
+// Only printable, bounded identifiers go in HTTP headers; never echo arbitrary input.
+const headerId = value => typeof value === "string" && /^[A-Za-z0-9._:/@+~-]{1,256}$/.test(value) ? value : null;
 const http = require("http");
 const os = require("os");
 const path = require("path");
@@ -30,6 +33,8 @@ const DECODERS = {
 function withoutHopByHop(headers) {
   const kept = { ...headers };
   for (const name of HOP_BY_HOP) delete kept[name];
+  // Routing metadata belongs to this gateway, never the caller or backend.
+  for (const key of ['x-dshproxy-receipt', 'x-dshproxy-model', 'x-dshproxy-lane']) delete kept[key];
   return kept;
 }
 
@@ -188,6 +193,15 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
     out.end(body);
   });
 
+  // Account lookup describes catalog configuration, not the credential CLIProxyAPI used.
+  const receiptSalt = randomBytes(32);
+  function accountLabel(model) {
+    try {
+      const name = accountOf(model);
+      return typeof name === 'string' && name ? 'acct-' + createHmac('sha256', receiptSalt).update(name).digest('hex').slice(0, 16) : null;
+    } catch { return null; } // Optional metadata must not break routing.
+  }
+
   async function handle(req, res, raw) {
     const headers = withoutHopByHop(req.headers);
 
@@ -245,6 +259,9 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
     }
 
     const route = resolve(parsed.model);
+    const receipt = { version: 1, requested: headerId(parsed.model), mode: route.lane ? 'lane' : 'forced', forwarded: null, attempts: 0, configuredAccount: null, confirmedModel: null };
+    const record = () => res.setHeader('x-dshproxy-receipt', JSON.stringify(receipt));
+    record(); // Also covers local refusals before the first upstream attempt.
     const label = route.lane ? `lane ${route.lane}` : parsed.model;
     // One line per model request, so a failing turn can be traced without
     // guessing: what arrived, how big it was, and what came back.
@@ -296,6 +313,10 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       const model = rungs[index];
       const next = rungs[index + 1];
       let upstreamRes;
+      receipt.attempts++;
+      receipt.forwarded = headerId(model);
+      receipt.configuredAccount = accountLabel(model);
+      record();
       try {
         upstreamRes = await forward(req, { ...headers }, prepareBody(raw, model, describe(model)), track);
       } catch (error) {
@@ -395,8 +416,9 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
       if (code >= 400) dumpFailure(code, model, text);
       if (res.destroyed) return;
       if (sessionKey && code < 400) sessions.set(sessionKey, model);
-      const extra = { "x-dshproxy-model": model };
-      if (route.lane) extra["x-dshproxy-lane"] = route.lane;
+      const extra = {};
+      if (receipt.forwarded) extra["x-dshproxy-model"] = receipt.forwarded;
+      if (headerId(route.lane)) extra["x-dshproxy-lane"] = route.lane;
       relay(upstreamRes, extra, read);
       return;
     }
