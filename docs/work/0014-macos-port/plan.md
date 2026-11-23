@@ -1,4 +1,4 @@
-# Plan — 0013 DSHProxy on macOS, stage A
+# Plan — 0014 DSHProxy on macOS, stage A
 
 Status: draft written on Windows on 23 Nov for the hand-over to the Mac. **Not reviewed** (the plan lens of `spec-review` has not run) and not started. Stages B to D get their plans when they start; see the spec.
 
@@ -15,8 +15,8 @@ Rules that hold for every slice:
 
 ### A0 — Baseline on the Mac
 - depends-on: none
-- files: `package.json` (`"os"` gains `darwin`), `docs/work/0013-macos-port/ledger.md`
-- do: `npm ci --ignore-scripts`; `node docs/work/0013-macos-port/spike/proof.js` (repeats the proof on this Mac; off GitHub it uses only a keychain file in the temporary folder); `node --test`, and record in the ledger which test files fail and why. The survey's forecast is in `research/facts.md` section 3, "Packaging and tests".
+- files: `package.json` (`"os"` gains `darwin`), `docs/work/0014-macos-port/ledger.md`
+- do: `npm ci --ignore-scripts`; `node docs/work/0014-macos-port/spike/proof.js` (repeats the proof on this Mac; off GitHub it uses only a keychain file in the temporary folder); `node --test`, and record in the ledger which test files fail and why. The survey's forecast is in `research/facts.md` section 3, "Packaging and tests".
 - verify: the proof prints `0 failed`; the list of failing tests is in the ledger.
 
 ### A1 — The key wrapper (the risky part, first)
@@ -53,7 +53,7 @@ Rules that hold for every slice:
 
 ### A6 — Packaging, words, cleaning up
 - depends-on: A1 to A5
-- files: `.github/workflows/ci.yml` (`macos-latest` beside `windows-latest`); `README.md` (a macOS section); new `docs/decisions/0009-keys-on-macos-are-wrapped-through-the-keychain.md`; delete `.github/workflows/macos-proof.yml` and `docs/work/0013-macos-port/spike/` once their facts are in tests
+- files: `.github/workflows/ci.yml` (`macos-latest` beside `windows-latest`); `README.md` (a macOS section); new `docs/decisions/0009-keys-on-macos-are-wrapped-through-the-keychain.md`; delete `.github/workflows/macos-proof.yml` and `docs/work/0014-macos-port/spike/` once their facts are in tests
 - verify: CI green on both systems for the pull request; C13 by a test that reads a data folder fixture written by `main`.
 
 ### A7 — Independent review, then the check by hand

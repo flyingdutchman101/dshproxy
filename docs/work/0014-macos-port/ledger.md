@@ -1,4 +1,4 @@
-# Ledger — 0013 DSHProxy on macOS
+# Ledger — 0014 DSHProxy on macOS
 
 **Start here on the Mac.** Branch `macos-port`. Read this file, then `spec.md`, then `plan.md`. No production code has been written; the next step is slice A0 of the plan.
 
@@ -31,7 +31,7 @@ Next step: on the Mac, slice A0 (`plan.md`).
 - Ruling: Windows code for DPAPI is not moved or merged — because the port does not need it (spec review).
 - Ruling: work is on branch `macos-port`, from `main` at `8efe918`. Pushed to GitHub on the user's word (23 Nov, twice: "Yes you can"; "you can push the thing and i'll continue developing it on mac").
 - Ruling: the proof ran before the spec was confirmed — because it is throwaway, changes no production code, and its result decided the key wrapper — cost if wrong: one workflow file and one script to delete.
-- Ruling: this work folder is 0013, not 0012 — because `0012-new-models-check` exists on the local branch `video-picker`, which is not on GitHub.
+- Ruling: this work folder is 0014 — because 0009 to 0013 are taken on other branches (`0009-dpi-awareness`, `0010` to `0012`, `0013-first-time-setup`). It was first pushed as 0012, then 0013; the GitHub runs of the proof carry those names.
 
 ## Spec review, findings and what was done
 
@@ -77,15 +77,22 @@ Design risk:
 - What `fsync` in Node does on macOS.
 - The forecast of which tests fail on a Mac (`research/facts.md` section 3) comes from reading, not from running them.
 
-## Exists only on the Windows computer, not on GitHub
+## Other branches put on GitHub for the Mac, 23 Nov
 
-- Three uncommitted files in the main checkout there: `README.md`, `src/gateway/server.js`, `test/gateway.test.js`. They are the user's and were left alone.
-- The local branch `video-picker` (24 commits ahead of `main`): the work folders `0010`, `0011` and `0012-new-models-check` with their specs, ledgers and research. The code of that work is in `main`; the documents are not.
+On the user's word (asked what "Go!" meant; answer: "Only push the leftovers, I build on the Mac").
+
+- `gateway-receipt-wip`: `main` plus one commit with the three files that were uncommitted in the Windows checkout of `main` (`README.md`, `src/gateway/server.js`, `test/gateway.test.js`): a routing receipt in the `X-DSHProxy-Receipt` header. As they were; not reviewed. The Windows checkout was not touched and still has them uncommitted.
+- `work-documents`: `main` plus one commit with the 37 work documents that were only on the local branch `video-picker`: `0005` ledger additions, `0010-video-resolution-pricing`, `0011-video-in-model-picker`, `0012-new-models-check`, `0013-first-time-setup`. Stage B should read `0011` first. Taken out before publishing, because the repository is public: the Windows user name in paths (`USER`), Krea job ids (`JOB-ID-REMOVED`), Krea balance figures (`BALANCE-REMOVED`) and the Krea plan (`PLAN-REMOVED`). The originals are on the Windows computer.
+- Neither is merged into `macos-port` or `main`.
+
+## Exists only on the Windows computer
+
+- The local branch `video-picker` itself, with the unedited documents and its history.
 - The data folder (`~/.dshproxy`), the provider sign-ins and the Krea sign-in. A Mac starts with none of them; signing in again there is the user's.
 
 ## Open with the user
 
 - Reading and confirming the spec, in particular the outlines of stages B to D.
 - Decision 4: the app in stage D as a local web page with a menu-bar item, or as a native Mac app.
-- Whether to put the documents of `video-picker` and the three uncommitted files on GitHub.
+- Whether `gateway-receipt-wip` and `work-documents` are to be merged, and where.
 - Apple Silicon or Intel (asked, not answered; both are covered).
