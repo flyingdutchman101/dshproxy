@@ -1,23 +1,28 @@
 # 0012 — DSHProxy on macOS: gateway and command line
 
-Status: draft, not approved. Written 2026-11-23.
+Status: revised after spec review, not approved. Written 2026-11-23.
 
 ## Goal
 
-A person with a Mac (Apple Silicon or Intel) and DeepSeek Harness installed can run the DSHProxy gateway from Terminal and use it from the Harness exactly as on Windows: sign in to providers, save API keys, apply the routes to the Harness profiles, chat through a lane, stop and update the gateway.
+A person with a Mac (Apple Silicon or Intel) and DeepSeek Harness installed can run the DSHProxy gateway from Terminal and use it from the Harness as on Windows: sign in to providers, save API keys, apply the routes to the Harness profiles, chat through a lane, stop the gateway, and move the backend to a newer release.
 
 The user asked for this on 23 Nov ("we need to adjust DSH proxy so it can work on mac", then "macos", then "it's the same setup dsh + dsh proxy").
 
+The work is two releases. **Release A** is the gateway without video and is what this document specifies. **Release B** is video on the Mac; it is outlined at the end and gets its own criteria once A runs on the user's Mac.
+
 ## Not in this change
 
-- A settings window, a menu-bar icon, or starting at login on the Mac. The C# app under `app/` stays Windows-only. That is the next change.
-- `dshproxy dsh bundle install` (the optional video tools plugin for the Harness) on macOS. It needs the layout of the Harness's Mac application, which cannot be read from the Windows install. On macOS the command says so in one sentence and changes nothing.
+- A settings window, a menu-bar icon, or starting at login on the Mac. The C# app under `app/` stays Windows-only.
+- `dshproxy dsh bundle install` (the optional video tools plugin for the Harness) on macOS. It needs the layout of the Harness's Mac application, which cannot be read from the Windows install.
+- Video on macOS in Release A: every `dshproxy video` command and the video entries of the model picker.
 - iPhone and iPad. Linux.
-- Any change to what DSHProxy does on Windows.
+- Any change to what DSHProxy does on Windows, with one addition that is the same on both systems: the new command `dshproxy backend update`.
+
+What is not there yet says so: on macOS each of these commands prints one sentence that it is not available on macOS yet, exits non-zero and changes nothing; the gateway does not answer on the video path.
 
 ## Must stay unchanged
 
-- On Windows: every file format, file location, message and command; the DPAPI protection of `master.key` and of the Krea sign-in; existing data folders work with no migration.
+- On Windows: every file format, file location, message and existing command; both existing ways `master.key` and the Krea sign-in are protected with DPAPI, each left exactly as it is; which backend releases an update accepts; existing data folders work with no migration.
 - Decision 0001: the backend is a pinned, unmodified CLIProxyAPI release, checked against its SHA-256 before it is run.
 - The gateway listens on this computer only.
 - No test that runs on Windows today is removed, skipped or weakened on Windows.
@@ -27,72 +32,74 @@ The user asked for this on 23 Nov ("we need to adjust DSH proxy so it can work o
 - **Data folder**: `~/.dshproxy` (or `DSHPROXY_HOME`). Same on both systems.
 - **Harness home**: `~/.dsh` (or `DSH_HOME`). Same on both systems; read in the Harness source.
 - **Backend**: the CLIProxyAPI program DSHProxy downloads and runs.
-- **Key wrapper**: the one function that wraps and unwraps a file's key for the current user of the computer. Today it exists twice, both DPAPI through PowerShell (`src/secrets.js`, `src/krea-helper/oauth.js`).
+- **Key wrapper**: what wraps and unwraps a file's key for the current user of the computer. On Windows it is DPAPI through PowerShell, written twice in two different ways (`src/secrets.js` passes the key in the child's environment; `src/krea-helper/oauth.js` passes it on standard input).
 
 ## What is Windows-only today
 
 From a survey of the code (`research/facts.md`):
 
-1. The key wrapper: DPAPI through PowerShell, in two places; one of them has no way to supply another implementation.
-2. The backend: the lock file names Windows downloads only; the program name ends in `.exe`; unpacking calls `tar.exe` in the Windows folder; a leftover backend is found through PowerShell; the updater knows Windows assets only.
+1. The key wrapper. `src/secrets.js` has no way to supply another one.
+2. The backend: the lock file names Windows downloads only; the program name ends in `.exe`; unpacking calls `tar.exe` in the Windows folder; a leftover backend is found through PowerShell; the updater knows Windows assets only and can be started only from the Windows app.
 3. The Harness plugin install (`src/dsh/bundle.js`): registry, `cmd.exe`, `taskkill`.
-4. Child processes are given a list of environment variables that exist only on Windows.
-5. The Krea sign-in store insists on Windows and lives under `%LOCALAPPDATA%`.
-6. Files are written without a mode. On Windows the user's folder protects them. On a Mac that leaves them readable by other accounts on the computer, and the Harness refuses to read a `.credentials.yaml` that others can read.
-7. `package.json` allows Windows only; CI runs on Windows only; about ten test files assume Windows.
+4. Video: child processes are given environment variables that exist only on Windows; the Krea sign-in store insists on Windows.
+5. Files are written without a mode. On Windows the user's folder protects them. On a Mac that leaves them readable by other accounts on the computer, and the Harness refuses to read a `.credentials.yaml` that others can read.
+6. `package.json` allows Windows only; CI runs on Windows only; about ten test files assume Windows.
 
-Everything else (the gateway, lanes, failover, limits, models, the profile writer, the video picker's logic, the control API) has no Windows dependence that the survey found.
+Everything else (the gateway, lanes, failover, limits, models, the profile writer, the control API) has no Windows dependence that the survey found.
 
-## Design
+## Design of Release A
 
-### 1. One key wrapper per system, behind one seam
+### 1. A key wrapper for macOS, chosen by system
 
-A new module `src/keywrap.js` with one function, `protect(mode, bytes)`, `mode` being `Protect` or `Unprotect`. `src/secrets.js` and the Krea store both call it; both can be given another one (tests already do this for the Krea store).
-
-- **Windows:** the existing DPAPI code, moved, not changed. What is written to disk stays byte-compatible.
-- **macOS:** one 32-byte key per user, kept in the user's login Keychain as a generic password (service `DSHProxy`, account `key-wrapper`), created on first use. `Protect` and `Unprotect` are AES-256-GCM with that key, done in Node. The Keychain is reached through `/usr/bin/security`, which is part of macOS. The key is handed to `security` on its standard input, never as a command-line argument, and comes back on its standard output.
-- The rule "a key that cannot be read is never replaced" holds on both: when the Keychain cannot be read (locked, refused, `security` missing), DSHProxy says so in one sentence, writes nothing, and does not create a second key.
-- Two processes that both find no key at first use end with one key: the one that loses the creation reads the winner's.
+- **Windows:** nothing moves. `loadMasterKey` in `src/secrets.js` keeps its DPAPI code as it is.
+- **macOS:** `loadMasterKey` uses a new module, `src/keywrap-darwin.js`, with `protect(mode, bytes)`. It keeps one 32-byte key per user in a Keychain, as a generic password (service `DSHProxy`, account `key-wrapper`, the key written as 64 hex characters), created on first use. `Protect` and `Unprotect` are AES-256-GCM with that key, done in Node. `master.key` then holds the wrapped master key, as it holds a DPAPI blob on Windows.
+- The Keychain is reached through `/usr/bin/security`, which is part of macOS. To write, DSHProxy starts `security -i` and sends the one command on its standard input, so the key is in no argument list and no environment. To read, `find-generic-password -w` prints it on standard output. Every call ends after 10 seconds, as the DPAPI calls do today.
+- Which Keychain: the user's login Keychain, or the keychain file named in `DSHPROXY_KEYCHAIN`. Tests use a throwaway keychain file that they create and delete. No test reads, writes or deletes anything in a login Keychain.
+- The rule "a key that cannot be read is never replaced" holds: when the Keychain cannot be read (locked, refused, timed out, `security` missing), DSHProxy says so in one sentence, writes nothing, and does not create a second key.
+- A locked Keychain: when someone is logged in at the screen, macOS itself may ask for the login password; if it is not given within the 10 seconds, the command ends with the sentence above. With nobody at the screen (SSH, CI) there is no dialog and the command ends at once.
+- Two processes that both find no key at first use end with one key: creation without overwriting fails for the second, which then reads the first's.
 
 ### 2. The backend for the Mac's processor
 
 - `backend.lock.json` gains `darwin-arm64` and `darwin-x64` beside the two Windows entries. Release 8.0.72 publishes both as `.tar.gz` (checked on GitHub on 23 Nov).
-- Unpacking uses the system's `tar` on each system; the program is `cli-proxy-api.exe` on Windows and `cli-proxy-api` on macOS, where it is also marked executable.
-- The updater reads all four assets of a release and refuses a release that lacks any of them, as it refuses one that lacks a Windows asset today.
-- A backend left by a gateway that died is recognised by its program path, read with `ps` on macOS, and ended only if that path is DSHProxy's own copy.
+- Unpacking uses the system's own `tar` on each system. On macOS the program is the one file in the archive named `cli-proxy-api` (the name is checked in the first proof; `research/facts.md` does not know it yet), and it is marked executable.
+- A backend left by a gateway that died is recognised by its program path, read with `ps -o comm=` on macOS, both paths resolved with `realpath` and compared exactly, and ended only if it is DSHProxy's own copy.
+- **Updates.** An update needs the assets of the system it runs on, for both processors, and keeps the other system's entries when the release has them. On Windows that is exactly today's rule. A new command, `dshproxy backend update`, asks the running gateway to check for a newer release and apply it, through the control routes the Windows app already uses; it exists on both systems. `dshproxy backend rollback` works on macOS as on Windows.
 
-### 3. Files that hold secrets are private on macOS
+### 3. Nothing DSHProxy writes on macOS is readable by other accounts
 
-On macOS the data folder is created with mode `0700`, and these are written with mode `0600`: `master.key`, `settings.json`, `backend-config.yaml`, `video-keys.json`, `control.token`, the Krea sign-in file, and the Harness's `.credentials.yaml` (which the Harness refuses otherwise). The backend's own sign-in files under `auth/` are covered by the folder. A file that exists with a wider mode is narrowed when it is next written. Windows is untouched.
+- On macOS each program under `bin/` sets its file-creation mask to `077` before it does anything else, so every file and folder it creates, temporary files included, is private from the first byte, and the backend it starts inherits that.
+- At start the data folder is set to `0700`.
+- `dshproxy dsh apply` sets the Harness's `.credentials.yaml` to `0600` every time, also when it has nothing to add to it. `dshproxy dsh verify` reports a `.credentials.yaml` that group or others can read, because the Harness will refuse it.
+- Windows is untouched.
 
-### 4. Child processes get the Mac's own short list
+### 4. What is not available says so
 
-The video picker's child, the Krea helper and the Harness plugin's runner pass `HOME`, `TMPDIR` and `DSHPROXY_HOME` on macOS where they pass `SystemRoot`, `LOCALAPPDATA`, `APPDATA`, `TEMP`, `TMP`, `USERPROFILE` and `DSHPROXY_HOME` on Windows. Provider keys are added as today. Nothing else is passed.
+On macOS, `dshproxy video ...`, `dshproxy dsh bundle ...` and the Krea helper each print one sentence, exit non-zero and change nothing. The gateway does not mount the video picker. `dshproxy dsh apply` therefore writes no video route.
 
-### 5. The Krea sign-in on macOS
+### 5. Packaging and checks
 
-Stored in `~/Library/Application Support/DSHProxy/KreaOAuth/session.v1`, mode `0600`, wrapped by the key wrapper, renewed as on Windows (decision 0007).
+- `package.json` allows `darwin`.
+- CI runs the whole suite on `windows-latest` and `macos-latest`.
+- Tests of Windows-only code (the `cmd.exe` plugin install, DPAPI itself, `tar.exe`, video) run on Windows only and say why when they are skipped on macOS. Where macOS has its own code there is a macOS test of the same behaviour.
+- The README gets a macOS section: requirements, install, what is not there yet, and what protects which secret. Decision 0009 records the key wrapper on macOS and its cost.
 
-### 6. Packaging and checks
-
-`package.json` allows `darwin`. CI runs the whole suite on `windows-latest` and `macos-latest`. Tests of Windows-only code (the `cmd.exe` plugin install, DPAPI itself, `tar.exe`) run on Windows only and say why when they are skipped elsewhere; each has a macOS counterpart where macOS has its own code. The README gets a macOS section: requirements, install, what is not there yet.
-
-## Acceptance criteria
+## Acceptance criteria of Release A
 
 Automatic, on a macOS machine in CI and, where the same, on Windows:
 
 - **C1.** `npm ci --ignore-scripts` and `node --test` succeed on macOS. On Windows `node --test` runs at least the tests it runs today (914) and all pass.
 - **C2.** With an empty data folder on macOS, `dshproxy start` downloads the pinned backend for the machine's processor from the official release address, refuses it if its SHA-256 differs from the lock, unpacks it, starts it, and `GET /dshproxy/status` answers. `dshproxy stop --when-idle` ends the gateway and no backend process is left.
-- **C3.** The shipped lock lists four assets, each under the official release address, each with the SHA-256 that the release's `checksums.txt` gives. The updater makes a four-asset lock from a release and refuses a release that lacks one.
-- **C4.** A leftover backend is ended on the next start only when its program path is DSHProxy's own; another program's process with the recorded id is left alone.
-- **C5.** On macOS an API key saved with `dshproxy key set` is read back by a new process; `master.key` and `settings.json` do not contain it; the Keychain item is created once; a second process started at the same moment ends with the same key.
-- **C6.** No secret is in the arguments or the environment of any process the key wrapper starts on macOS. Shown twice: with a stand-in for `security` that records what it was given, and on the CI Mac against the real program.
-- **C7.** When the Keychain cannot be read, every command that needs the key ends with one sentence and a non-zero exit, and the data folder and the Keychain are byte for byte what they were.
-- **C8.** After any DSHProxy command on macOS, the data folder is `0700` and every file listed in design 3 is `0600`. After `dshproxy dsh apply`, the Harness's `.credentials.yaml` is `0600`, also when it existed as `0644`.
-- **C9.** `dshproxy dsh apply`, `verify`, `status` and `remove` produce the same profile text on macOS as on Windows for the same input (the existing profile tests, run on both).
-- **C10.** `dshproxy dsh bundle status` and `install` on macOS print one sentence that the plugin install is not available on macOS yet, exit non-zero, and change nothing.
-- **C11.** A real child process started by the video picker and by the Krea helper path on macOS sees `HOME`, `TMPDIR`, `DSHPROXY_HOME`, the provider key it was given, what the system itself adds, and nothing else.
-- **C12.** The Krea sign-in store on macOS passes the same renewal tests as on Windows (one renewal between two helpers, a dead helper holds nothing up, refusal drops the renewal token), with the real file and the real lock.
+- **C3.** The shipped lock lists four assets, each under the official release address, each with the SHA-256 that the release's `checksums.txt` gives.
+- **C4.** An update made on macOS from a release with all four assets writes a four-asset lock; from a release without a Windows asset it writes the two macOS ones; from a release without a macOS asset it is refused. On Windows, which releases are accepted is what it is today.
+- **C5.** `dshproxy backend update` against a running gateway reports "up to date", or applies a newer release and the gateway answers on it afterwards; with no gateway running it says so and changes nothing. Tested with a stand-in for GitHub.
+- **C6.** A leftover backend is ended on the next start only when its program path is DSHProxy's own; another program's process with the recorded id is left alone.
+- **C7.** On macOS an API key saved with `dshproxy key set` is read back by a new process; `master.key` and `settings.json` do not contain it; the Keychain item is created once; a second process started at the same moment ends with the same key.
+- **C8.** No secret is in the arguments or the environment of any process the macOS key wrapper starts. Shown twice: with a stand-in for `security` that records what it was given, and on the CI Mac against the real program with a throwaway keychain.
+- **C9.** When the Keychain cannot be read (a locked throwaway keychain; a `security` that does not answer for 10 seconds; no `security`), every command that needs the key ends with one sentence and a non-zero exit within 15 seconds, and the data folder and the keychain are byte for byte what they were.
+- **C10.** After any DSHProxy command on macOS, the data folder is `0700` and nothing that command created or replaced, there or in the Harness home, has a group or others bit. After `dshproxy dsh apply`, `.credentials.yaml` is `0600`, also when it was `0644` and already held the reference. `dshproxy dsh verify` reports one that is `0644`.
+- **C11.** `dshproxy dsh apply`, `verify`, `status` and `remove` produce the same profile text on macOS as on Windows for the same input (the existing profile tests, run on both).
+- **C12.** On macOS, `dshproxy video picker`, `dshproxy dsh bundle status`, `dshproxy dsh bundle install` and `dshproxy-krea status` each print the one sentence, exit non-zero and change nothing; a request to the gateway's video path is answered "not found".
 - **C13.** On Windows, a data folder written by the current version is read by the new one, and the files the new one writes are read by the current one.
 
 By hand, on the user's Mac (cannot be automated; needs sign-ins):
@@ -100,30 +107,47 @@ By hand, on the user's Mac (cannot be automated; needs sign-ins):
 - **M1.** Install as the README says; `dshproxy start` runs.
 - **M2.** `dshproxy login` for one provider opens the provider's page and the account is listed afterwards.
 - **M3.** `dshproxy dsh apply`, restart the Harness, pick a lane, get an answer.
-- **M4.** No Keychain prompt appears at any point. After the Mac is restarted and the user has logged in, `dshproxy start` works without a prompt.
-- **M5.** With video in scope: a Krea sign-in, a quote, and a rehearsal in the model picker.
+- **M4.** In normal use no Keychain dialog appears. After the Mac is restarted and the user has logged in, `dshproxy start` works without one.
 
 ## Riskiest assumption
 
-That `/usr/bin/security` gives a background Node process a store that is per user, asks nothing, and takes the secret on standard input.
+That `/usr/bin/security` gives a background Node process a store that is per user, asks nothing while the Keychain is unlocked, and takes the secret on standard input.
 
-Hardest case: on a machine nobody is sitting at (the CI Mac), two processes start at once with no key in the Keychain, and both must end with the same key, with no secret in any argument list, and no prompt.
+Hardest case: on a machine nobody is sitting at (the CI Mac), two processes start at once with no key in a throwaway keychain; both must end with the same key, no secret in any argument list, and no prompt. Then the keychain is locked, and a read must end with an error, not hang.
 
-This is proven first, with a throwaway script on the CI Mac, before any production code depends on it. If it fails, the fallback below is put to the user; it is not chosen silently.
+This is proven first, with a throwaway script on the CI Mac, before any production code depends on it. The same script checks that the pinned backend's archive unpacks, what the program in it is called, and that it starts. If the Keychain part fails, the fallback below is put to the user; it is not chosen silently.
+
+## What the Keychain does and does not protect
+
+Stated plainly, because it bears on the choice below:
+
+- The backend reads its API keys from `backend-config.yaml`, which holds them in plain text, and keeps the provider sign-ins as plain files under `auth/`. That is so on Windows today and stays so. On macOS both are private to the user's account (design 3).
+- So in Release A the key wrapper protects only the copy of the API keys in `settings.json`. A copy of the disk or of a backup that includes the data folder holds the API keys either way.
+- The key wrapper matters in Release B: the video provider keys and the Krea sign-in exist only in wrapped form.
 
 ## Rejected alternatives and risks
 
-- **Key wrapper as a private file** (`0600`, no Keychain). Simpler and works with no one logged in at the screen. Rejected as the first choice because a copy of the disk or of a backup would then hold both the key and what it protects; with the Keychain the login password is needed, which is what DPAPI gives on Windows. It is the fallback if the Keychain cannot be used unattended.
+- **Key wrapper as a private file** (`0600`, no Keychain). Simpler, no dependence on `security`, works with nobody logged in at the screen. Not the first choice because it would have to be replaced, with a migration, when video comes and the wrapper starts to protect something that is nowhere else in plain text. It is the fallback if the Keychain cannot be used unattended.
+- **Merging the two Windows DPAPI paths into one module.** Rejected: it rewrites working Windows code the port does not need to touch.
+- **A mode on every file write.** Rejected for the file-creation mask: about a dozen places write files, and a write added later would miss it.
 - **A native helper** (Swift, or a Node add-on) for the Keychain. Rejected: a compiled part to build, sign and ship for one read and one write.
+- **Requiring all four assets for every update.** Rejected: a release without a macOS archive would stop reaching Windows users.
 - **Porting the plugin install now.** Rejected for this change: the Mac application's folder layout, program name and command launcher are only inferred from the Windows install.
-- **Rewriting the C# app as a cross-platform window now.** Rejected for this change: the gateway has to run on a Mac first.
-- **Risk: the pinned backend may not start on a Mac** (processor, signing). C2 on the CI Mac shows it for Apple Silicon; Intel is covered by a second CI machine if GitHub still offers one, otherwise it stays unverified and the README says so.
-- **Risk: a Mac reached only over SSH** has a locked Keychain. C7 is the behaviour there; the README says the gateway is started from a logged-in session.
-- **Risk: tests split by system drift apart.** Kept small by the seam: only the key wrapper, unpacking, the process lookup and the environment list differ.
-- **Known and unchanged:** `backend-config.yaml` holds the API keys in plain text for the backend to read, on both systems. On macOS it is `0600`.
+- **Risk: the pinned backend may not start on a Mac** (processor, signing). The first proof and C2 show it on the CI Mac, which is Apple Silicon. Intel is checked on a second CI machine if GitHub offers one; otherwise it stays unverified and the README says so.
+- **Risk: a Keychain that is locked while the user is logged in** (a setting some people use) makes macOS ask for the login password whenever the gateway needs the key. Design 1 and C9 are the behaviour; the README says it.
+- **Risk: tests split by system drift apart.** Kept small: only the key wrapper, unpacking, the process lookup and the file modes differ in Release A.
+
+## Release B, outline only: video on macOS
+
+Not built until Release A has passed M1 to M4 on the user's Mac. It gets its own criteria then. Known now:
+
+- The Krea sign-in store: `~/Library/Application Support/DSHProxy/KreaOAuth/` (folder `0700`), wrapped by the macOS key wrapper through the `protect` option the store already has; the Windows store unchanged.
+- The video picker's child and the Krea helper pass `HOME`, `TMPDIR` and `DSHPROXY_HOME` on macOS where they pass the Windows names today, plus the provider key on API routes.
+- To check before building: that the purchase journal's rules about a file's creation time hold on APFS, and that what Node does for `fsync` on macOS reaches the disk (the reviewer says it does not; libuv's source is believed to use `F_FULLFSYNC` there; not checked).
+- The Harness plugin's runner is left alone until the plugin install is ported.
 
 ## Open decisions for the user
 
-1. **Video on the Mac in this change, or after?** Proposed: in this change, built after the core (criteria C11, C12, M5). Leaving it out removes design 4 and 5.
-2. **Keychain, or a private file, for the key wrapper?** Proposed: Keychain, with the private file as the fallback if the first proof fails.
+1. **Video on the Mac: after the core is confirmed on your Mac (proposed), or built straight after it without waiting.**
+2. **Keychain, or a private file, for the key wrapper.** Proposed: Keychain if the first proof passes, the private file if it does not. See "What the Keychain does and does not protect".
 3. **Pushing the `macos-port` branch to GitHub so that CI can run on a Mac.** Nothing in this change can be shown to work without it. The repository is public, so macOS CI minutes cost nothing.
