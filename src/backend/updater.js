@@ -11,7 +11,13 @@ const fs = require("fs");
 const REPO = "router-for-me/CLIProxyAPI";
 const LATEST_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const DOWNLOAD_PREFIX = `https://github.com/${REPO}/releases/download/`;
-const ASSET_KEYS = { windows_amd64: "win32-x64", windows_aarch64: "win32-arm64" };
+// The archives of a release DSHProxy uses, per system and processor.
+const ASSETS = [
+  { suffix: "windows_amd64", ext: "zip", key: "win32-x64", platform: "win32" },
+  { suffix: "windows_aarch64", ext: "zip", key: "win32-arm64", platform: "win32" },
+  { suffix: "darwin_aarch64", ext: "tar.gz", key: "darwin-arm64", platform: "darwin" },
+  { suffix: "darwin_amd64", ext: "tar.gz", key: "darwin-x64", platform: "darwin" }
+];
 
 function parts(version) {
   return String(version).replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10) || 0);
@@ -37,20 +43,29 @@ function parseChecksums(text) {
   return sums;
 }
 
-// The lock for a release: both Windows downloads, each with the checksum the
-// release published. Every address must be under the official release path.
-function lockFromRelease(release, sums) {
+// The lock for a release. The archives of the system this runs on, for both
+// processors, must be there, each with the checksum the release published, or
+// the release is refused; on Windows that is the rule as it always was. The
+// other system's archives are kept when they are complete, and left out
+// otherwise. Every address must be under the official release path.
+function lockFromRelease(release, sums, { platform = process.platform } = {}) {
   const version = String(release.tag_name).replace(/^v/, "");
   // The version becomes a folder name, so only plain release numbers pass.
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`"${release.tag_name}" is not a release version.`);
+  if (!ASSETS.some((item) => item.platform === platform)) throw new Error(`CLIProxyAPI updates are not set up for ${platform}.`);
   const assets = {};
-  for (const [suffix, key] of Object.entries(ASSET_KEYS)) {
-    const name = `CLIProxyAPI_${version}_${suffix}.zip`;
+  for (const { suffix, ext, key, platform: system } of ASSETS) {
+    const required = system === platform;
+    const name = `CLIProxyAPI_${version}_${suffix}.${ext}`;
     const asset = (release.assets || []).find((item) => item.name === name);
-    if (!asset) throw new Error(`Release ${version} has no ${name}.`);
-    const url = String(asset.browser_download_url);
-    if (!url.startsWith(`${DOWNLOAD_PREFIX}v${version}/`)) throw new Error(`${url} is not an official CLIProxyAPI download.`);
+    const url = asset ? String(asset.browser_download_url) : null;
     const sha256 = sums.get(name);
+    if (!required) {
+      if (asset && url.startsWith(`${DOWNLOAD_PREFIX}v${version}/`) && sha256) assets[key] = { url, sha256 };
+      continue;
+    }
+    if (!asset) throw new Error(`Release ${version} has no ${name}.`);
+    if (!url.startsWith(`${DOWNLOAD_PREFIX}v${version}/`)) throw new Error(`${url} is not an official CLIProxyAPI download.`);
     if (!sha256) throw new Error(`Release ${version} has no checksum for ${name}.`);
     assets[key] = { url, sha256 };
   }
@@ -59,7 +74,7 @@ function lockFromRelease(release, sums) {
 
 // Asks GitHub for the latest release. Returns { available, current, latest,
 // lock?, publishedAt? }.
-async function checkForUpdate(current, { fetchImpl = fetch, timeoutMs = 20000 } = {}) {
+async function checkForUpdate(current, { fetchImpl = fetch, timeoutMs = 20000, platform = process.platform } = {}) {
   const response = await fetchImpl(LATEST_URL, { headers: { accept: "application/vnd.github+json", "user-agent": "DSHProxy" }, signal: AbortSignal.timeout(timeoutMs) });
   if (!response.ok) throw new Error(`GitHub answered HTTP ${response.status}.`);
   const release = await response.json();
@@ -72,7 +87,7 @@ async function checkForUpdate(current, { fetchImpl = fetch, timeoutMs = 20000 } 
   if (!String(sumsAsset.browser_download_url).startsWith(`${DOWNLOAD_PREFIX}v${latest}/`)) throw new Error(`The checksums for ${latest} are not an official CLIProxyAPI download.`);
   const sums = await fetchImpl(sumsAsset.browser_download_url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!sums.ok) throw new Error(`The checksums for ${latest} could not be downloaded (HTTP ${sums.status}).`);
-  const lock = lockFromRelease(release, parseChecksums(await sums.text()));
+  const lock = lockFromRelease(release, parseChecksums(await sums.text()), { platform });
   return { available: true, current: current.version, latest, publishedAt: lock.publishedAt, lock };
 }
 

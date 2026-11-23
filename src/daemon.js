@@ -81,11 +81,14 @@ function fingerprint(models) {
 // now in the lock file). The Windows app and the CLI supply it.
 // `exit()` ends the process; it is called once, after a stop that was asked
 // for over the control interface has been answered.
-// `backend` replaces how the backend program is installed and run. Only tests
-// supply it: they must never download or start the real program.
+// `backend` replaces how the backend program is installed, run, looked up on
+// GitHub (`checkForUpdate`) and tried out (`trial`). Only tests supply it: they
+// must never download or start the real program.
 async function start({ home, print = console.log, restart = null, exit = null, backend: backendProgram = {} } = {}) {
   const installBackend = backendProgram.install || install;
   const superviseBackend = backendProgram.createSupervisor || createSupervisor;
+  const checkRelease = backendProgram.checkForUpdate || checkForUpdate;
+  const trialBackend = backendProgram.trial || runTrial;
   let state = await app.snapshot(home);
   const { settings, paths } = state;
   const log = (line) => {
@@ -220,7 +223,7 @@ async function start({ home, print = console.log, restart = null, exit = null, b
   let update = null;
   async function checkUpdate() {
     try {
-      const result = await checkForUpdate(app.currentLock(state.home));
+      const result = await checkRelease(app.currentLock(state.home));
       update = { ...result, checkedAt: new Date().toISOString(), error: null };
       if (result.available) log(`CLIProxyAPI ${result.latest} is available (running ${result.current}).`);
     } catch (error) {
@@ -231,8 +234,8 @@ async function start({ home, print = console.log, restart = null, exit = null, b
   const updater = createUpdater({
     lockFile: app.writableLockFile(state.home),
     binDir: paths.binDir,
-    install: (next, binDir) => install(next, binDir, { log }),
-    trial: (binary) => runTrial({ binary, authDir: state.authDir, workDir: state.home, accounts: activeAccounts(), providers: state.readable, log }),
+    install: (next, binDir) => installBackend(next, binDir, { log }),
+    trial: (binary) => trialBackend({ binary, authDir: state.authDir, workDir: state.home, accounts: activeAccounts(), providers: state.readable, log }),
     restart: restart ? async () => { setTimeout(() => restart(), 200); } : null,
     current: () => app.currentLock(state.home),
     floor: app.shippedLock().version,
