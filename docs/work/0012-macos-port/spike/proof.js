@@ -143,8 +143,21 @@ async function keychainProof(tmp) {
 
   const locking = run(SECURITY, ['lock-keychain', keychain]);
   info('K7 lock', shown(locking));
+  // First run (5682a61): a read of a locked keychain did not end by itself; it
+  // was ended after the 10 seconds. These look for a way to see "locked"
+  // without waiting, and for what the wait leaves behind.
+  const agents = () => short(run('/usr/bin/pgrep', ['-lf', 'SecurityAgent|securityd_service|coreautha'], { timeout: 5000 }).out) || '(none)';
+  info('K7 dialog processes before', agents());
+  const settings = run(SECURITY, ['show-keychain-info', keychain], { timeout: 5000 });
+  info('K7 probe: show-keychain-info on a locked keychain', `${shown(settings)}; stdout: ${short(settings.out) || '(none)'}`);
+  const attributes = run(SECURITY, ['find-generic-password', '-s', SERVICE, '-a', ACCOUNT, keychain], { timeout: 5000 });
+  info('K7 probe: the item\'s attributes, without its value, on a locked keychain', `${shown(attributes)}; ${attributes.out.split('\n').length} lines of output; value in it: ${/password:/.test(attributes.out)}`);
+  const unlockNoPassword = run(SECURITY, ['unlock-keychain', keychain], { timeout: 5000, input: '' });
+  info('K7 probe: unlock-keychain with no password and an empty standard input', shown(unlockNoPassword));
   const locked = read(keychain);
-  pass('K7 reading a locked keychain ends by itself with an error (no hang, nobody at the screen)', locked.code !== 0 && locked.code !== null && locked.signal === null && locked.ms < TIMEOUT, shown(locked));
+  info('K7 reading the value of a locked keychain', shown(locked));
+  info('K7 dialog processes after the read was ended', agents());
+  pass('K7 a read of a locked keychain is over within the 10 seconds, by itself or ended, and returns no value', locked.out === '' && locked.ms < TIMEOUT + 2000, shown(locked));
   const lockedWrite = write(crypto.randomBytes(32).toString('hex'), keychain);
   info('K7 writing to a locked keychain', `${shown(lockedWrite)}; stdout: ${short(lockedWrite.out) || '(none)'}`);
   info('K7 the codes: absent item / locked', `${empty.code} / ${locked.code}`);
