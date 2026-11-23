@@ -216,6 +216,49 @@ test('without a settings file purchases from chat are off: a yes rehearses and n
   assert.equal(w.outcome(quote.id).state, 'rehearsal');
 });
 
+test('when the client goes away while a job is followed, the following stops: no more status checks, and the job stays as it is', async (t) => {
+  const w = await wired(t);
+  w.statusOf.krea = 'processing';
+  const quote = await quoteFor(w, KREA);
+  const client = new AbortController();
+  const statusCalls = () => w.ran.filter((args) => args[0] === 'status').length;
+  let text = '';
+  const started = w.clock.now();
+  // As the HTTP layer calls it: the signal aborts when the connection closes.
+  await w.picker.answer(yes(quote), (piece) => {
+    text += piece;
+    if (text.includes('Generating')) client.abort();
+    return true;
+  }, { signal: client.signal });
+  assert.equal(w.submits().length, 1, 'the clip was ordered once');
+  assert.ok(statusCalls() <= 1, `${statusCalls()} status checks after the client left`);
+  assert.ok(w.clock.now() - started < 60000, `still following ${Math.round((w.clock.now() - started) / 1000)} s after the client left`);
+  assert.doesNotMatch(text, /Still running after 12 minutes/);
+
+  // The next message finds the job; nothing is ordered again.
+  w.statusOf.krea = 'completed';
+  const next = await ask(w, yes(quote), w.picker);
+  assert.match(next, /\[Open the clip\]/);
+  assert.equal(w.submits().length, 1);
+});
+
+test('a client that is gone before the purchase is recorded buys nothing, and the quote is still open', async (t) => {
+  const w = await wired(t);
+  const quote = await quoteFor(w, KREA);
+  const journal = () => fs.readFileSync(path.join(w.home, 'video-picker', 'claims.log'), 'utf8');
+  const before = journal();
+  const client = new AbortController();
+  client.abort();
+  await w.picker.answer(yes(quote), () => true, { signal: client.signal });
+  assert.equal(w.starts.filter((start) => start.kind === 'submit').length, 0, 'no purchase was started');
+  assert.equal(journal(), before, 'the quote was not claimed');
+
+  // The same reply from a client that stays buys once.
+  const text = await ask(w, yes(quote), w.picker);
+  assert.match(text, /\[Open the clip\]/);
+  assert.equal(w.submits().length, 1);
+});
+
 // ------------------------------- over HTTP, mounted on a server -------------------------------
 
 function post(port, target, body, headers = {}) {

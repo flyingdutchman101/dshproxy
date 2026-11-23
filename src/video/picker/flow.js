@@ -262,9 +262,22 @@ function statusWords(state) {
 
 // Text goes out through `write`. Once writing fails the client is gone:
 // nothing more is written, and waiting for a job stops.
-function speaker(write) {
+//
+// `signal`, when the caller has one, aborts when the client goes away (the
+// connection closed): from then on nothing is written and no job is followed.
+// It never stops a purchase that has begun: the one order is still handed
+// over and its outcome recorded.
+function speaker(write, signal) {
   // `about` is the quote this answer has started to use or report on.
   const out = { gone: false, about: null };
+  try {
+    if (signal && typeof signal.addEventListener === 'function') {
+      if (signal.aborted === true) out.gone = true;
+      else signal.addEventListener('abort', () => { out.gone = true; }, { once: true });
+    }
+  } catch {
+    // a signal that cannot be listened to is no signal
+  }
   out.say = (text) => {
     if (out.gone) return;
     try {
@@ -832,6 +845,11 @@ async function confirm(deps, entry, quote, out) {
   const over = exceeded({ ...used, clips: used.clips + 1, [quote.unit]: used[quote.unit] + spent(quote) }, settings.ceiling, quote.unit);
   if (over.length > 0) return out.say(ceilingText('Nothing was bought', over, settings.ceiling, 'The quote was not used.'));
 
+  // A client that has gone away by now gets nothing bought: the quote stays
+  // open, and the same reply sent again within its ten minutes can buy. From
+  // the claim on, a client that leaves no longer stops the one order.
+  if (out.gone) return undefined;
+
   // Step 2, the claim: appended to the journal, flushed and read back. Only
   // the holder goes on. After an error this request sends nothing; if its
   // line may have reached the journal, no later request can send either.
@@ -942,8 +960,8 @@ async function respond(deps, body, out) {
 
 // Writes the answer through `write`; resolves when the answer is complete.
 // It never rejects: whatever goes wrong inside becomes one fixed sentence.
-async function answer(deps, body, write) {
-  const out = speaker(write);
+async function answer(deps, body, write, signal) {
+  const out = speaker(write, signal);
   try {
     await respond(deps, body, out);
   } catch {

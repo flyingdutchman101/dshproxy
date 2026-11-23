@@ -78,11 +78,15 @@ function newId(random) {
 // or null when the amount is not one of that unit. Krea units may be
 // fractional and are rounded up at the sixth decimal, never down. US dollars
 // are kept as whole millionths and sent as dollars. Credits are whole.
+//
+// The largest amounts are the largest the video command takes under each
+// flag: nine digits of units, six of dollars, six of credits. An amount
+// beyond that is never quoted, so no quote exists that could not be sent.
 function capOf(unit, amount) {
   if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) return null;
-  if (unit === 'callirra_credits') return Number.isSafeInteger(amount) && amount <= 999999999 ? String(amount) : null;
+  if (unit === 'callirra_credits') return Number.isSafeInteger(amount) && amount <= 999999 ? String(amount) : null;
   if (unit !== 'krea_units' && unit !== 'usd_micros') return null;
-  if (unit === 'usd_micros' && !Number.isSafeInteger(amount)) return null;
+  if (unit === 'usd_micros' && (!Number.isSafeInteger(amount) || amount > 999999999999)) return null;
   if (unit === 'krea_units' && amount > 999999999) return null;
   let micros = unit === 'usd_micros' ? amount : Math.ceil(amount * 1000000);
   if (unit === 'krea_units' && micros / 1000000 < amount) micros += 1;
@@ -141,7 +145,9 @@ function recordOf(line) {
   if (typeof nonce !== 'string' || !NONCE.test(nonce)) return null;
   if (typeof entry !== 'string' || !ENTRY.test(entry)) return null;
   if (!UNITS.includes(unit) || typeof cap !== 'string' || cap !== capOf(unit, amount)) return null;
-  if (!Number.isSafeInteger(claimedAt)) return null;
+  // A time before 1970 is no time a claim was made at, and would count as
+  // long ago for the ceiling.
+  if (!Number.isSafeInteger(claimedAt) || claimedAt < 0) return null;
   return { id, nonce, entry, amount, unit, cap, claimedAt };
 }
 

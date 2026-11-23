@@ -2,7 +2,7 @@
 // Video entries in the chat model picker: a typed prompt gets a price quote, a
 // confirming reply buys one clip, and a quote buys at most once.
 //
-//   create(options) -> { answer(body, write) }
+//   create(options) -> { answer(body, write, { signal }) }
 //
 // `answer` takes a parsed request body (Anthropic messages shape) and writes
 // the answer as pieces of text through `write`; its promise resolves when the
@@ -84,10 +84,11 @@ function create(options) {
   tidy();
 
   return {
-    answer(body, write) {
+    // `options.signal`, when given, aborts when the client goes away.
+    answer(body, write, options) {
       if (typeof write !== 'function') return Promise.reject(new TypeError('answer(body, write) needs write as a function.'));
       tidy();
-      return flow.answer(deps, body, write);
+      return flow.answer(deps, body, write, options && typeof options === 'object' ? options.signal : undefined);
     }
   };
 }
@@ -121,7 +122,7 @@ function mount(server, { origin, ...options } = {}) {
   let handler = null;
   try {
     const picker = wired(options);
-    handler = http.handler({ answer: (body, write) => picker.answer(body, write), origin, log });
+    handler = http.handler({ answer: (body, write, options) => picker.answer(body, write, options), origin, log });
   } catch (error) {
     try {
       // The class and code of the error only: its text can name a folder.
