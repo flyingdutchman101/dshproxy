@@ -194,12 +194,14 @@ async function start({ home, print = console.log, restart = null, exit = null, b
   const syncHarness = (reason) => serial(() => syncNow(reason));
   async function syncNow(reason) {
     state = await app.snapshot(state.home);
-    const print2 = fingerprint(state.models);
+    // The chat models and the video entries that are switched on.
+    const offeredNow = app.profileModels(state);
+    const print2 = fingerprint(offeredNow);
     if (print2 === lastFingerprint) return { changed: false };
     const first = lastFingerprint === null;
     try {
       // Only profiles that already have DSHProxy routes are written.
-      const result = profile.apply(state.models, state.origin, profile.dshHome(), { keepModelPrefixes: state.unreadable, onlyApplied: true });
+      const result = profile.apply(offeredNow, state.origin, profile.dshHome(), { keepModelPrefixes: state.unreadable, onlyApplied: true });
       lastFingerprint = print2;
       const changed = result.profiles.filter((item) => item.changed).map((item) => item.profile);
       if (changed.length) {

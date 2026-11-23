@@ -553,13 +553,13 @@ async function main(argv, out = console.log) {
         throw new Error("Usage: dshproxy dsh bundle status|install [--json]");
       }
       const state = await app.snapshot();
-      if (action === "apply") return reportApply(profile.apply(state.models, state.origin, profile.dshHome(), { dryRun, keepModelPrefixes: state.unreadable, lanes: state.settings.lanes }), dryRun, out);
+      if (action === "apply") return reportApply(profile.apply(app.profileModels(state), state.origin, profile.dshHome(), { dryRun, keepModelPrefixes: state.unreadable, lanes: state.settings.lanes }), dryRun, out);
       if (action === "remove") {
         for (const item of profile.remove(profile.dshHome(), { dryRun })) out(`${item.profile}: ${item.removed.length ? `${dryRun ? "would remove" : "removed"} ${item.removed.join(", ")}` : "nothing to remove"}`);
         return undefined;
       }
       if (action === "verify") {
-        const report = profile.verify({ origin: state.origin, lanes: state.settings.lanes, models: state.models.map((model) => ({ id: model.id, api: model.api })), home: profile.dshHome() });
+        const report = profile.verify({ origin: state.origin, lanes: state.settings.lanes, models: app.profileModels(state).map((model) => ({ id: model.id, api: model.api })), home: profile.dshHome() });
         for (const item of report.profiles) {
           out(`${item.profile}: ${item.problems.length ? "NOT READY" : "ready"}`);
           for (const problem of item.problems) out(`  - ${problem}`);

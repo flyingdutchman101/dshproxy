@@ -207,6 +207,24 @@ function offeredModels(settings, activeAccounts, readable, discovery = { catalog
   return { models: [...lanes, ...real], isAvailable, listed: listModels(options), suggestions: suggestions(settings.lanes, subscription) };
 }
 
+// The paid video entries the user switched on, as the models of the DeepSeek
+// Harness video route. They are kept apart from `models`: lanes, `dshproxy
+// models`, image checks and account lookups never see them. Video settings
+// that cannot be read offer no entry and never stand in the way of chat.
+async function videoModels(home) {
+  try {
+    return { video: await require("./video/picker/entries").models(home), videoError: null };
+  } catch (error) {
+    return { video: [], videoError: error.message };
+  }
+}
+
+// Everything the DeepSeek Harness profile is given: the chat models, then the
+// video entries.
+function profileModels(state) {
+  return [...state.models, ...(state.video || [])];
+}
+
 async function snapshot(home = settingsFile.homeDir()) {
   const settings = settingsFile.load(home);
   const authDir = settingsFile.authDirFor(settings, home);
@@ -227,7 +245,8 @@ async function snapshot(home = settingsFile.homeDir()) {
     custom: customEndpoints.entries,
     customUnreadable: customEndpoints.unreadable,
     discovery: { fetchedAt: discovery.fetchedAt, catalogError: discovery.catalogError, hasCatalog: Boolean(discovery.catalog) },
-    ...offeredModels(settings, activeAccounts, readable, discovery, customEndpoints.entries)
+    ...offeredModels(settings, activeAccounts, readable, discovery, customEndpoints.entries),
+    ...(await videoModels(home))
   };
 }
 
@@ -241,4 +260,4 @@ function appendLog(file, line) {
   }
 }
 
-module.exports = { version, shippedLock, currentLock, writableLockFile, readDiscovery, saveDiscovery, snapshot, readProviders, saveProviderKey, removeProviderKey, readCustom, saveCustom, removeCustom, offeredModels, appendLog };
+module.exports = { version, shippedLock, currentLock, writableLockFile, readDiscovery, saveDiscovery, snapshot, profileModels, readProviders, saveProviderKey, removeProviderKey, readCustom, saveCustom, removeCustom, offeredModels, appendLog };
