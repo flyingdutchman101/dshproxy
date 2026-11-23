@@ -119,3 +119,13 @@ Machine: Apple Silicon (arm64), macOS 26.6.2 (25G83), Node 24.19.0, libuv 1.52.1
 | macOS adds `__CF_USER_TEXT_ENCODING` to the environment of the plugin runner's child (Windows has its own allowance, `ADDED_BY_NODE_ON_WINDOWS`) | `integrations/dsh-video/test/dsh-video.test.mjs` 151 | not forecast; A5 or C |
 
 Compared with the forecast (section 3): `cli.test.js` and `video-picker-callers.test.js` fail through the key wrapper as well; the plugin runner's environment test was not forecast.
+
+## 7. DeepSeek Harness on the user's Mac, 23 Nov (read only, for stage C)
+
+- Application: `/Applications/DeepSeek Harness.app`; bundle id `com.deepseek.dsh`; program `Contents/MacOS/DeepSeek Harness`; **version 0.2.2-rc.1** (the Windows computer has 0.2.2-rc.5; decision 0008 was read in rc.5).
+- In `ps -axo comm=` while it runs: `/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness` (twice), and `.../Contents/Frameworks/DeepSeek Harness Helper.app/...`, `DeepSeek Harness Helper (Renderer).app/...`.
+- The command launcher exists: `Contents/Resources/runtime/cli/bin/dsh`, a POSIX `sh` script that follows its own links and runs `ELECTRON_RUN_AS_NODE=1 "<Resources>/../MacOS/DeepSeek Harness" --expose-internals "<Resources>/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js" "$@"`.
+- **There is no `/usr/local/bin/dsh`** on this Mac (and no `dsh` on the `PATH`). The link the facts inferred is made only when the user installs the command line from the Harness, so DSHProxy cannot count on it.
+- `Contents/Resources/runtime/versions.json`: Node 24.21.0, pnpm 11.28.5; `runtime/bin/` holds `node`.
+- Harness home `~/.dsh` with `profiles/desktop`, `profiles/headless`, `profiles/web`. `~/.dsh/.credentials.yaml` is `-rw-------`.
+- No `~/.dshproxy` on this Mac yet.
