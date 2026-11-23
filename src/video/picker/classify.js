@@ -1,0 +1,257 @@
+'use strict';
+// Reads a request body (Anthropic messages shape) and says what it is, as far
+// as quoting and buying are concerned. Pure, and total: whatever the body is,
+// classify() returns one of the kinds below and never throws.
+//
+// The kinds, in the order they are tried (the design's table 4.3, rows 5 to
+// 14; row 4, the entry, needs the settings and is checked by the caller):
+//
+//   malformed      not a request this route can read
+//   title          the Harness asks for a session title: { title }
+//   compaction     the Harness asks for a summary of the conversation
+//   automation     a goal round or a scheduled task
+//   attachment     a message after the last assistant turn holds something
+//                  that is not text (a tool round, an image, a document)
+//   silent         nothing typed after the last assistant turn
+//   confirm        exactly one typed reply, a confirming word, directly after
+//                  an assistant turn of text only whose last line names a
+//                  quote: { quoteId, answer }
+//   stray-confirm  a confirming word that is not such a reply; `afterTurn`
+//                  says whether it was the one reply after an assistant turn
+//   refusal        the last typed text is a refusing word
+//   status         the last typed text is `status` or `stanje`, alone or
+//                  with a quote id: { quoteId } or { badId: true }
+//   near           the last typed text looks like an answer to a quote
+//                  without being one of the words that count
+//   prompt         anything else: { prompt } is the last typed text, trimmed
+//
+// Every kind but `malformed` also carries
+//   turn      { quoteId, answer } when the last assistant turn is text only
+//             and its last line names a quote, otherwise null
+//   ids       the quote ids named in the assistant turns, newest first
+//   finished  those of them that an assistant turn reports as finished
+// and `near` and `prompt` carry `unfit`: true when the text after the last
+// assistant turn is not something a person typed as a prompt (see UNFIT).
+//
+// Whether a turn really is a stored quote, and whether that quote is still
+// open, is decided against the store by the caller, never here.
+const { ID_PATTERN } = require('./store');
+
+const QUOTE_LINE = new RegExp(`^Quote (${ID_PATTERN})$`);
+const ANY_ID = new RegExp(ID_PATTERN, 'g');
+const FINISHED = new RegExp(`^Finished (${ID_PATTERN})$`, 'gm');
+const STATUS = new RegExp(`^(?:status|stanje)(?:\\s+(\\S+))?$`, 'i');
+const ONE_ID = new RegExp(`^${ID_PATTERN}$`);
+
+const CONFIRM = new Set(['yes', 'da', 'confirm', 'potvrdi', 'potvrđujem', 'potvrdujem']);
+const REFUSE = new Set(['no', 'ne', 'cancel', 'stop', 'odustani', 'odustajem', 'nemoj']);
+// First words of a short reply that is meant as an answer to a quote.
+const NEAR = new Set(['yes', 'da', 'ok', 'okay', 'sure', 'yep', 'yeah', 'y', 'go', 'može', 'moze', 'ajde', 'hajde', 'kupi', 'buy', 'naravno',
+  'confirm', 'potvrdi', 'potvrđujem', 'potvrdujem', 'no', 'ne']);
+// Messages DeepSeek Harness adds in the user's role next to the typed one.
+const INJECTED = ['<system-reminder>', 'Time sampled while preparing turn '];
+// How the Harness frames its own requests to the picked model.
+const TITLE_SYSTEM = 'Create a concise title';
+const TITLE_UNIT = 'Generate the session title from this JSON array';
+const COMPACTION = 'You are now acting as a compaction engine';
+const AUTOMATION = ['<goal_round', '[SCHEDULE REMINDER]'];
+// Text with one of these in it was not typed as a prompt, whatever frames
+// it, and is never sent to a provider. So is text over the prompt limit.
+const UNFIT = ['JSON array of human messages', '<goal_round', '[SCHEDULE REMINDER]', '<system-reminder>'];
+const MAX_PROMPT_BYTES = 16000;
+// A quote answer is the prompt plus a few lines; anything much longer is not one.
+const MAX_ANSWER_LENGTH = 4 * MAX_PROMPT_BYTES;
+// How much of a conversation is searched for quote ids, and how many are kept.
+const MAX_SEARCH_LENGTH = 4 * 1024 * 1024;
+const MAX_IDS = 50;
+const TITLE_LENGTH = 48;
+// Only line breaks and tabs: other control, invisible and text-direction
+// characters could make the quote show something else than is sent.
+const HIDDEN = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u200B-\u200F\u2028-\u202E\u2060-\u206F\uFEFF]/;
+const NOT_SHOWN = /[\u0000-\u001F\u007F-\u009F\u00AD\u200B-\u200F\u2028-\u202E\u2060-\u206F\uFEFF]/g;
+
+function record(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+// The form in which a quote answer is hashed, when it is written and when a
+// request brings it back.
+function normalise(text) {
+  return text.normalize('NFC').replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').trim();
+}
+
+// A whole message as one bare word: NFC, trimmed, one final "." or "!"
+// removed, lower-cased. NFC, not NFKC: look-alike letters stay what they are.
+function bare(text) {
+  return text.length > 96 ? '' : text.normalize('NFC').trim().replace(/[.!]$/, '').toLowerCase();
+}
+
+function confirms(text) {
+  return CONFIRM.has(bare(text));
+}
+
+function injected(text) {
+  const start = text.trimStart();
+  return INJECTED.some((frame) => start.startsWith(frame));
+}
+
+function textBlock(block) {
+  return record(block) && block.type === 'text' && typeof block.text === 'string';
+}
+
+// The text of an assistant turn made of text only, or null.
+function turnText(message) {
+  const { content } = message;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content) || content.length === 0) return null;
+  let text = '';
+  for (const block of content) {
+    if (!textBlock(block)) return null;
+    text += block.text;
+  }
+  return text;
+}
+
+// Whatever text a message holds, for looking up quote ids only.
+function anyText(message) {
+  const { content } = message;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  let text = '';
+  for (const block of content) if (textBlock(block)) text += `${block.text}\n`;
+  return text;
+}
+
+function systemText(system) {
+  if (typeof system === 'string') return system;
+  if (!Array.isArray(system)) return '';
+  for (const block of system) if (textBlock(block)) return block.text;
+  return '';
+}
+
+// "Video: " and the first 48 characters of the first message in the JSON
+// array of a title request; "Video clip" when there is none to be read.
+function titleOf(unit) {
+  const fallback = 'Video clip';
+  if (typeof unit !== 'string' || unit.length > MAX_SEARCH_LENGTH) return fallback;
+  const from = unit.indexOf('[');
+  const to = unit.lastIndexOf(']');
+  if (from < 0 || to < from) return fallback;
+  let first;
+  try {
+    const list = JSON.parse(unit.slice(from, to + 1));
+    first = Array.isArray(list) ? list[0] : undefined;
+  } catch {
+    return fallback;
+  }
+  if (record(first)) first = typeof first.text === 'string' ? first.text : first.content;
+  if (typeof first !== 'string') return fallback;
+  const shown = Array.from(first.slice(0, 4096).normalize('NFC').replace(NOT_SHOWN, ' ').replace(/\s+/g, ' ').trim()).slice(0, TITLE_LENGTH).join('').trim();
+  return shown === '' ? fallback : `Video: ${shown}`;
+}
+
+function read(body) {
+  if (!record(body) || !Array.isArray(body.messages)) return { kind: 'malformed' };
+  const { messages } = body;
+  let last = -1;
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (!record(message) || (message.role !== 'user' && message.role !== 'assistant')) return { kind: 'malformed' };
+    if (message.role === 'assistant') last = index;
+  }
+
+  // Units: a message whose content is a string is one; in a list every text
+  // block is one; any other block is a tool round or an attachment.
+  const typed = [];
+  let attachment = false;
+  for (let index = last + 1; index < messages.length; index += 1) {
+    const { content } = messages[index];
+    if (typeof content === 'string') {
+      if (!injected(content)) typed.push(content);
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        if (!textBlock(block)) attachment = true;
+        else if (!injected(block.text)) typed.push(block.text);
+      }
+    } else return { kind: 'malformed' };
+  }
+
+  // The quotes this conversation names: in its assistant turns, newest first.
+  const ids = [];
+  const finished = [];
+  let searched = 0;
+  for (let index = messages.length - 1; index >= 0 && ids.length < MAX_IDS && searched < MAX_SEARCH_LENGTH; index -= 1) {
+    if (messages[index].role !== 'assistant') continue;
+    const text = anyText(messages[index]).slice(0, MAX_SEARCH_LENGTH - searched);
+    searched += text.length;
+    for (const id of (text.match(ANY_ID) || []).reverse()) if (!ids.includes(id) && ids.length < MAX_IDS) ids.push(id);
+    for (const match of text.matchAll(FINISHED)) if (!finished.includes(match[1])) finished.push(match[1]);
+  }
+
+  // The assistant turn before the tail, when it can be a quote answer.
+  let turn = null;
+  const text = last < 0 ? null : turnText(messages[last]);
+  if (text !== null && text.length <= MAX_ANSWER_LENGTH) {
+    const answer = normalise(text);
+    const named = QUOTE_LINE.exec(answer.slice(answer.lastIndexOf('\n') + 1));
+    if (named !== null) turn = { quoteId: named[1], answer };
+  }
+  const seen = { turn, ids, finished };
+
+  // Rows 5 and 6: what the Harness asks the picked model on its own account.
+  const titleUnit = typed.find((unit) => unit.trimStart().startsWith(TITLE_UNIT));
+  if (titleUnit !== undefined || systemText(body.system).trimStart().startsWith(TITLE_SYSTEM)) return { kind: 'title', title: titleOf(titleUnit), ...seen };
+  if (typed.some((unit) => unit.trimStart().startsWith(COMPACTION))) {
+    // A summary request can carry the conversation as text: its quotes count too.
+    for (const unit of typed) {
+      for (const id of (unit.slice(0, MAX_SEARCH_LENGTH).match(ANY_ID) || [])) if (!ids.includes(id) && ids.length < MAX_IDS) ids.push(id);
+    }
+    return { kind: 'compaction', ...seen };
+  }
+  if (typed.some((unit) => AUTOMATION.some((mark) => unit.includes(mark)))) return { kind: 'automation', ...seen };
+  // Rows 7 and 8.
+  if (attachment) return { kind: 'attachment', ...seen };
+  if (typed.length === 0) return { kind: 'silent', ...seen };
+
+  // Rows 9 to 14 go by the last typed unit.
+  const reply = typed[typed.length - 1];
+  const word = bare(reply);
+  if (CONFIRM.has(word)) {
+    if (typed.length !== 1 || last < 0) return { kind: 'stray-confirm', afterTurn: false, ...seen };
+    if (turn === null) return { kind: 'stray-confirm', afterTurn: true, ...seen };
+    return { kind: 'confirm', quoteId: turn.quoteId, answer: turn.answer, ...seen };
+  }
+  if (REFUSE.has(word)) return { kind: 'refusal', ...seen };
+  const status = STATUS.exec(word);
+  if (status !== null) {
+    if (status[1] === undefined) return { kind: 'status', quoteId: null, ...seen };
+    const id = status[1].toUpperCase();
+    return ONE_ID.test(id) ? { kind: 'status', quoteId: id, ...seen } : { kind: 'status', quoteId: null, badId: true, ...seen };
+  }
+  const prompt = reply.trim();
+  const unfit = typed.some((unit) => unit.length > MAX_PROMPT_BYTES || Buffer.byteLength(unit, 'utf8') > MAX_PROMPT_BYTES || UNFIT.some((mark) => unit.includes(mark)));
+  const words = prompt.length > 400 ? [] : prompt.normalize('NFC').toLowerCase().split(/\s+/);
+  const first = words.length === 0 ? '' : words[0].replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '');
+  if (words.length >= 1 && words.length <= 4 && NEAR.has(first)) return { kind: 'near', prompt, unfit, ...seen };
+  return { kind: 'prompt', prompt, unfit, ...seen };
+}
+
+function classify(body) {
+  try {
+    return read(body);
+  } catch {
+    return { kind: 'malformed' };
+  }
+}
+
+// Why a typed text cannot be quoted as a prompt, or null. What is shown in a
+// quote must be exactly what is sent.
+function promptProblem(prompt) {
+  if (typeof prompt !== 'string' || prompt === '') return 'empty';
+  if (prompt.length > MAX_PROMPT_BYTES || Buffer.byteLength(prompt, 'utf8') > MAX_PROMPT_BYTES) return 'long';
+  if (prompt.startsWith('--')) return 'dashes';
+  if (HIDDEN.test(prompt)) return 'hidden';
+  return null;
+}
+
+module.exports = { classify, normalise, promptProblem, confirms, MAX_PROMPT_BYTES };
