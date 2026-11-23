@@ -16,3 +16,60 @@
 - Fixes for the medium and the first two lows handed to `desktop-ui` together with the polling change of `0007`. The restart after a key change is to wait for an idle moment through `dshproxy stop --when-idle`.
 - Not possible without the user: a real Krea sign-in (never run against live Krea so far, including client registration), and a provider accepting a saved key.
 - Next gate: backend report, then Part 3, then independent review of the credential paths, full tests and build. Ask before restarting the app, restarting the gateway, or pushing.
+
+## Question 2026-11-22 14:40: "Are we 100% sure we can auth Krea personal Max plan to DSH PROXY?"
+
+Answer given: no. Nothing was signed in or registered to answer it; public GETs and reading only.
+
+- Established today from public pages: Krea's MCP docs say OAuth needs no API key, bills "Compute units on the workspace you select during consent", and the consent screen lists every workspace including the personal one. The public OAuth metadata (`api.krea.ai/.well-known/oauth-protected-resource/mcp`, `www.krea.ai/.well-known/oauth-authorization-server`) advertises what `src/krea-helper/oauth.js` requires: one authorization server, S256, response type `code`, token auth method `none`, and a registration endpoint.
+- Never done: the registration POST, the browser consent, the token exchange, an MCP call with a real session, a preflight. Whether Krea accepts the helper's loopback redirect address at registration, and whether a Max plan exposes each of the four models over MCP, is unknown.
+- Known to fail by design: MiniMax H3 on Krea. Its public schema has no `resolution` property and the helper refuses a preset whose fields the live schema lacks (`src/video/krea-preset.js`), so H3 will not quote or generate over Krea as built.
+- The helper asks only for the `authorization_code` grant, so no refresh token: a new sign-in is needed when the access token expires.
+- The check that settles it costs nothing: the user signs in from Video > Accounts, then one preflight quote (no job is created). Still needs the user's separate go-ahead and the user's own browser consent.
+## Question 2026-11-22 14:50: "Do they allow 3rd party auth"
+
+Read today, public pages only:
+
+- `https://www.krea.ai/docs/developers/mcp.md`: "Connect MCP-compatible agents to Krea with OAuth or an API key"; "You do not need an API key to connect. Add `https://api.krea.ai/mcp` as the MCP server URL, then sign in with your Krea account through your client's OAuth flow"; setup steps for Claude Code, Codex and Cursor; OAuth is billed in "Compute units on the workspace you select during consent".
+- Public OAuth metadata: a client registration endpoint is advertised and public clients (token auth method `none`) are supported.
+- `https://www.krea.ai/terms` ("Last updated: May 20, 2024", older than the MCP server): "You will not share your Krea Credentials, account or password with anyone"; no crawling or scraping; no "processes that run or are activated while you are not logged into the Services"; no unreasonable load; the account is not transferable. Nothing in it names MCP, OAuth clients or third-party apps.
+- Reading: third-party clients signing in through OAuth are a documented, supported route. DSHProxy's helper is such a client; the password is typed only on Krea's page and the token stays on this machine. Not stated anywhere: that any client may register without approval, or a limit on automated use of a personal plan. The "not logged in" clause is old and general; unattended generation is where it could be argued to apply.
+- Not established: that Krea accepts this helper's registration (never attempted).
+## First live Krea session (2026-11-22 14:48 to 15:00)
+
+User signed in from the app and wrote "ok done! run a job". `dshproxy-krea status`: signed in, token valid until 15:48 local (one hour, no refresh token).
+
+- Sign-in works: registration, consent, token exchange and calls with the real session all succeeded. First live proof.
+- The shipped helper cannot quote or submit. `video quote MODEL krea` answered "Krea refused the request" for all four models within a second. Cause, from a discovery-only diagnostic (`.tmp/krea-diagnose.js`: initialize, tools/list, list_models, get_model_schema; no generate call; prints shapes, never the token):
+  1. the tool is `generate_video`; there is no `generate`;
+  2. model ids carry no `video/` prefix (`bytedance/seedance-2-5`, `bytedance/seedance-2`, `minimax/hailuo-3`, `alibaba/wan-3.0`); the prefixed form is `endpointPath`;
+  3. the server answers protocol version `2025-11-25`; the helper asks for `2025-06-18`;
+  4. the tool's `input` field carries `propertyNames` and `additionalProperties: {}`, which the helper's closed schema check rejects;
+  5. `minimax/hailuo-3` has no `resolution` (known), and `bytedance/seedance-2-5` has a top-level `anyOf`.
+  The synthetic responses the helper was tested against did not match the live interface.
+- Free quotes, taken with `.tmp/krea-preflight.js` (every call `preflight: true`, documented by the tool as "Nothing is queued or charged"; each answer had `mode: preflight`, no job field, `is_estimated: false`). 5 s, 16:9, text only, compute units at 480p / 720p / 1080p: Wan 3.0 277.78 / 555.56 / 1111.11; Seedance 2.0 248.81 / 560 / 1386; Seedance 2.5 380.33 / 856 / 2106; MiniMax H3 481.48 (one tier). Workspace balance reported: BALANCE-REMOVED units.
+- The lead's scripts read the token through the helper's own `access()` in a separate process and send it only to `https://api.krea.ai/mcp`.
+- No paid job has been run. Asked the user which clip, since "run a job" named no model, prompt or amount, and the built-in guarded path does not work.
+- To build: bring `src/krea-helper/mcp.js` and `src/video/krea-preset.js` in line with the live interface (red tests from the recorded live shapes first), independent review because it is the paid-call path.
+## First paid Krea job (2026-11-22 15:10)
+
+- Approval: the user chose "Seedance 2.5, 720p: 856 units" and the test prompt in answer to the lead's question at 15:10.
+- Sent with `.tmp/krea-job.js` (one-off, not the shipped path): fresh preflight 856 units, `affordable: true`, balance BALANCE-REMOVED; then one `generate_video` call with `preflight: false`, never retried; a record file is written before sending so the script cannot send twice.
+- Answer: `mode: async`, job `JOB-ID-REMOVED`, status `scheduled`, then `processing` with a rising `progress`, `completed` at 15:13:15 (2 min 20 s after creation). Status values seen: `scheduled`, `processing`, `completed`. Result: `result.urls`, one public mp4 link.
+- Clip, measured with ffprobe: 1280x720, H.264, 24 frames per second, 5.04 s, AAC audio track, 7.51 MB. One frame looked at: a red fox beside a woodland stream, as prompted. Saved as `.tmp/krea-first-clip.mp4` (git-ignored).
+- Balance reported by a free preflight afterwards: BALANCE-REMOVED units. Drop: 830.32 units against a quote of 856. Why the drop is 25.68 units less than the quote is not known; nothing else was run by the lead in between.
+- Not done: the same through the shipped helper (it cannot talk to the live interface, see the entry above).
+## Second paid Krea job, with the cost traced (2026-11-22 15:14)
+
+- Request: "768 or 720 seedance 2.5 gen, cat eating ice cream, check cost". Seedance 2.5 on Krea offers 480p, 720p, 1080p and 4k, no 768p, so 720p. Prompt sent: "A cat eating ice cream." Sent with `.tmp/krea-job2.js`: fresh preflight, cap 856 units, one `generate_video` call, never retried.
+- Job `JOB-ID-REMOVED`, created 15:14:39, completed 15:16:58 (2 min 19 s).
+- Balance, read by free preflights: BALANCE-REMOVED before; BALANCE-REMOVED right after submitting (856.00 held, the quote exactly); BALANCE-REMOVED after completion and again 20 s later (25.68 returned). Net charge 830.32 units, 97.00% of the quote.
+- This explains the first job: its balance drop was also 830.32. On this model at this setting Krea holds the quoted units at submission and settles lower at completion. Measured on two jobs of one model and setting only; why the settlement is 97% is not known.
+- For the helper fix: a cap must be compared with the quote (the hold), and the final charge can only be read as a balance difference; `get_job` returned no cost field.
+## Third paid Krea job, balance tool, and a new request (2026-11-22 15:43 to 15:50)
+
+- User, 15:43: "Yes" to the same cat prompt on Flux 3 at 720p (about 630 units). Sent with `.tmp/krea-job3.js` (same one-off pattern, cap 630): `black-forest-labs/flux-3-video`, job `JOB-ID-REMOVED`, first status `queued`, completed in 70 s. Balance BALANCE-REMOVED before, BALANCE-REMOVED right after submitting and unchanged after completion: charged 629.63 units, the quote exactly, nothing returned (Seedance 2.5 returned 3%). Clip by ffprobe: 1280x704 (not 720 high), 24 frames per second, 5.04 s, audio track, 3.47 MB. Frame looked at: a ginger cat licking a scoop of ice cream in a glass bowl.
+- Usage and limits: the interface has a read-only `get_balance` tool. Answer at 15:45: plan PLAN-REMOVED; remaining BALANCE-REMOVED (plan BALANCE-REMOVED, purchased BALANCE-REMOVED, free 0). No reset date, no usage history and no per-model limit in that answer. `list_workspaces` shows one workspace. Read with `.tmp/krea-usage.js` (read-only tools without arguments only).
+- User confirmed the Krea app also shows 856 units for Seedance 2.5 at 5 s 720p, so the 75% "yearly Max" model discount on the pricing page does not apply to this plan as bought.
+- Sign-in expired at 15:48 (one hour; the helper asks only for the `authorization_code` grant, while Krea's metadata lists `refresh_token`).
+- New request, 15:43: add Flux 3 to the model list; show video models in the DeepSeek Harness chat model picker as "name - resolution - via provider" (example given: "Seedance 2.5 - 768p - Krea.ai"); pull usage and limits from Krea. Not started. Needs its own spec (suggested folder `docs/work/0011-video-in-model-picker/`). Open decision put to the user: how a paid job is confirmed when a video model is picked in chat.
