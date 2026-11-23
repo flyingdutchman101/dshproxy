@@ -114,7 +114,10 @@ async function patiently(work) {
 // The lock is the one of src/filelock.js: it names its holder, so a helper
 // that died is recognised at once and its lock taken over; nobody has to
 // clear anything by hand. A lock held by a helper that is alive is taken over
-// only after 30 seconds, longer than a renewal can take.
+// only after two minutes. A renewal cannot take that long: unlocking the key
+// twice, the request and saving twice have ten seconds each at most, and a
+// helper started for a workspace call is ended after 90 seconds.
+const LOCK_STALE_MS = 120000;
 function windowsStore({lockWaitMs=30000}={}) {
   check(process.platform==='win32' && process.env.LOCALAPPDATA && path.isAbsolute(process.env.LOCALAPPDATA));
   const dir=path.join(process.env.LOCALAPPDATA,'DSHProxy','KreaOAuth');const file=path.join(dir,'session.v1');
@@ -138,10 +141,11 @@ function windowsStore({lockWaitMs=30000}={}) {
     const [wrapped,iv,tag,data]=packed.map(v=>Buffer.from(v,'base64'));check(iv.length===12 && tag.length===16);
     const key=await dpapi('Unprotect',wrapped);try{const decipher=crypto.createDecipheriv('aes-256-gcm',key,iv);decipher.setAuthTag(tag);return JSON.parse(Buffer.concat([decipher.update(data),decipher.final()]).toString('utf8'));}finally{key.fill(0)}
   },async clear(){await patiently(()=>fs.rm(file,{force:true}));}};
-  async function transaction(work) {
+  // `waitMs` is how long this call waits for the lock, if not the store's own time.
+  async function transaction(work,{waitMs=lockWaitMs}={}) {
     await fs.mkdir(dir,{recursive:true});
     let finished=false,result;
-    try { await withLock(file,async()=>{result=await work(raw);finished=true;},{waitMs:lockWaitMs}); }
+    try { await withLock(file,async()=>{result=await work(raw);finished=true;},{waitMs,staleMs:LOCK_STALE_MS}); }
     // The work is done and its result stands even when the lock was taken
     // over meanwhile; anything else is a failure of the work or of the wait.
     catch(e) { if(!finished) throw e; }
@@ -171,6 +175,7 @@ function windowsStore({lockWaitMs=30000}={}) {
 const RENEW_MARGIN_MS = 120000;
 const PLAIN_MARGIN_MS = 30000;
 const RENEW_TIMEOUT_MS = 10000;
+const STATUS_LOCK_WAIT_MS = 5000;
 function validSession(s) {
   return Boolean(s) && typeof s==='object' && !Array.isArray(s) && s.resource===resource && validToken(s.accessToken) && Number.isSafeInteger(s.expiresAt);
 }
@@ -181,7 +186,8 @@ function renewable(s) {
   try { endpoint(s.tokenEndpoint);return true; } catch { return false; }
 }
 function validAnswer(t) {
-  check(validToken(t.access_token) && typeof t.token_type==='string' && t.token_type.toLowerCase()==='bearer' && Number.isSafeInteger(t.expires_in) && t.expires_in>RENEW_MARGIN_MS/1000 && t.expires_in<=31622400);
+  // As at sign-in: a token must outlast the thirty seconds a call needs.
+  check(validToken(t.access_token) && typeof t.token_type==='string' && t.token_type.toLowerCase()==='bearer' && Number.isSafeInteger(t.expires_in) && t.expires_in>PLAIN_MARGIN_MS/1000 && t.expires_in<=31622400);
   if(t.resource!==undefined) check(t.resource===resource);
   if(t.refresh_token!==undefined) check(validToken(t.refresh_token));
 }
@@ -191,7 +197,9 @@ const fresh=(s,now)=>s.expiresAt>now()+(renewable(s)?RENEW_MARGIN_MS:PLAIN_MARGI
 // One renewal, under the store's lock. `locked` is the store inside the lock.
 async function renew(locked,now,fetchImpl) {
   let s;
-  try { s=await locked.load(); } catch { throw loginRequired(); }
+  // It was read a moment ago, before the lock. Gone now means signed out
+  // meanwhile; any other failure to read it is a fault of this moment.
+  try { s=await locked.load(); } catch(e) { throw e && e.code==='ENOENT' ? loginRequired() : Error('KREA_REFUSED'); }
   if(!validSession(s)) throw loginRequired();
   // Another helper renewed it while this one waited for the lock.
   if(fresh(s,now)) return s;
@@ -203,6 +211,12 @@ async function renew(locked,now,fetchImpl) {
     validAnswer(t);
   } catch(e) {
     if([400,401,403].includes(e && e.status)) {
+      // Refused. Unless the stored renewal token is no longer the one that
+      // was sent: then another helper renewed meanwhile (this one's lock
+      // was taken over), and its sign-in stands.
+      let stored=s;
+      try { stored=await locked.load(); } catch { /* judged by what was read before */ }
+      if(validSession(stored) && stored.refreshToken!==s.refreshToken) { if(usable(stored,now)) return stored; throw Error('KREA_REFUSED'); }
       const {refreshToken,...rest}=s;
       // If this cannot be saved the next call asks Krea again and is refused again.
       try { await locked.save(rest); } catch { /* see above */ }
@@ -218,17 +232,18 @@ async function renew(locked,now,fetchImpl) {
   try { await locked.save(next); } catch { await pause(200); try { await locked.save(next); } catch { /* this call still has its token */ } }
   return next;
 }
-// The session in force now, renewed first when it is about to end.
-async function current(store,now,fetchImpl) {
+// The session in force now, renewed first when it is about to end. `wait`,
+// when given, is passed to the store's lock.
+async function current(store,now,fetchImpl,wait) {
   let s;
   try { s=await store.load(); } catch { throw loginRequired(); }
   if(!validSession(s)) throw loginRequired();
   if(fresh(s,now)) return s;
   if(!renewable(s) || typeof store.transaction!=='function') { if(usable(s,now)) return s; throw loginRequired(); }
-  try { return await store.transaction(locked=>renew(locked,now,fetchImpl)); }
+  try { return await (wait ? store.transaction(locked=>renew(locked,now,fetchImpl),wait) : store.transaction(locked=>renew(locked,now,fetchImpl))); }
   catch(e) {
-    if(e && (e.message==='KREA_LOGIN_REQUIRED' || e.message==='KREA_REFUSED')) throw e;
-    // The lock could not be had in time.
+    if(e && e.message==='KREA_LOGIN_REQUIRED') throw e;
+    // The lock could not be had in time, or the renewal could not be done just now.
     if(usable(s,now)) return s;
     throw Error('KREA_REFUSED');
   }
@@ -244,7 +259,8 @@ async function access(store,now=Date.now,{fetchImpl=globalThis.fetch}={}) {
 //   {signedIn:true, expiresAt, canRenew}   canRenew: it renews itself
 //   {signedIn:false, canRenew}             canRenew: a later call may still renew it
 async function status(store,now=Date.now,{fetchImpl=globalThis.fetch}={}) {
-  try { const s=await current(store,now,fetchImpl); return {signedIn:true,expiresAt:s.expiresAt,canRenew:renewable(s)}; } catch { /* not usable now */ }
+  // The desktop app gives this command twenty seconds: it does not wait long for the lock.
+  try { const s=await current(store,now,fetchImpl,{waitMs:STATUS_LOCK_WAIT_MS}); return {signedIn:true,expiresAt:s.expiresAt,canRenew:renewable(s)}; } catch { /* not usable now */ }
   try { return {signedIn:false,canRenew:renewable(await store.load())}; } catch { return {signedIn:false,canRenew:false}; }
 }
 module.exports={login,access,status,windowsStore};

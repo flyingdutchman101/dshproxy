@@ -8,7 +8,7 @@ Accepted 2026-11-23 at the user's request ("This needs to be permanent. Do renew
 
 **When renewal fails.** Krea answers 400, 401 or 403: the renewal token is dropped, what is left of the hour still works, and then a new sign-in is needed. Anything else (no answer, 408, 425, 429, 5xx, an answer that cannot be read): nothing is changed and the next call tries again with the same renewal token. A renewal is never the reason a paid request is sent twice: it happens before the request, and a failed one sends nothing.
 
-**Several helpers at once.** A renewal runs under a lock beside the file, and looks again under the lock, so two helpers make one renewal. The lock names its holder: a helper that died is recognised and its lock is taken over at once, without anybody clearing anything by hand. A sign-in that is waiting at the consent page holds no lock.
+**Several helpers at once.** A renewal runs under a lock beside the file, and looks again under the lock, so two helpers make one renewal. The lock names its holder: a helper that died is recognised and its lock is taken over at once, without anybody clearing anything by hand. A helper that is running keeps its lock for two minutes, which is longer than a renewal can take. Should two helpers send the same renewal token all the same, the one Krea refuses looks at the file again and leaves the other's renewal in place. A sign-in that is waiting at the consent page holds no lock. `status` waits five seconds for the lock at most, since the desktop app gives it twenty.
 
 **Cost of this decision.**
 
