@@ -3,14 +3,15 @@
 | Gate | Status | Evidence |
 |---|---|---|
 | Spec review (two lenses) | done | 23 Nov, reviewer lane: simplicity and reuse (2 Major, 4 Nit), design risk (8 Major, 6 Nit), no Blocker. Resolved below. |
-| Spec approval by the user | open | revised spec put to the user 23 Nov |
+| Proof of the riskiest assumption on a Mac | done | 23 Nov, runs 45221540307 and 45221963088, both processors; `research/facts.md` section 5. One assumption did not hold (a locked keychain waits instead of failing); spec changed. |
+| Spec approval by the user | open | revised spec put to the user 23 Nov; put again with the proof's result |
 | Plan review | open | plan not written |
 | Slice verifies | open | |
 | Final checks (both systems in CI) | open | |
 | Independent review | open | |
 | Check on the user's Mac (M1 to M4) | open | |
 
-Next step: the user's answer on the spec and its three open decisions. Then `plan.md`, whose first slice is the throwaway proof on a CI Mac (Keychain through `security`; the backend archive unpacks and starts).
+Next step: the user's approval of the spec, and decisions 1 and 2. Then `plan.md` and its review. Before the branch is merged: remove `.github/workflows/macos-proof.yml` and `spike/`.
 
 ## Rulings
 
@@ -18,7 +19,8 @@ Next step: the user's answer on the spec and its three open decisions. Then `pla
 - Ruling: the Harness is on the Mac ("it's the same setup dsh + dsh proxy") — because the user said so — cost if wrong: M3 cannot be done.
 - Ruling: the plugin install (`dsh bundle install`) is left out — because the Mac application's layout can only be inferred from the Windows install — cost if wrong: the video tools plugin has to be installed by hand on a Mac until a later change.
 - Ruling: two releases, A without video, B video — because the first review showed video adds two design parts and the paid-once journal to a change whose riskiest part is unproven — cost if wrong: video on the Mac comes one round later. Still open with the user as decision 1.
-- Ruling: work is on branch `macos-port`, worktree `.agents/worktrees/macos-port`, from `main` at `8efe918`. Not pushed.
+- Ruling: work is on branch `macos-port`, worktree `.agents/worktrees/macos-port`, from `main` at `8efe918`. Pushed to GitHub on 23 Nov on the user's word ("Yes you can", in answer to four questions of which the last was "May I push the `macos-port` branch to GitHub?"). Taken as the permission to push and to run the proof, not as approval of the spec or as an answer to decisions 1 and 2.
+- Ruling: the proof ran before spec approval — because it is throwaway, changes no production code, and its result is what decision 2 depends on — cost if wrong: one workflow file and one script to delete.
 
 ## Spec review, findings and what was done
 
@@ -57,14 +59,15 @@ Design risk:
 
 ## Not verified
 
-- Anything on a Mac. No code has been written.
-- That `security -i` takes a command with the secret on standard input, and that adding an item that exists fails instead of overwriting.
-- The name of the program in the macOS archive, and that it starts.
+- No production code has been written.
+- What a locked Keychain does over SSH with nobody logged in at the screen.
+- Whether the user's Mac lets the downloaded backend run without a question (on GitHub's Macs it did).
+- Sign-ins, the Harness on a Mac, and everything else in M1 to M4.
 
 ## Open with the user
 
 - Approval of the spec.
 - Decision 1: video after the core is confirmed on the Mac, or straight after it.
 - Decision 2: Keychain or a private file for the key wrapper.
-- Decision 3: pushing the `macos-port` branch so CI can run on a Mac.
+- Decision 3: answered, yes (23 Nov).
 - Apple Silicon or Intel (asked, not answered; both are planned).
