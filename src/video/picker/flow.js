@@ -70,6 +70,7 @@ const TEXT = {
   malformed: 'This request could not be read as a chat message. Nothing was quoted or bought.',
   switchedOff: 'This video entry is switched off in DSHProxy. Nothing was quoted or bought. Switch it on with `dshproxy video entries`, then run `dshproxy dsh apply`.',
   automation: 'This entry makes a video from a prompt you type. Goals and scheduled tasks are not run here. Nothing was quoted or bought.',
+  delegated: 'This entry makes a video from a prompt a person types. A subagent gets no quote and buys nothing here. Nothing was quoted or bought.',
   compaction: 'Video conversation.',
   attachment: 'This entry takes text only. Nothing was quoted or bought.',
   silent: 'I found no message from you. Type a prompt to get a quote.',
@@ -944,6 +945,7 @@ async function respond(deps, body, out) {
   if (entry === null) return out.say(TEXT.switchedOff);
   if (request.kind === 'title') return out.say(request.title);
   if (request.kind === 'automation') return out.say(TEXT.automation);
+  if (request.kind === 'delegated') return out.say(TEXT.delegated);
   if (request.kind === 'attachment') return out.say(TEXT.attachment);
   if (request.kind === 'silent') return out.say(TEXT.silent);
   if (request.kind === 'confirm') return confirm(deps, entry, quoted, out);
