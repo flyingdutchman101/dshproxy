@@ -1,23 +1,47 @@
 'use strict';
 
-// https://videorouter.sh/docs/api-reference-video and /docs/provider-selection
+const {entries} = require('./catalog');
+
+// How each provider is sent the resolution of a clip. Only a route, provider
+// model id and resolution that are one catalog entry are ever sent: a wrong or
+// ignored resolution would buy a different clip than the one quoted.
+//
+// VideoRouter, https://videorouter.sh/docs/api-reference-video: `resolution`
+// is "a tier the specific model supports", written as on the model's page
+// ("480p", "720p", "1080p"). The same page says an unsupported one is
+// "silently ignored (model default used), never a 400", so the request names
+// the one host whose page lists that tier at the quoted price and switches
+// fallbacks off (https://videorouter.sh/docs/provider-selection). The host is
+// the last part of the model id.
 const vr = {
   submit: 'https://videorouter.sh/api/v1/videos', jobs: 'https://videorouter.sh/api/v1/videos/',
-  body: (model, prompt) => ({model, prompt, resolution: '720p', duration_secs: 5, aspect_ratio: '16:9',
+  body: (model, prompt, resolution) => ({model, prompt, resolution, duration_secs: 5, aspect_ratio: '16:9',
     provider: {only: [model.split('/')[2]], allow_fallbacks: false}}),
 };
 const providers = new Map([
-  ['videorouter', {...vr, models: ['bytedance/seedance-2.0/socheap-overseas', 'bytedance/seedance-2.5/socheap-overseas', 'alibaba/wan-3.0/botsmart']}],
-  ['videorouter-replicate', {...vr, models: ['alibaba/wan-3.0/replicate']}],
-  // https://docs.kovapi.com/minimax-h3 (same job protocol for Seedance and Wan)
+  ['videorouter', vr],
+  ['videorouter-replicate', vr],
+  // KovAPI, https://docs.kovapi.com/seedance-2.5/md (the same parameter on
+  // /seedance-2.0/md, /wan3.0-video/md and /minimax-h3/md): `resolution` is
+  // "480P / 720P / 1080P" ("480P / 768P / 1080P" for MiniMax H3), upper case,
+  // "Keep the P". Always sent: MiniMax H3 renders 1080P when it is omitted.
   ['kovapi', {submit: 'https://kovapi.com/v1/videos/generations', jobs: 'https://kovapi.com/v1/videos/jobs/',
-    models: ['minimax-h3', 'seedance-2.0', 'seedance-2.5', 'wan3.0-video'],
-    body: (model, prompt) => ({model, prompt, duration: 5, resolution: model === 'minimax-h3' ? '768P' : '720P', size: '16:9'})}],
-  // https://callirra.com/guides/minimax-h3/h3-api-mcp-cli-contract
-  ['callirra', {submit: 'https://api.callirra.com/v1/videos', jobs: 'https://api.callirra.com/v1/videos/', models: ['minimax-h3'],
-    body: (model, prompt) => ({model, prompt, mode: 'text_to_video', duration_seconds: 5, resolution: '768P', aspect_ratio: '16:9'})}],
+    body: (model, prompt, resolution) => ({model, prompt, duration: 5, resolution: resolution.toUpperCase(), size: '16:9'})}],
+  // Callirra, https://callirra.com/guides/minimax-h3/h3-api-mcp-cli-contract:
+  // `resolution` as "768P", "matched case-insensitively"; the tiers 480P, 768P
+  // and 1080P are on https://callirra.com/minimax-h3. An unsupported one is
+  // refused with HTTP 400 before a job exists.
+  ['callirra', {submit: 'https://api.callirra.com/v1/videos', jobs: 'https://api.callirra.com/v1/videos/',
+    body: (model, prompt, resolution) => ({model, prompt, mode: 'text_to_video', duration_seconds: 5, resolution: resolution.toUpperCase(), aspect_ratio: '16:9'})}],
 ]);
-
+// The catalog entry a request is for. With no resolution named it is the one
+// the route runs by default (720p, or 768p for MiniMax H3), as before
+// resolutions existed.
+function clip(route, modelId, resolution) {
+  if (!providers.has(route)) return undefined;
+  return entries().find((entry) => entry.route === route && entry.modelId === modelId
+    && (resolution === undefined ? entry.default : entry.resolution === resolution));
+}
 const STATES = {
   videorouter: ['queued', 'in_progress', 'processing', 'completed', 'failed'],
   kovapi: ['queued', 'processing', 'succeeded', 'failed'],
@@ -33,15 +57,16 @@ function outputLink(value, key) {
     if (!url.username && !url.password && !url.hash && !value.includes(key) && !decodeURIComponent(value).includes(key)) return url.href;
   } catch { /* Malformed or unsafe provider metadata is omitted, not echoed. */ }
 }
-async function request(isSubmit, {route, modelId, jobId, prompt, key, fetchImpl = fetch}) {
+async function request(isSubmit, {route, modelId, resolution, jobId, prompt, key, fetchImpl = fetch}) {
+  const entry = clip(route, modelId, resolution);
+  if (!entry) throw new Error('Invalid video route or model');
   const provider = providers.get(route);
-  if (!provider?.models.includes(modelId)) throw new Error('Invalid video route or model');
   if (typeof key !== 'string' || !key || key.length > 4096 || /[^\x21-\x7e]/.test(key)) throw new Error('Invalid video provider credential');
   if (isSubmit ? typeof prompt !== 'string' || !prompt.trim() : !validId(jobId) || jobId.includes(key)) throw new Error(isSubmit ? 'Invalid video prompt' : 'Invalid video job ID');
   const init = {method: isSubmit ? 'POST' : 'GET', redirect: 'error', signal: AbortSignal.timeout(30_000), headers: {Authorization: `Bearer ${key}`}};
   if (isSubmit) {
     init.headers['Content-Type'] = 'application/json';
-    init.body = JSON.stringify(provider.body(modelId, prompt));
+    init.body = JSON.stringify(provider.body(modelId, prompt, entry.resolution));
   }
   try {
     const response = await fetchImpl(isSubmit ? provider.submit : provider.jobs + jobId, init);

@@ -5,6 +5,8 @@ const presets = new Map([
   ['seedance-2.0', ['bytedance/seedance-2', '720p']],
   ['minimax-h3', ['minimax/hailuo-3', undefined]],
   ['wan-3.0', ['alibaba/wan-3.0', '720p']],
+  // 720p and 1080p only: the model's live schema lists no 480p (see catalog.js).
+  ['flux-3', ['black-forest-labs/flux-3-video', '720p']],
 ]);
 const record = x => x !== null && typeof x === 'object' && (Object.getPrototypeOf(x) === Object.prototype || Object.getPrototypeOf(x) === null);
 function check(ok) { if (!ok) throw new Error('Live Krea input schema does not support the exact preset'); }

@@ -4,13 +4,19 @@
 // rewrites settings.json from a fixed list of keys, so anything stored there
 // would be lost on the next chat change. This module never opens that file.
 //
-// The file holds catalog model names, true/false and catalog route names, and
-// nothing else. Whatever is not exactly that is refused when written and
-// ignored when read, so no credential can be stored here or come back out.
+// Beside them, the entries the user switched on: one model at one resolution
+// on one route, such as "Seedance 2.5 - 720p - Krea". An entry is its own
+// switch; the per-model settings above keep their meaning.
+//
+// The file holds catalog model names, true/false, catalog route names and
+// catalog resolution names, and nothing else. Whatever is not exactly that is
+// refused when written and ignored when read, so no credential can be stored
+// here or come back out.
 const fs = require('node:fs');
 const path = require('node:path');
 const { isDeepStrictEqual } = require('node:util');
-const { models, quote, routesFor } = require('./catalog');
+const catalog = require('./catalog');
+const { models, quote, routesFor } = catalog;
 const { withLock, replaceFile } = require('../filelock');
 const { homeDir } = require('../settings');
 
@@ -87,17 +93,44 @@ function defaults() {
   return { models: Object.fromEntries(models.map((model) => [model, { enabled: false, route: null }])) };
 }
 
+// An entry is named by its model, its resolution and its route. For a fixed
+// tier the tier's name stands where the resolution would be.
+const ENTRY_NAMES = ['model', 'resolution', 'route'];
+const entryId = (entry) => JSON.stringify(ENTRY_NAMES.map((name) => entry[name]));
+const namesOf = (entry) => Object.fromEntries(ENTRY_NAMES.map((name) => [name, entry[name]]));
+// Every entry of the catalog, in catalog order, by its id.
+const catalogIds = () => catalog.entries().map((entry) => [entryId(entry), entry]);
+
+// One rule for a switch being written and for an entry found in the file:
+// exactly the three names, of a combination the catalog lists. Returns the
+// entry's id. Messages never repeat a refused value.
+function named(value) {
+  if (!plain(value) || Object.keys(value).length !== ENTRY_NAMES.length || !ENTRY_NAMES.every((name) => Object.hasOwn(value, name))) {
+    throw new Error('A video entry is named by exactly { model, resolution, route }.');
+  }
+  return entryId(catalog.entry(value.model, value.resolution, value.route));
+}
+
 // A missing file means nothing is enabled. A file that is there but cannot be
 // read or is not a JSON object is an error, for a change as well, so that it
 // is never replaced unseen. Inside a readable file, an entry that is not
 // exactly valid counts as disabled with no route.
-function load(home) {
+//
+// Entries: a file from before entries existed has none, so every entry is off.
+// A saved entry that is not exactly an entry of today's catalog (a combination
+// that no longer exists, or anything else) is passed over; the next write
+// leaves it out.
+//
+// Returns { models, on }, where `on` is the set of ids of the entries that are
+// switched on.
+function loadAll(home) {
   const target = file(home);
+  const state = { ...defaults(), on: new Set() };
   let text;
   try {
     text = fs.readFileSync(target, 'utf8');
   } catch (error) {
-    if (error.code === 'ENOENT') return defaults();
+    if (error.code === 'ENOENT') return state;
     throw new Error(`${target} cannot be read (${error.code || 'unknown error'}).`);
   }
   let saved;
@@ -107,9 +140,7 @@ function load(home) {
     throw new Error(`${target} is not valid JSON. Fix it, or move it away to start with every video model disabled.`);
   }
   if (!plain(saved)) throw new Error(`${target} does not hold a settings object. Fix it, or move it away to start with every video model disabled.`);
-  const state = defaults();
-  if (!plain(saved.models)) return state;
-  for (const model of models) {
+  for (const model of plain(saved.models) ? models : []) {
     if (!Object.hasOwn(saved.models, model)) continue;
     try {
       Object.assign(state.models[model], entry(model, saved.models[model]));
@@ -117,9 +148,48 @@ function load(home) {
       // not a valid entry: stays disabled with no route
     }
   }
+  for (const item of Array.isArray(saved.entries) ? saved.entries : []) {
+    try {
+      state.on.add(named(item));
+    } catch {
+      // not an entry of the catalog: off, and gone after the next write
+    }
+  }
   return state;
 }
 
+function load(home) {
+  return { models: loadAll(home).models };
+}
+
+// What is written: today's settings as they always were, and the entries that
+// are on, in catalog order, each by its three names. With no entry on, the
+// file is the one a DSHProxy from before entries wrote.
+function serialised(state) {
+  const on = catalogIds().filter(([id]) => state.on.has(id)).map(([, item]) => namesOf(item));
+  return `${JSON.stringify({ models: state.models, ...(on.length ? { entries: on } : {}) }, null, 2)}\n`;
+}
+
+// Reads the file, applies `change` to what it holds and puts the result in
+// place, all under the file's lock. Several commands can change the settings
+// at the same moment: without the lock two of them start from the same saved
+// state and the later write drops the earlier change. The new state is
+// returned only once the file, read back, holds it. `io` is for tests (see
+// src/filelock.js).
+function update(dir, change, io) {
+  const target = file(dir);
+  return withLock(target, async () => {
+    const state = loadAll(dir);
+    change(state);
+    // Put in place as a whole, so a reader never sees a half-written file.
+    await replaceFile(target, serialised(state), io);
+    const saved = loadAll(dir);
+    if (!isDeepStrictEqual(saved, state)) throw new Error(`The change to ${target} could not be confirmed: reading the file back did not show it. Run the command again.`);
+    return saved;
+  }, io);
+}
+
+const listed = (state) => catalogIds().map(([id, item]) => ({ ...item, on: state.on.has(id) }));
 
 // Every catalog model, in catalog order: { models: { MODEL: { enabled, route } } }.
 // An enabled model whose route is null is not usable yet; see offered().
@@ -129,26 +199,41 @@ async function read(home) {
 
 // Applies { models: { MODEL: { enabled?, route? } } } and returns the new
 // state. Only the named fields change. One invalid part refuses the whole
-// change and nothing is written.
-//
-// Several commands can change the settings at the same moment, so the read,
-// the change and the write run under the file's lock: otherwise two of them
-// start from the same saved state and the later write drops the earlier
-// change. The new state is returned only once the file, read back, holds it.
-// `io` is for tests (see src/filelock.js).
+// change and nothing is written. The entries that are switched on are kept as
+// they are. `io` is for tests (see update()).
 async function write(home, config, { io = {} } = {}) {
   const dir = folder(home);
   const wanted = changes(config);
-  const target = file(dir);
-  return withLock(target, async () => {
-    const state = load(dir);
+  const saved = await update(dir, (state) => {
     for (const [model, change] of wanted) Object.assign(state.models[model], change);
-    // Put in place as a whole, so a reader never sees a half-written file.
-    await replaceFile(target, `${JSON.stringify(state, null, 2)}\n`, io);
-    const saved = load(dir);
-    if (!isDeepStrictEqual(saved, state)) throw new Error(`The change to ${target} could not be confirmed: reading the file back did not show it. Run the command again.`);
-    return saved;
   }, io);
+  return { models: saved.models };
+}
+
+// Every entry of the catalog, in catalog order, as catalog.entries() gives it
+// and with `on`: true where the user switched it on. All are off until then.
+async function entries(home) {
+  return listed(loadAll(home));
+}
+
+// The entries that are switched on: what may be listed for picking, each with
+// its `label` ("Seedance 2.5 - 720p - Krea"), in catalog order.
+async function entriesOn(home) {
+  return listed(loadAll(home)).filter((item) => item.on);
+}
+
+// Switches one entry, named { model, resolution, route }, on (true) or off
+// (false), and returns every entry as entries() does. Only a combination the
+// catalog lists can be switched; anything else is refused and nothing is
+// written. The per-model settings are not touched.
+async function setEntry(home, name, on, { io = {} } = {}) {
+  const dir = folder(home);
+  const id = named(name);
+  if (typeof on !== 'boolean') throw new Error('A video entry is switched with true or false.');
+  return listed(await update(dir, (state) => {
+    if (on) state.on.add(id);
+    else state.on.delete(id);
+  }, io));
 }
 
 // What may be offered for generation: models that are enabled and have a
@@ -160,4 +245,4 @@ async function offered(home) {
     .map((model) => ({ model, route: state.models[model].route }));
 }
 
-module.exports = { read, write, offered, routes, file };
+module.exports = { read, write, offered, routes, file, entries, entriesOn, setEntry };

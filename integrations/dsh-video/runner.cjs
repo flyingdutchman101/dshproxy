@@ -158,6 +158,31 @@ function statusFailure(error) {
   return 'STATUS_UNVERIFIED';
 }
 
+// How the approval question names a clip that has no resolution.
+const FIXED_TIER = 'fixed tier (resolution unspecified)';
+const RESOLUTION = /^\d{3,4}p$/;
+// The provider's name of a fixed tier. It is checked and never shown.
+const TIER_NAME = /^[A-Za-z0-9][A-Za-z0-9 ]{0,31}$/;
+
+// The clip the Krea route runs for a model, from DSHProxy's offline listing:
+// `workspace` holds either a resolution or the name of a fixed tier, which has
+// no resolution. Which of the two it is comes from that listing alone, never
+// from the model's name or from the resolution of the model's API route.
+function workspacePreset(listed, model) {
+  if (Object.hasOwn(listed, 'workspace')) {
+    const clip = listed.workspace;
+    if (!record(clip) || clip.route !== WORKSPACE_ROUTE) throw new Error();
+    const tier = Object.hasOwn(clip, 'fixedTier');
+    if (tier === Object.hasOwn(clip, 'resolution')) throw new Error();
+    if (typeof (tier ? clip.fixedTier : clip.resolution) !== 'string' || !(tier ? TIER_NAME.test(clip.fixedTier) : RESOLUTION.test(clip.resolution))) throw new Error();
+    return { durationSeconds: clip.durationSeconds, aspectRatio: clip.aspectRatio, resolution: tier ? FIXED_TIER : clip.resolution };
+  }
+  // A DSHProxy from before its listing stated the workspace clip: the one
+  // resolution it lists, and the one model it ran as a fixed tier.
+  if (typeof listed.resolution !== 'string' || !RESOLUTION.test(listed.resolution)) throw new Error();
+  return { durationSeconds: listed.durationSeconds, aspectRatio: listed.aspectRatio, resolution: model === 'minimax-h3' ? FIXED_TIER : listed.resolution };
+}
+
 async function main() {
   globalThis.fetch = noNetwork;
   const request = await readRequest(process.stdin);
@@ -182,9 +207,7 @@ async function main() {
       if (request.route !== WORKSPACE_ROUTE) return await command(run, ['quote', request.model, request.route]);
       // The clip preset DSHProxy lists for the model, read offline before the
       // prompt goes anywhere. A Krea preflight does not state it.
-      const listed = await command(run, ['quote', request.model]);
-      if (typeof listed.resolution !== 'string' || !/^\d{3,4}p$/.test(listed.resolution)) throw new Error();
-      const preset = { durationSeconds: listed.durationSeconds, aspectRatio: listed.aspectRatio, resolution: request.model === 'minimax-h3' ? 'fixed tier (resolution unspecified)' : listed.resolution };
+      const preset = workspacePreset(await command(run, ['quote', request.model]), request.model);
       return { ...(await command(run, ['quote', request.model, WORKSPACE_ROUTE, '--prompt', request.prompt])), preset };
     } catch (error) {
       throw new Refusal(quoteFailure(error));

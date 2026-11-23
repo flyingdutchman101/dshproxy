@@ -12,7 +12,22 @@ const UNIT = 'workspace compute units'
 // The forms DSHProxy accepts for a cap and returns for a job.
 const CAP = /^\d{1,9}(?:\.\d{1,6})?$/
 const JOB = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
+// The job states Krea documents today. They are passed on as they are.
 const STATUSES = new Set(['backlogged', 'queued', 'scheduled', 'processing', 'sampling', 'intermediate-complete', 'completed', 'failed', 'cancelled'])
+// DSHProxy's command line prints any state of this form (src/video/workspace.js),
+// so that a state Krea adds later does not make a job unreadable. Such a state
+// belongs to a real job, but its wording is the provider's: it is reported
+// under one fixed word instead.
+const PRINTABLE_STATUS = /^[a-z][a-z0-9_-]{0,63}$/
+const UNLISTED = 'unrecognized'
+const UNLISTED_NOTE = `Krea reported a job state this plugin does not list; it is shown as "${UNLISTED}". The job exists. Do not submit it again.`
+
+// A job's state as this plugin reports it, or null for what the command line
+// never prints as a state.
+function jobStatus(value) {
+  if (typeof value !== 'string' || !PRINTABLE_STATUS.test(value)) return null
+  return STATUSES.has(value) ? value : UNLISTED
+}
 // Only line breaks and tabs: other control, invisible and text-direction
 // characters could make the approval question show something else than is sent.
 const HIDDEN = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u200B-\u200F\u2028-\u202E\u2060-\u206F\uFEFF]/
@@ -218,10 +233,11 @@ export function createSubmitTools(call, { questions = () => undefined, now = () 
       if (known) throw new Error(known)
       return unknown()
     }
-    if (data.model !== model || data.route !== route || typeof data.id !== 'string' || !JOB.test(data.id) || !STATUSES.has(data.status)) return unknown()
+    const state = jobStatus(data.status)
+    if (data.model !== model || data.route !== route || typeof data.id !== 'string' || !JOB.test(data.id) || state === null) return unknown()
     return {
-      outcome: 'submitted', model, route, jobId: data.id, status: data.status,
-      cap: Number(cap), unit: 'workspace_compute_units', retry: false, note: NOTES.submitted,
+      outcome: 'submitted', model, route, jobId: data.id, status: state,
+      cap: Number(cap), unit: 'workspace_compute_units', retry: false, note: state === UNLISTED ? `${NOTES.submitted} ${UNLISTED_NOTE}` : NOTES.submitted,
     }
   }
 
@@ -309,11 +325,12 @@ export function createSubmitTools(call, { questions = () => undefined, now = () 
         throw new Error(fixed[error.code] ?? setup ?? STATUS_REFUSALS.UNVERIFIED)
       }
       const link = data.outputUrl === undefined ? undefined : outputLink(data.outputUrl)
+      const state = jobStatus(data.status)
       if (data.model !== request.model || data.route !== request.route || data.id !== request.jobId
-          || !STATUSES.has(data.status) || link === null || (link !== undefined && data.status !== 'completed')) throw new Error(STATUS_REFUSALS.UNVERIFIED)
+          || state === null || link === null || (link !== undefined && data.status !== 'completed')) throw new Error(STATUS_REFUSALS.UNVERIFIED)
       return {
-        model: request.model, route: request.route, jobId: request.jobId, status: data.status,
-        ...(link === undefined ? {} : { outputUrl: link }), note: NOTES.status,
+        model: request.model, route: request.route, jobId: request.jobId, status: state,
+        ...(link === undefined ? {} : { outputUrl: link }), note: state === UNLISTED ? `${NOTES.status} ${UNLISTED_NOTE}` : NOTES.status,
       }
     },
   }

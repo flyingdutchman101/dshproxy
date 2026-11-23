@@ -2,16 +2,25 @@
 const {spawn} = require('node:child_process');
 const path = require('node:path');
 const {parseQuote} = require('./krea-preset');
+const {workspaceClip} = require('./catalog');
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const help = 'Use video quote MODEL krea --prompt "PROMPT", video submit MODEL krea --max-units COUNT --confirm-charge "PROMPT", or video status MODEL krea JOB_ID.';
-function request(args) {
+const help = 'Use video quote MODEL krea --prompt "PROMPT" [--resolution R], video submit MODEL krea --max-units COUNT --confirm-charge [--resolution R] "PROMPT", or video status MODEL krea JOB_ID [--resolution R].';
+// The request handed to the Krea helper. `args` are the command's words
+// without the --resolution option; `resolution` is that option's value, or
+// undefined when none was named.
+//
+// A named resolution must be an entry of the catalog for this model on Krea,
+// or this throws before anything is sent. It is passed to the helper as
+// named. A fixed tier has no resolution: it is reached with none, or under
+// the tier's own name, and the helper is sent none. A status check looks a
+// job up by its id, so the resolution is checked and not sent.
+function request(args, resolution) {
   const [action,model,,flag,value,confirm,text] = args;
   if(action==='balance' && args.length===2 && model==='krea') return {action};
-  if(action==='quote' && args.length===7 && flag==='--prompt' && args[5]==='--resolution' && ['480p','720p','1080p'].includes(args[6]) && model!=='minimax-h3' && typeof value==='string' && value.trim() && !value.startsWith('--') && Buffer.byteLength(value)<=16000) return {action,model,prompt:value,resolution:args[6]};
-  if(action==='submit' && args.length===9 && flag==='--max-units' && /^\d{1,9}(?:\.\d{1,6})?$/.test(value) && Number(value)>0 && confirm==='--confirm-charge' && text==='--resolution' && ['480p','720p','1080p'].includes(args[7]) && model!=='minimax-h3' && typeof args[8]==='string' && args[8].trim() && !args[8].startsWith('--') && Buffer.byteLength(args[8])<=16000) return {action,model,prompt:args[8],maxUnits:Number(value),confirmCharge:true,resolution:args[7]};
+  const named = resolution===undefined ? {} : (({sends}) => sends===undefined ? {} : {resolution:sends})(workspaceClip(model,resolution));
   const validPrompt = x => typeof x==='string' && x.trim() && !x.startsWith('--') && Buffer.byteLength(x)<=16000;
-  if(action==='quote' && args.length===5 && flag==='--prompt' && validPrompt(value)) return {action,model,prompt:value};
-  if(action==='submit' && args.length===7 && flag==='--max-units' && /^\d{1,9}(?:\.\d{1,6})?$/.test(value) && Number(value)>0 && confirm==='--confirm-charge' && validPrompt(text)) return {action,model,prompt:text,maxUnits:Number(value),confirmCharge:true};
+  if(action==='quote' && args.length===5 && flag==='--prompt' && validPrompt(value)) return {action,model,prompt:value,...named};
+  if(action==='submit' && args.length===7 && flag==='--max-units' && /^\d{1,9}(?:\.\d{1,6})?$/.test(value) && Number(value)>0 && confirm==='--confirm-charge' && validPrompt(text)) return {action,model,prompt:text,maxUnits:Number(value),confirmCharge:true,...named};
   if(action==='status' && args.length===4 && idPattern.test(flag)) return {action,model,jobId:flag};
   throw new Error(`Krea workspace OAuth requires explicit workspace parameters. ${help} No request sent.`);
 }

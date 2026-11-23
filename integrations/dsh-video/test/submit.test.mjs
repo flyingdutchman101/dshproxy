@@ -341,7 +341,8 @@ test('every other failure once the send has started is an unknown outcome, repor
     { submit: `["${SECRET}"]` },
     { submit: { ...JOB, id: '../job' } },
     { submit: { ...JOB, id: undefined } },
-    { submit: { ...JOB, status: 'weird' } },
+    // Not a job state at all: DSHProxy's command line never prints one of this form.
+    { submit: { ...JOB, status: 'Weird' } },
     { submit: { ...JOB, model: 'seedance-2.5' } },
     { submit: { ...JOB, route: 'videorouter' } },
     { submit: { mode: 'preflight', compute_units: 3.5 } },
@@ -566,7 +567,8 @@ test('a status that cannot be verified says so, never invites a resubmit and nev
   const leak = `timeout Bearer ${SECRET}`
   const cases = [
     [{ status: { ...JOB, id: 'job_other' } }, /could not be verified.*Do not submit it again/],
-    [{ status: { ...JOB, status: 'weird' } }, /could not be verified/],
+    // Not a job state at all: DSHProxy's command line never prints one of this form.
+    [{ status: { ...JOB, status: 'Weird' } }, /could not be verified/],
     [{ status: { ...JOB, model: 'seedance-2.5' } }, /could not be verified/],
     [{ status: { ...done, outputUrl: 'http://cdn.example.com/clip.mp4' } }, /could not be verified/],
     [{ status: { ...done, outputUrl: 'https://user:pass@cdn.example.com/clip.mp4' } }, /could not be verified/],

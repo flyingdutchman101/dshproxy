@@ -17,7 +17,7 @@ function tempHome(t) {
 }
 
 const off = { enabled: false, route: null };
-const allOff = { models: { 'seedance-2.5': off, 'seedance-2.0': off, 'minimax-h3': off, 'wan-3.0': off } };
+const allOff = { models: { 'seedance-2.5': off, 'seedance-2.0': off, 'minimax-h3': off, 'wan-3.0': off, 'flux-3': off } };
 const withModels = (changes) => ({ models: { ...allOff.models, ...changes } });
 
 // Written out by hand from the catalog and the `video` command, not computed:
@@ -26,7 +26,8 @@ const allowedRoutes = {
   'seedance-2.5': ['videorouter', 'kovapi', 'krea'],
   'seedance-2.0': ['videorouter', 'kovapi', 'krea'],
   'minimax-h3': ['kovapi', 'callirra', 'krea'],
-  'wan-3.0': ['videorouter', 'videorouter-replicate', 'kovapi', 'krea']
+  'wan-3.0': ['videorouter', 'videorouter-replicate', 'kovapi', 'krea'],
+  'flux-3': ['videorouter', 'krea']
 };
 const everyRoute = ['videorouter', 'videorouter-replicate', 'kovapi', 'callirra', 'krea'];
 
@@ -44,7 +45,7 @@ test('nothing saved: every catalog model is disabled with no route, and reading 
   const home = tempHome(t);
   const state = await video.read(home);
   assert.deepEqual(state, allOff);
-  assert.deepEqual(Object.keys(state.models), ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0']);
+  assert.deepEqual(Object.keys(state.models), ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0', 'flux-3']);
   assert.deepEqual(fs.readdirSync(home), []);
 
   const missing = path.join(home, 'not-created-yet');
@@ -114,7 +115,8 @@ test('changes started together are all kept', async (t) => {
     'seedance-2.5': { enabled: true, route: null },
     'seedance-2.0': { enabled: false, route: 'kovapi' },
     'minimax-h3': { enabled: true, route: 'kovapi' },
-    'wan-3.0': { enabled: true, route: 'videorouter' }
+    'wan-3.0': { enabled: true, route: 'videorouter' },
+    'flux-3': { enabled: false, route: null }
   } });
   assert.deepEqual(fs.readdirSync(home), ['video-settings.json']);
 });

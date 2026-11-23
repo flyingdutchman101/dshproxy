@@ -363,7 +363,7 @@ test('four video settings changed at the same moment are all kept', async (t) =>
     assert.deepEqual([own.enabled, own.route], [true, wanted[index][1]]);
   }
   const read = await cli(home, ['settings']);
-  assert.deepEqual(JSON.parse(read.stdout).models.map((row) => [row.model, row.route, row.enabled]), wanted.map(([model, route]) => [model, route, true]));
+  assert.deepEqual(JSON.parse(read.stdout).models.map((row) => [row.model, row.route, row.enabled]), [...wanted.map(([model, route]) => [model, route, true]), ['flux-3', null, false]]);
   assert.deepEqual(names(home), ['video-settings.json']);
 });
 

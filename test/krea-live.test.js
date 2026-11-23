@@ -9,6 +9,8 @@ const pairs={
   'seedance-2.0':['bytedance/seedance-2',[248.8111111111111,560,1385.9999999999998]],
   'seedance-2.5':['bytedance/seedance-2-5',[380.33333333333326,856,2106]],
   'minimax-h3':['minimax/hailuo-3',[481.48148148148147]],
+  // Flux 3 has no 480p: its recorded schema lists 720p, 1080p, 1440p and 2160p.
+  'flux-3':['black-forest-labs/flux-3-video',[undefined,629.6296296296297,1074.0740740740741]],
 };
 const resolutions=['480p','720p','1080p'];
 const prompt='A paper boat';
@@ -17,7 +19,7 @@ const define=(name,properties,required=Object.keys(properties))=>({name,title:'R
 const tools=[define('list_models',{category:{type:'string',enum:['image','video','enhance','3d','audio']}},[]),define('get_model_schema',{model:str}),define('generate_video',{model:str,input:{type:'object',propertyNames:{type:'string'},additionalProperties:{}},sync:bool,timeoutSeconds:{type:'integer'},preflight:bool},['model','input']),define('get_job',{jobId:str}),define('get_balance',{},[]),{name:'unused',title:'unrelated',inputSchema:{type:'object',oneOf:[{}]}}];
 function schema(model) {
  const s={type:'object',additionalProperties:false,properties:{prompt:{type:'string',minLength:1},duration:{type:model.startsWith('seedance')?'number':'integer',minimum:2,maximum:30},aspect_ratio:{type:'string',enum:['adaptive','16:9','9:16']},reference_video_seconds:{anyOf:[{type:'number'},{type:'null'}]}},required:model==='seedance-2.5'?[]:['prompt']};
- if(model!=='minimax-h3')s.properties.resolution={type:'string',enum:resolutions};
+ if(model!=='minimax-h3')s.properties.resolution={type:'string',enum:model==='flux-3'?['720p','1080p','1440p','2160p']:resolutions};
  if(model==='seedance-2.5')s.anyOf=[{properties:{start_image:{type:'string'}}}];
  return s;
 }
@@ -57,6 +59,7 @@ function fixture(options={}) {
 }
 const request=(model,extra={})=>({action:'quote',model,prompt,...extra});
 for(const [model,[id,prices]] of Object.entries(pairs)) for(let i=0;i<prices.length;i++) {
+ if(prices[i]===undefined)continue;
  const resolution=model==='minimax-h3'?undefined:resolutions[i];
  test(`recorded quote ${model} ${resolution||'fixed tier'}`,async()=>{
   const f=fixture();const actual=await run(request(model,resolution?{resolution}:{}),TOKEN,f);
@@ -141,4 +144,13 @@ test('CLI propagates optional resolution without changing legacy quote shape',as
  let seen,output;await command(['quote','wan-3.0','krea','--prompt',prompt,'--resolution','1080p'],s=>output=JSON.parse(s),{workspace:async req=>{seen=req;return {mode:'preflight',compute_units:1.25,is_estimated:false,available_compute_units:10,affordable:true};}});
  assert.deepEqual(seen,request('wan-3.0',{resolution:'1080p'}));assert.equal(output.compute_units,1.25);assert.equal(output.route,'krea');
  await command(['submit','wan-3.0','krea','--max-units','1.25','--confirm-charge','--resolution','480p',prompt],()=>{},{workspace:async req=>{assert.deepEqual(req,{action:'submit',model:'wan-3.0',prompt,maxUnits:1.25,confirmCharge:true,resolution:'480p'});return {id:'job-1',status:'scheduled'};}});
+});
+test('Flux 3 runs at 720p when no resolution is named, and 480p is refused before any generation call',async()=>{
+ const f=fixture();const quoted=await run(request('flux-3'),TOKEN,f);
+ assert.equal(quoted.compute_units,629.6296296296297);
+ assert.deepEqual(f.calls.at(-1).args,{model:'black-forest-labs/flux-3-video',input:{prompt,duration:5,aspect_ratio:'16:9',resolution:'720p'},preflight:true});
+ for(const action of ['quote','submit']) {
+  const g=fixture();await assert.rejects(run({...request('flux-3',{resolution:'480p'}),...(action==='submit'?{action,maxUnits:5000,confirmCharge:true}:{})},TOKEN,g));
+  assert.equal(g.calls.filter(c=>c.name==='generate_video').length,0);
+ }
 });
