@@ -92,4 +92,46 @@ function create(options) {
   };
 }
 
-module.exports = { create };
+// The picker as the gateway runs it: the entries from the video settings in
+// `home`, read at every request; the real ops, each call a child process; and
+// "exposed" from the DeepSeek Harness profiles. Tests replace `spawnChild`
+// (the start of a process), `exposed`, `clock` and `random`.
+function wired({ home, spawnChild, exposed, clock, random, log } = {}) {
+  const ops = require('./ops').real({ home, spawnChild });
+  const { offeredNow } = require('./entries');
+  return create({
+    home,
+    ops,
+    entries: () => offeredNow(home),
+    exposed: exposed === undefined ? () => require('../../dsh/profile').videoExposed() : exposed,
+    clock,
+    random,
+    log
+  });
+}
+
+// Puts the picker in front of a server's own request listener: requests under
+// /dshproxy/video/ are answered here and never forwarded; every other request
+// reaches the server's listener untouched. `origin` is the gateway's own
+// address. When the picker cannot be made (its folder cannot be created, say),
+// the video path answers 503 and everything else works as before.
+function mount(server, { origin, ...options } = {}) {
+  const http = require('./http');
+  const log = typeof options.log === 'function' ? options.log : () => {};
+  let handler = null;
+  try {
+    const picker = wired(options);
+    handler = http.handler({ answer: (body, write) => picker.answer(body, write), origin, log });
+  } catch (error) {
+    try {
+      // The class and code of the error only: its text can name a folder.
+      const what = [error && error.name, error && error.code].filter((part) => typeof part === 'string' && /^[A-Za-z_]{1,40}$/.test(part)).join(' ');
+      log(`video picker is off${what ? ` (${what})` : ''}: video entries answer 503 until the gateway is restarted`);
+    } catch {
+      // a log that fails must not stop the gateway
+    }
+  }
+  http.mount(server, { handler, log });
+}
+
+module.exports = { create, wired, mount };

@@ -62,7 +62,12 @@ function byId(list) {
 // offered at once. Resolves to a Map (see byId); the read itself is
 // asynchronous because the settings module's is.
 async function offered(home) {
-  return byId(await settings.entriesOn(home));
+  return offeredNow(home);
+}
+
+// The same, answered at once (the settings file is read synchronously).
+function offeredNow(home) {
+  return byId(settings.entriesOnNow(home));
 }
 
 // The same entries as the models of a route in a DeepSeek Harness profile.
@@ -80,4 +85,4 @@ async function models(home) {
   }));
 }
 
-module.exports = { idOf, slug, unitOf, byId, offered, models };
+module.exports = { idOf, slug, unitOf, byId, offered, offeredNow, models };

@@ -230,6 +230,12 @@ async function entries(home) {
 // The entries that are switched on: what may be listed for picking, each with
 // its `label` ("Seedance 2.5 - 720p - Krea"), in catalog order.
 async function entriesOn(home) {
+  return entriesOnNow(home);
+}
+
+// The same, answered at once: the file is read synchronously. For a caller
+// that must decide inside one step, such as the gateway answering a request.
+function entriesOnNow(home) {
   return listed(loadAll(home)).filter((item) => item.on);
 }
 
@@ -256,4 +262,4 @@ async function offered(home) {
     .map((model) => ({ model, route: state.models[model].route }));
 }
 
-module.exports = { read, write, offered, routes, file, entries, entriesOn, setEntry };
+module.exports = { read, write, offered, routes, file, entries, entriesOn, entriesOnNow, setEntry };
