@@ -18,6 +18,9 @@
 // in DSHPROXY_KEYCHAIN (tests use a throwaway one).
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const SECURITY = '/usr/bin/security';
 const SERVICE = 'DSHProxy';
@@ -77,6 +80,17 @@ function failure(result, timeoutMs) {
   return new KeychainError(`The macOS Keychain did not give DSHProxy its key (security ended with code ${result.code}). Nothing was saved.`);
 }
 
+function insideTemporaryFolder(file) {
+  const real = (dir) => {
+    try { return fs.realpathSync(dir); } catch { return path.resolve(dir); }
+  };
+  const folders = [path.resolve(os.tmpdir()), real(os.tmpdir())];
+  const targets = [path.resolve(file), path.join(real(path.dirname(path.resolve(file))), path.basename(file))];
+  // Both spellings must agree, so a link inside the temporary folder that
+  // points elsewhere does not pass.
+  return targets.every((target) => folders.some((folder) => target.startsWith(folder + path.sep)));
+}
+
 function createKeywrap({ security = SECURITY, keychain, timeoutMs = TIMEOUT_MS, env = process.env, now = Date.now } = {}) {
   const chosen = keychain === undefined ? env.DSHPROXY_KEYCHAIN || null : keychain;
   if (chosen !== null && /["\\\n\r]/.test(chosen)) throw new KeychainError('DSHPROXY_KEYCHAIN names a file whose path DSHProxy cannot pass to the Keychain (it holds a quote, a backslash or a line break).');
@@ -84,8 +98,12 @@ function createKeywrap({ security = SECURITY, keychain, timeoutMs = TIMEOUT_MS, 
   let seen = null;
   const where = chosen ? [chosen] : [];
 
+  // Under the test runner only a keychain file in the temporary folder is
+  // used, so no test can reach a login Keychain, whatever it was given.
   const guard = () => {
-    if (env.NODE_TEST_CONTEXT && !chosen) throw new KeychainError('DSHProxy runs under the test runner without DSHPROXY_KEYCHAIN; it will not use a login Keychain.');
+    if (!env.NODE_TEST_CONTEXT) return;
+    if (!chosen) throw new KeychainError('DSHProxy runs under the test runner without DSHPROXY_KEYCHAIN; it will not use a login Keychain.');
+    if (!insideTemporaryFolder(chosen)) throw new KeychainError('DSHProxy runs under the test runner; it will not use a keychain outside the temporary folder.');
   };
 
   async function read() {
