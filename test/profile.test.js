@@ -566,3 +566,44 @@ test("on macOS, a profile that cannot be replaced is left as it was, with no tem
   assert.equal(fs.readFileSync(file, "utf8"), before);
   assert.deepEqual(fs.readdirSync(path.dirname(file)).filter((name) => name.endsWith(".tmp")), []);
 });
+
+// The default model is the person's: one that names another provider (the
+// Harness's own, or another gateway's) is left as it is by apply and by the
+// gateway's own syncs, and verify does not report it. Only a missing default,
+// one without a provider, or one on a DSHProxy route whose model is gone is
+// repaired to a lane. (Changed on both systems on the user's word, 23 Nov,
+// docs/work/0014-macos-port/ledger.md; the README already said so.)
+const OWN_DEFAULT = [
+  "- id: agent-default-model",
+  "  name: \"@deepseek-ai/dsh-agent-default-model\"",
+  "  config:",
+  "    provider: anthropic",
+  "    model: claude-opus-5-5",
+  ""
+].join("\n");
+
+test("apply and the gateway's syncs leave a default model that names another provider alone", (t) => {
+  const home = tempHome(t);
+  fs.writeFileSync(patchPath(home), OWN_DEFAULT);
+  const lanes = { main: ["gemini-4-carbon-high"] };
+  const first = profile.apply(MODELS, ORIGIN, home, { lanes });
+  assert.equal(first.profiles[0].repairedDefault, false);
+  const again = profile.apply(MODELS, ORIGIN, home, { lanes, onlyApplied: true });
+  assert.equal(again.profiles[0].repairedDefault, false);
+  const entry = YAML.parse(fs.readFileSync(patchPath(home), "utf8")).find((item) => item.id === "agent-default-model");
+  assert.deepEqual(entry.config, { provider: "anthropic", model: "claude-opus-5-5" });
+  const report = profile.verify({ origin: ORIGIN, lanes, models: MODELS.map((m) => ({ id: m.id, api: m.api })), home });
+  assert.deepEqual(report.profiles[0].problems, []);
+});
+
+test("a default model on a DSHProxy route whose model is gone, or with no provider, is still repaired to a lane", (t) => {
+  const lanes = { google: ["gemini-4-carbon-high"] };
+  for (const config of ["    provider: dshproxy-claude\n    model: claude-that-is-gone\n", "    model: gpt-6-astra\n"]) {
+    const home = tempHome(t);
+    fs.writeFileSync(patchPath(home), `- id: agent-default-model\n  config:\n${config}`);
+    const result = profile.apply(MODELS, ORIGIN, home, { lanes });
+    assert.equal(result.profiles[0].repairedDefault, true, config);
+    const entry = YAML.parse(fs.readFileSync(patchPath(home), "utf8")).find((item) => item.id === "agent-default-model");
+    assert.deepEqual(entry.config, { provider: "dshproxy-lanes", model: "lane-google" });
+  }
+});

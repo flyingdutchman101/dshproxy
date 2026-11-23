@@ -310,7 +310,10 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
   const defaultEntry = doc.contents.items.find((item) => YAML.isMap(item) && String(item.get("id") || "") === "agent-default-model");
   const defaultProvider = defaultEntry ? String(defaultEntry.getIn(["config", "provider"]) || "") : "";
   const defaultModel = defaultEntry ? String(defaultEntry.getIn(["config", "model"]) || "") : "";
-  const defaultOk = defaultEntry && ROUTES[defaultProvider] && defaultProvider !== VIDEO_ROUTE && (chatModels.includes(defaultModel) || defaultModel.startsWith("lane-"));
+  // A default that names another provider (the Harness's own, another
+  // gateway's) is the person's choice and is left as it is.
+  const otherProvider = Boolean(defaultProvider) && !ROUTES[defaultProvider];
+  const defaultOk = defaultEntry && (otherProvider || (ROUTES[defaultProvider] && defaultProvider !== VIDEO_ROUTE && (chatModels.includes(defaultModel) || defaultModel.startsWith("lane-"))));
   if (!defaultOk && preferredLane && routes["dshproxy-lanes"]) {
     const block = doc.createNode({ id: "agent-default-model", name: "@deepseek-ai/dsh-agent-default-model", config: { provider: "dshproxy-lanes", model: laneId(preferredLane) } });
     if (defaultEntry) doc.contents.items[doc.contents.items.indexOf(defaultEntry)] = block;
@@ -607,8 +610,11 @@ function verify({ origin, lanes, models, home = dshHome() }) {
         if (provider === VIDEO_ROUTE) {
           if (!videoIds.includes(model)) problems.push(`agent-default-model names model ${model || "(none)"}, which is not offered`);
         } else {
-          if (!ROUTES[provider]) problems.push(`agent-default-model names provider ${provider || "(none)"}, which is not a DSHProxy route`);
-          if (!laneIds.includes(model) && !offered.has(model)) problems.push(`agent-default-model names model ${model || "(none)"}, which is not offered`);
+          // Another provider's default is the person's choice; DSHProxy does not check it.
+          if (!provider) problems.push("agent-default-model names provider (none), which is not a DSHProxy route");
+          if (!provider || ROUTES[provider]) {
+            if (!laneIds.includes(model) && !offered.has(model)) problems.push(`agent-default-model names model ${model || "(none)"}, which is not offered`);
+          }
         }
       }
     } catch (error) {

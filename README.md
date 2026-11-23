@@ -109,7 +109,7 @@ The first `start` or `login` downloads the CLIProxyAPI release named in [backend
 | `backend version` | Shows the CLIProxyAPI version in use |
 | `backend update` | Asks the running gateway to look for a newer CLIProxyAPI and switch to it, as the app's **Update...** does |
 | `backend rollback` | With the gateway stopped, goes back to the previous CLIProxyAPI version |
-| `dsh apply [--dry-run]` | Writes the models into every DeepSeek Harness profile; repairs a missing default model |
+| `dsh apply [--dry-run]` | Writes the models into every DeepSeek Harness profile; repairs a default model that is missing or names a DSHProxy model that is gone |
 | `dsh verify` | Checks the profiles back: routes, base URLs, offered models, image caps, default model, credential, leftover DroidProxy providers |
 | `dsh status` | Shows which DSHProxy routes each profile has |
 | `dsh remove [--dry-run]` | Removes DSHProxy's routes from every profile |
@@ -171,7 +171,7 @@ A request that needs none of these reaches CLIProxyAPI byte for byte.
 
 It leaves every other entry, route and comment alone, including VeryCuteDroidProxy's `droidproxy-*` routes. It backs each profile up before changing it. Fields you add to a model entry, and its `input` list, are kept on the next sync.
 
-It does not change the default model, the delegation lanes or `allowedModels`. To let subagents use a DSHProxy route, add it to `allowedModels` yourself.
+It does not change the delegation lanes or `allowedModels`, nor a default model that names another provider. It sets the default model to a lane only when there is none, when it names no provider, or when it names a DSHProxy model that is gone; the gateway does the same when it updates the routes by itself. To let subagents use a DSHProxy route, add it to `allowedModels` yourself.
 
 `dsh remove` takes the four routes out again. If `dsh apply` had to add the `llm-pi-ai` entry itself, `dsh remove` takes that out too, unless you have since put other routes in it. The `DSHPROXY_API_KEY` reference stays.
 
