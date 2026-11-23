@@ -239,8 +239,10 @@ function edit(home, change) {
   fs.writeFileSync(patchPath(home), doc.toString({ lineWidth: 0 }));
 }
 
-// The four places a profile can name a provider and model outside its provider
-// list. Each changes an applied profile so that it names the video route there.
+// The places a profile can name a provider and model for agents outside its
+// provider list. Each changes an applied profile so that it names the video
+// route there. The default model is apart (decision 0008): DeepSeek Harness
+// writes the model a person picks in a chat there.
 const PAIR = `{ provider: ${VIDEO}, model: ${SEEDANCE.id} }`;
 const EXPOSURES = [
   {
@@ -253,18 +255,15 @@ const EXPOSURES = [
     where: /tool-reviewer at config\.agentOptions/,
     expose: (home) => fs.writeFileSync(patchPath(home), read(home).replace("          provider: dshproxy-lanes\n          model: lane-main\n", `          provider: ${VIDEO}\n          model: ${SEEDANCE.id}\n`))
   },
-  {
-    place: "the default model",
-    where: /agent-default-model at config/,
-    expose: (home) => fs.writeFileSync(patchPath(home), read(home).replace("    provider: dshproxy-lanes\n    model: lane-main\n", `    provider: ${VIDEO}\n    model: ${SEEDANCE.id}\n`))
-  },
+
   {
     place: "any other entry",
     where: /session-presets at config\.presets\[0\]\.agent/,
     expose: (home) => fs.appendFileSync(patchPath(home), `- id: session-presets\n  config:\n    presets:\n      - name: clips\n        agent: ${PAIR}\n`)
   }
 ];
-const SENTENCE = /the paid video route must not be selectable for agents or be the default model/;
+const SENTENCE = /the paid video route must not be selectable for agents\. Remove it there\.$/;
+const pickAsDefault = (home, id = SEEDANCE.id) => fs.writeFileSync(patchPath(home), read(home).replace("    provider: dshproxy-lanes\n    model: lane-main\n", `    provider: ${VIDEO}\n    model: ${id}\n`));
 
 test("a profile without video entries is written byte for byte as before the video route existed", (t) => {
   const home = tempHome(t);
@@ -403,7 +402,7 @@ test("video entries alone are not models to apply: nothing is written", (t) => {
 
 test("a default model on the video route is repaired to a lane", (t) => {
   const home = applied(t, [SEEDANCE]);
-  EXPOSURES[2].expose(home);
+  pickAsDefault(home);
   assert.deepEqual(defaultModel(home), { provider: VIDEO, model: SEEDANCE.id });
   const result = profile.apply([...MODELS, SEEDANCE], ORIGIN, home, { lanes: LANES });
   assert.equal(result.profiles[0].repairedDefault, true);
@@ -472,6 +471,28 @@ for (const exposure of EXPOSURES) {
     assert.equal(profile.videoExposed(home), true);
   });
 }
+
+test("a video entry that is the default model is what picking it in a chat leaves: not reported, not exposed", (t) => {
+  const home = applied(t, [SEEDANCE]);
+  pickAsDefault(home);
+  assert.deepEqual(defaultModel(home), { provider: VIDEO, model: SEEDANCE.id });
+  assert.deepEqual(problems(home, [...MODELS, SEEDANCE]), []);
+  assert.equal(profile.videoExposed(home), false);
+
+  // Beside a place that is for agents, that place alone is reported.
+  EXPOSURES[0].expose(home);
+  const found = problems(home, [...MODELS, SEEDANCE]);
+  assert.equal(found.length, 1, found.join("\n"));
+  assert.match(found[0], EXPOSURES[0].where);
+  assert.equal(profile.videoExposed(home), true);
+});
+
+test("a default model that names a video entry which is not offered is reported", (t) => {
+  const home = applied(t, [SEEDANCE]);
+  pickAsDefault(home, WAN.id);
+  assert.deepEqual(problems(home, [...MODELS, SEEDANCE]), [`agent-default-model names model ${WAN.id}, which is not offered`]);
+  assert.equal(profile.videoExposed(home), false);
+});
 
 test("the video route is exposed when it is named for agents although the profile no longer has the route", (t) => {
   const home = applied(t, []);

@@ -385,9 +385,12 @@ function danglingReferences(doc, providersNode) {
 const MAX_SEARCHED_NODES = 200000;
 
 // Every place outside the provider list where the profile names the video
-// route as a provider: the allowed subagent models, a tool's agentOptions, the
-// default model, or any other mapping with `provider: dshproxy-video`. Any of
-// them would let an agent, or a new session, reach a route that can buy.
+// route as a provider for agents: the allowed subagent models, a tool's
+// agentOptions, or any other mapping with `provider: dshproxy-video`. Any of
+// them would let an agent reach a route that can buy.
+// The default model itself is the one place that is not counted: DeepSeek
+// Harness saves the model a person picks in a chat there, so a picked video
+// entry is always named in it (decision 0008).
 // A mapping reused by reference (`*name`, `<<`) is read where it is used.
 // Each place is `{ where, model }`, `where` being the nearest entry ID and the
 // path below it.
@@ -419,7 +422,8 @@ function videoExposures(doc) {
     if (plain(node.get("provider", true)) === VIDEO_ROUTE) {
       const model = plain(node.get("model", true));
       const where = owner ? `${owner}${trail ? ` at ${trail}` : ""}` : `the profile at ${trail}`;
-      found.push({ where, owner, model: typeof model === "string" ? model : "" });
+      const pickedDefault = owner === "agent-default-model" && trail === "config";
+      if (!pickedDefault) found.push({ where, model: typeof model === "string" ? model : "" });
     }
     for (const pair of node.items) {
       const key = String(YAML.isScalar(pair.key) ? pair.key.value : pair.key);
@@ -430,13 +434,12 @@ function videoExposures(doc) {
   return found;
 }
 
-function exposureProblem({ where, owner, model }) {
-  const fix = owner === "agent-default-model" ? "Choose another default model, or run `dshproxy dsh apply` to set a lane." : "Remove it there.";
-  return `${where} names ${VIDEO_ROUTE}${model ? `/${model}` : ""}: the paid video route must not be selectable for agents or be the default model. ${fix}`;
+function exposureProblem({ where, model }) {
+  return `${where} names ${VIDEO_ROUTE}${model ? `/${model}` : ""}: the paid video route must not be selectable for agents. Remove it there.`;
 }
 
-// True when any DeepSeek Harness profile names the video route outside its
-// provider list (see videoExposures). The gateway asks this before a purchase,
+// True when any DeepSeek Harness profile names the video route for agents
+// (see videoExposures). The gateway asks this before a purchase,
 // so every doubt counts as exposed: a profile that cannot be read or parsed,
 // and a profiles folder that cannot be listed. Reads only.
 function videoExposed(home = dshHome()) {
@@ -566,9 +569,11 @@ function verify({ origin, lanes, models, home = dshHome() }) {
       else {
         const provider = String(entry.getIn(["config", "provider"]) || "");
         const model = String(entry.getIn(["config", "model"]) || "");
-        // A default on the video route is reported once, below, with every
-        // other place that names that route.
-        if (provider !== VIDEO_ROUTE) {
+        // A default on the video route is the entry a person picked in a chat
+        // (decision 0008); it has to be one that is offered.
+        if (provider === VIDEO_ROUTE) {
+          if (!videoIds.includes(model)) problems.push(`agent-default-model names model ${model || "(none)"}, which is not offered`);
+        } else {
           if (!ROUTES[provider]) problems.push(`agent-default-model names provider ${provider || "(none)"}, which is not a DSHProxy route`);
           if (!laneIds.includes(model) && !offered.has(model)) problems.push(`agent-default-model names model ${model || "(none)"}, which is not offered`);
         }
