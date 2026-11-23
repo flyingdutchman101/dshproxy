@@ -86,7 +86,8 @@ function standIn(t, state = {}) {
 }
 
 const ITEM = 'DSHProxy|key-wrapper';
-const env = { DSHPROXY_KEYCHAIN: '/nowhere/fake.keychain-db' };
+const FAKE = (name) => path.join(os.tmpdir(), 'dshproxy-standin', `${name}.keychain-db`);
+const env = { DSHPROXY_KEYCHAIN: FAKE('env') };
 
 // ------------------------------- with the stand-in -------------------------------
 
@@ -95,7 +96,7 @@ test('a first key makes one wrapping key in the Keychain, sent on standard input
   const file = path.join(tempDir(t), 'master.key');
   process.env.DSHPROXY_TEST_SENTINEL = 'parent-environment-must-not-reach-security';
   t.after(() => delete process.env.DSHPROXY_TEST_SENTINEL);
-  const keywrap = keywrapFor({ security: fake.program, keychain: '/tmp/some keychain.keychain-db', env });
+  const keywrap = keywrapFor({ security: fake.program, keychain: FAKE('some keychain'), env });
 
   const master = await secrets.loadMasterKey(file, { create: true, keywrap });
   assert.equal(master.length, 32);
@@ -105,7 +106,7 @@ test('a first key makes one wrapping key in the Keychain, sent on standard input
   const calls = fake.calls();
   assert.deepEqual(calls.map((one) => one.args[0]), ['find-generic-password', '-i', 'find-generic-password']);
   assert.deepEqual(calls[1].args, ['-i']);
-  assert.equal(calls[1].input, `add-generic-password -s DSHProxy -a key-wrapper -w ${wrapping} "/tmp/some keychain.keychain-db"\n`);
+  assert.equal(calls[1].input, `add-generic-password -s DSHProxy -a key-wrapper -w ${wrapping} "${FAKE('some keychain')}"\n`);
   for (const one of calls) {
     assert.ok(!one.args.join(' ').includes(wrapping), 'the wrapping key is in an argument list');
     assert.equal(one.env.HOME, process.env.HOME);
@@ -114,13 +115,13 @@ test('a first key makes one wrapping key in the Keychain, sent on standard input
     const text = JSON.stringify(one);
     assert.ok(!text.includes(master.toString('hex')) && !text.includes(master.toString('base64')), 'the master key reached security');
   }
-  assert.deepEqual(calls[0].args, ['find-generic-password', '-s', 'DSHProxy', '-a', 'key-wrapper', '-w', '/tmp/some keychain.keychain-db']);
+  assert.deepEqual(calls[0].args, ['find-generic-password', '-s', 'DSHProxy', '-a', 'key-wrapper', '-w', FAKE('some keychain')]);
 
   // The file holds the master key wrapped, not in the clear.
   const text = fs.readFileSync(file, 'utf8');
   assert.ok(!text.includes(master.toString('base64')) && !text.includes(master.toString('hex')));
   // A new wrapper remembers nothing, as in a new process, and gets the same key.
-  const again = await secrets.loadMasterKey(file, { keywrap: keywrapFor({ security: fake.program, keychain: '/tmp/some keychain.keychain-db', env }) });
+  const again = await secrets.loadMasterKey(file, { keywrap: keywrapFor({ security: fake.program, keychain: FAKE('some keychain'), env }) });
   assert.ok(again.equals(master));
 });
 
@@ -128,21 +129,21 @@ test('a wrapping key stored by another process first is the one used', macOnly, 
   const theirs = crypto.randomBytes(32).toString('hex');
   const fake = standIn(t, { raceValue: theirs });
   const file = path.join(tempDir(t), 'master.key');
-  const master = await secrets.loadMasterKey(file, { create: true, keywrap: keywrapFor({ security: fake.program, keychain: '/x/a.keychain-db', env }) });
+  const master = await secrets.loadMasterKey(file, { create: true, keywrap: keywrapFor({ security: fake.program, keychain: FAKE('a'), env }) });
   assert.equal(fake.items()[ITEM], theirs);
   assert.deepEqual(fake.calls().map((one) => one.args[0]), ['find-generic-password', '-i', 'find-generic-password']);
-  const other = await secrets.loadMasterKey(file, { keywrap: keywrapFor({ security: fake.program, keychain: '/x/a.keychain-db', env }) });
+  const other = await secrets.loadMasterKey(file, { keywrap: keywrapFor({ security: fake.program, keychain: FAKE('a'), env }) });
   assert.ok(other.equals(master));
 });
 
 test('an existing master.key whose wrapping key is not in the Keychain cannot be read, and no wrapping key is made', macOnly, async (t) => {
   const first = standIn(t);
   const file = path.join(tempDir(t), 'master.key');
-  await secrets.loadMasterKey(file, { create: true, keywrap: keywrapFor({ security: first.program, keychain: '/x/b.keychain-db', env }) });
+  await secrets.loadMasterKey(file, { create: true, keywrap: keywrapFor({ security: first.program, keychain: FAKE('b'), env }) });
   const before = fs.readFileSync(file);
 
   const empty = standIn(t);
-  await assert.rejects(secrets.loadMasterKey(file, { create: true, keywrap: keywrapFor({ security: empty.program, keychain: '/x/b.keychain-db', env }) }), /not there/);
+  await assert.rejects(secrets.loadMasterKey(file, { create: true, keywrap: keywrapFor({ security: empty.program, keychain: FAKE('b'), env }) }), /not there/);
   assert.deepEqual(empty.items(), {});
   assert.deepEqual(empty.calls().map((one) => one.args[0]), ['find-generic-password']);
   assert.ok(fs.readFileSync(file).equals(before));
@@ -157,7 +158,7 @@ for (const [name, state, message] of [
     const dir = tempDir(t);
     const file = path.join(dir, 'master.key');
     const started = Date.now();
-    await assert.rejects(secrets.loadMasterKey(file, { create: true, keywrap: keywrapFor({ security: fake.program, keychain: '/x/c.keychain-db', env, timeoutMs: 1000 }) }), (error) => {
+    await assert.rejects(secrets.loadMasterKey(file, { create: true, keywrap: keywrapFor({ security: fake.program, keychain: FAKE('c'), env, timeoutMs: 1000 }) }), (error) => {
       assert.match(error.message, message);
       assert.match(error.message, /Nothing was saved\.$/);
       assert.equal(error.message.split('. ').length <= 3, true);
@@ -172,14 +173,14 @@ for (const [name, state, message] of [
 test('with no security program, nothing is saved and the sentence says why', macOnly, async (t) => {
   const dir = tempDir(t);
   const file = path.join(dir, 'master.key');
-  await assert.rejects(secrets.loadMasterKey(file, { create: true, keywrap: keywrapFor({ security: path.join(dir, 'no-such-security'), keychain: '/x/d.keychain-db', env }) }), /could not be started \(ENOENT\)/);
+  await assert.rejects(secrets.loadMasterKey(file, { create: true, keywrap: keywrapFor({ security: path.join(dir, 'no-such-security'), keychain: FAKE('d'), env }) }), /could not be started \(ENOENT\)/);
   assert.deepEqual(fs.readdirSync(dir), []);
 });
 
 test('a Keychain that could not be read is not asked again for a minute, so a command waits once', macOnly, async (t) => {
   const fake = standIn(t, { mode: 'hang' });
   let clock = 1000;
-  const keywrap = keywrapFor({ security: fake.program, keychain: '/x/e.keychain-db', env, timeoutMs: 500, now: () => clock });
+  const keywrap = keywrapFor({ security: fake.program, keychain: FAKE('e'), env, timeoutMs: 500, now: () => clock });
   const file = path.join(tempDir(t), 'master.key');
   await assert.rejects(secrets.loadMasterKey(file, { create: true, keywrap }), /did not answer/);
   const started = Date.now();
@@ -189,6 +190,25 @@ test('a Keychain that could not be read is not asked again for a minute, so a co
   clock += 61 * 1000;
   await assert.rejects(secrets.loadMasterKey(file, { create: true, keywrap }), /did not answer/);
   assert.equal(fake.calls().length, 2);
+});
+
+test('under the test runner a wrapper whose keychain is outside the temporary folder refuses and starts nothing', macOnly, async (t) => {
+  const fake = standIn(t);
+  const file = path.join(tempDir(t), 'master.key');
+  const login = path.join(os.homedir(), 'Library', 'Keychains', 'login.keychain-db');
+  await assert.rejects(secrets.loadMasterKey(file, { create: true, keywrap: keywrapFor({ security: fake.program, keychain: login, env: { NODE_TEST_CONTEXT: 'child-v8' } }) }), /will not use a keychain outside the temporary folder/);
+  assert.deepEqual(fake.calls(), []);
+});
+
+test('a keychain named by whoever started the tests is never used: each test process makes its own', macOnly, () => {
+  const inherited = path.join(os.homedir(), 'Library', 'Keychains', 'login.keychain-db');
+  const script = `require(${JSON.stringify(path.join(__dirname, 'support', 'keychain.js'))}); process.stdout.write(process.env.DSHPROXY_KEYCHAIN)`;
+  const child = spawnSync(process.execPath, ['-e', script], { env: { ...process.env, DSHPROXY_KEYCHAIN: inherited }, encoding: 'utf8', timeout: 20000 });
+  assert.equal(child.status, 0, child.stderr);
+  assert.notEqual(child.stdout, inherited);
+  assert.ok(child.stdout.startsWith(os.tmpdir()) || fs.realpathSync(path.dirname(path.dirname(child.stdout))) === fs.realpathSync(os.tmpdir()), child.stdout);
+  // It was deleted when that process ended.
+  assert.equal(fs.existsSync(child.stdout), false);
 });
 
 test('under the test runner a wrapper with no keychain named refuses and starts nothing', macOnly, async (t) => {
@@ -286,30 +306,67 @@ function folderState(dir) {
   return state;
 }
 
-test('with a locked keychain: saving a key ends in one sentence within 15 seconds, reading ends too, and nothing changes', lockedOnly, (t) => {
+// Every command that saves a key ends in one sentence, non-zero, within 15
+// seconds, and the data folder is byte for byte what it was. Every command
+// that only reads keys goes on as on Windows with the key counted unreadable,
+// within 15 seconds, and leaves the keys, master.key and the keychain as they
+// were; `start` writes its configuration and log as it always does (C9).
+test('with a locked keychain: commands that save a key refuse in one sentence, commands that read go on, all within 15 seconds, and no key changes', lockedOnly, async (t) => {
   const made = makeKeychain('locked');
   t.after(made.remove);
   const home = tempDir(t, 'dshproxy-cli-');
   const run = (args, input = '') => spawnSync(process.execPath, [CLI, ...args], { input, encoding: 'utf8', timeout: 30000, env: { ...process.env, DSHPROXY_HOME: home, DSH_HOME: path.join(home, 'no-harness'), DSHPROXY_KEYCHAIN: made.file } });
-  // A key saved while it was unlocked.
+  const timed = (what, work) => {
+    const started = Date.now();
+    const result = work();
+    assert.ok(Date.now() - started < 15000, `${what} took ${Date.now() - started} ms`);
+    return result;
+  };
+  // Keys saved while it was unlocked.
   assert.equal(run(['key', 'set', 'deepseek'], 'sk-test-locked-0123456789\n').status, 0);
+  assert.equal(run(['video', 'key', 'set', 'kovapi'], 'synthetic-locked-video-0123456789\n').status, 0);
   fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8')), port: 65431, backendPort: 65432 }));
   spawnSync(SECURITY, ['lock-keychain', made.file]);
   const before = { data: folderState(home), keychain: fs.readFileSync(made.file).toString('base64') };
+  const keyFiles = ['master.key', 'settings.json', 'video-keys.json'];
+  const keysBefore = Object.fromEntries(keyFiles.map((name) => [name, before.data[name]]));
 
-  let started = Date.now();
-  const set = run(['key', 'set', 'mistral'], 'sk-test-locked-other-0123456789\n');
-  assert.ok(Date.now() - started < 15000, `key set took ${Date.now() - started} ms`);
-  assert.notEqual(set.status, 0);
-  assert.equal(set.stderr.trim().split('\n').length, 1, set.stderr);
-  assert.match(set.stderr, /Keychain/);
+  for (const [args, input] of [
+    [['key', 'set', 'mistral'], 'sk-test-locked-other-0123456789\n'],
+    [['key', 'custom', 'add', 'litellm', 'http://127.0.0.1:4000/v1', 'm1'], 'sk-test-locked-custom-0123456789\n'],
+    [['video', 'key', 'set', 'callirra'], 'synthetic-locked-callirra-0123456789\n']
+  ]) {
+    const result = timed(args.join(' '), () => run(args, input));
+    assert.notEqual(result.status, 0, args.join(' '));
+    assert.equal(result.stderr.trim().split('\n').length, 1, result.stderr);
+    assert.match(result.stderr, /Keychain/);
+    assert.deepEqual(folderState(home), before.data, args.join(' '));
+  }
 
-  started = Date.now();
-  const status = run(['status', '--json']);
-  assert.ok(Date.now() - started < 15000, `status took ${Date.now() - started} ms`);
+  const status = timed('status', () => run(['status', '--json']));
   assert.equal(status.status, 0, status.stderr);
   assert.deepEqual(JSON.parse(status.stdout).apiKeys.unreadable, ['deepseek']);
-
+  const models = timed('models', () => run(['models']));
+  assert.equal(models.status, 0, models.stderr);
+  assert.doesNotMatch(models.stdout, /^deepseek\//m);
   assert.deepEqual(folderState(home), before.data);
+
+  // start: the real gateway with a stand-in backend, in this process.
+  const daemon = require('../src/daemon');
+  const previous = process.env.DSHPROXY_KEYCHAIN;
+  process.env.DSHPROXY_KEYCHAIN = made.file;
+  t.after(() => { process.env.DSHPROXY_KEYCHAIN = previous; });
+  const lines = [];
+  const started = Date.now();
+  const gateway = await daemon.start({
+    home,
+    print: (line) => lines.push(line),
+    backend: { install: async () => ({ path: 'no-backend-program', installed: false }), createSupervisor: () => ({ start: async () => {}, stop: async () => {}, state: () => ({ running: true, pid: 4242, restarts: 0 }) }), checkForUpdate: async (current) => ({ available: false, current: current.version, latest: current.version }) }
+  });
+  t.after(() => gateway.stop());
+  assert.ok(Date.now() - started < 15000, `start took ${Date.now() - started} ms`);
+  assert.ok(lines.some((line) => /cannot be read for: deepseek/.test(line)), lines.join('\n'));
+  const after = folderState(home);
+  assert.deepEqual(Object.fromEntries(keyFiles.map((name) => [name, after[name]])), keysBefore);
   assert.equal(fs.readFileSync(made.file).toString('base64'), before.keychain);
 });

@@ -88,6 +88,16 @@ test('a data folder that others can open is made private by the next command', m
   assert.equal(fs.statSync(data).mode & 0o777, 0o700);
 });
 
+test('a video command that uses the data folder makes it private too', macOnly, (t) => {
+  for (const args of [['video', 'key', 'list'], ['video', 'settings']]) {
+    const data = tempDir(t, 'dshproxy-modes-');
+    fs.chmodSync(data, 0o755);
+    const result = cli(data, path.join(data, 'no-harness'), args);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.statSync(data).mode & 0o777, 0o700, args.join(' '));
+  }
+});
+
 test('dsh verify reports a credentials file that other accounts can read, because DeepSeek Harness will not read it', macOnly, (t) => {
   const parent = tempDir(t, 'dshproxy-modes-');
   const data = path.join(parent, 'data');

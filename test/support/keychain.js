@@ -38,10 +38,24 @@ function makeKeychain(name = 'dshproxy-test') {
   return { file, password, remove };
 }
 
-if (process.platform === 'darwin' && !process.env.DSHPROXY_KEYCHAIN) {
+// Whether `file` is a keychain this module made: a file of that name in a
+// folder of that name directly in the temporary folder. A DSHPROXY_KEYCHAIN
+// set by anyone else (a developer's own keychain, say) is never used.
+function ours(file) {
+  if (typeof file !== 'string' || path.basename(file) !== 'dshproxy-test.keychain-db') return false;
+  const folder = path.dirname(file);
+  if (!/^dshproxy-keychain-[A-Za-z0-9]{6}$/.test(path.basename(folder))) return false;
+  try {
+    return fs.realpathSync(path.dirname(folder)) === fs.realpathSync(os.tmpdir()) && fs.existsSync(file);
+  } catch {
+    return false;
+  }
+}
+
+if (process.platform === 'darwin' && !ours(process.env.DSHPROXY_KEYCHAIN)) {
   const made = makeKeychain();
   process.env.DSHPROXY_KEYCHAIN = made.file;
   process.on('exit', made.remove);
 }
 
-module.exports = { makeKeychain, keychain: process.env.DSHPROXY_KEYCHAIN || null, SECURITY };
+module.exports = { ours, makeKeychain, keychain: process.env.DSHPROXY_KEYCHAIN || null, SECURITY };

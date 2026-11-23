@@ -257,6 +257,9 @@ test("on macOS, a release with all four archives becomes a four-asset lock", () 
 
 test("on macOS, a release without Windows archives becomes a lock with the two macOS ones", () => {
   assert.deepEqual(lockFromRelease(RELEASE_MAC_ONLY, parseChecksums(CHECKSUMS_ALL), { platform: "darwin" }).assets, pick("darwin-arm64", "darwin-x64"));
+  // One Windows archive missing counts as none: the Windows entries come as a pair or not at all.
+  const oneWindows = { ...RELEASE_ALL, assets: RELEASE_ALL.assets.filter((asset) => !asset.name.includes("windows_aarch64")) };
+  assert.deepEqual(lockFromRelease(oneWindows, parseChecksums(CHECKSUMS_ALL), { platform: "darwin" }).assets, pick("darwin-arm64", "darwin-x64"));
 });
 
 test("on macOS, a release without a macOS archive, or without its checksum, is refused", () => {
@@ -268,11 +271,11 @@ test("on macOS, a release without a macOS archive, or without its checksum, is r
 test("on Windows, a release with all four archives keeps the macOS ones, and one without them is what it is today", () => {
   assert.deepEqual(lockFromRelease(RELEASE_ALL, parseChecksums(CHECKSUMS_ALL), { platform: "win32" }).assets, FOUR);
   assert.deepEqual(lockFromRelease(RELEASE, parseChecksums(CHECKSUMS), { platform: "win32" }).assets, pick("win32-x64", "win32-arm64"));
-  // A macOS archive that is not complete is left out; it never stops a Windows update.
+  // The macOS archives are kept only when both are complete; they never stop a Windows update.
   const noMacSum = parseChecksums(CHECKSUMS_ALL.split("\n").filter((line) => !line.includes("darwin_amd64")).join("\n"));
-  assert.deepEqual(lockFromRelease(RELEASE_ALL, noMacSum, { platform: "win32" }).assets, pick("win32-x64", "win32-arm64", "darwin-arm64"));
+  assert.deepEqual(lockFromRelease(RELEASE_ALL, noMacSum, { platform: "win32" }).assets, pick("win32-x64", "win32-arm64"));
   const forged = { ...RELEASE_ALL, assets: RELEASE_ALL.assets.map((asset) => (asset.name.includes("darwin_aarch64") ? { ...asset, browser_download_url: "https://evil.example/x.tar.gz" } : asset)) };
-  assert.deepEqual(lockFromRelease(forged, parseChecksums(CHECKSUMS_ALL), { platform: "win32" }).assets, pick("win32-x64", "win32-arm64", "darwin-x64"));
+  assert.deepEqual(lockFromRelease(forged, parseChecksums(CHECKSUMS_ALL), { platform: "win32" }).assets, pick("win32-x64", "win32-arm64"));
   // And a release without a Windows archive is still refused on Windows.
   assert.throws(() => lockFromRelease(RELEASE_MAC_ONLY, parseChecksums(CHECKSUMS_ALL), { platform: "win32" }), /has no CLIProxyAPI_8\.0\.75_windows_amd64\.zip/);
 });

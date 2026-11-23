@@ -46,7 +46,7 @@ function parseChecksums(text) {
 // The lock for a release. The archives of the system this runs on, for both
 // processors, must be there, each with the checksum the release published, or
 // the release is refused; on Windows that is the rule as it always was. The
-// other system's archives are kept when they are complete, and left out
+// other system's archives are kept when both are complete, and left out
 // otherwise. Every address must be under the official release path.
 function lockFromRelease(release, sums, { platform = process.platform } = {}) {
   const version = String(release.tag_name).replace(/^v/, "");
@@ -54,6 +54,7 @@ function lockFromRelease(release, sums, { platform = process.platform } = {}) {
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`"${release.tag_name}" is not a release version.`);
   if (!ASSETS.some((item) => item.platform === platform)) throw new Error(`CLIProxyAPI updates are not set up for ${platform}.`);
   const assets = {};
+  const others = {};
   for (const { suffix, ext, key, platform: system } of ASSETS) {
     const required = system === platform;
     const name = `CLIProxyAPI_${version}_${suffix}.${ext}`;
@@ -61,7 +62,7 @@ function lockFromRelease(release, sums, { platform = process.platform } = {}) {
     const url = asset ? String(asset.browser_download_url) : null;
     const sha256 = sums.get(name);
     if (!required) {
-      if (asset && url.startsWith(`${DOWNLOAD_PREFIX}v${version}/`) && sha256) assets[key] = { url, sha256 };
+      (others[system] ||= []).push(asset && url.startsWith(`${DOWNLOAD_PREFIX}v${version}/`) && sha256 ? [key, { url, sha256 }] : null);
       continue;
     }
     if (!asset) throw new Error(`Release ${version} has no ${name}.`);
@@ -69,6 +70,8 @@ function lockFromRelease(release, sums, { platform = process.platform } = {}) {
     if (!sha256) throw new Error(`Release ${version} has no checksum for ${name}.`);
     assets[key] = { url, sha256 };
   }
+  // Another system's archives are kept only when both processors' are complete.
+  for (const entries of Object.values(others)) if (entries.every(Boolean)) Object.assign(assets, Object.fromEntries(entries));
   return { name: "CLIProxyAPI", version, source: `https://github.com/${REPO}/releases/tag/v${version}`, publishedAt: release.published_at || null, assets };
 }
 

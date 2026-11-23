@@ -129,3 +129,9 @@ Compared with the forecast (section 3): `cli.test.js` and `video-picker-callers.
 - `Contents/Resources/runtime/versions.json`: Node 24.21.0, pnpm 11.28.5; `runtime/bin/` holds `node`.
 - Harness home `~/.dsh` with `profiles/desktop`, `profiles/headless`, `profiles/web`. `~/.dsh/.credentials.yaml` is `-rw-------`.
 - No `~/.dshproxy` on this Mac yet.
+
+## 8. `fsync` in Node on macOS (for stage B, the purchase journal)
+
+- Node 24.19.0 on the user's Mac reports libuv 1.52.1 (`process.versions.uv`, proof output, section 6).
+- libuv 1.52.1, `src/unix/fs.c`, `uv__fs_fsync` (read on GitHub at tag `v1.52.1`, 23 Nov): on `__APPLE__` it calls `fcntl(fd, F_FULLFSYNC)`; if that fails, `fcntl(fd, 85 /* F_BARRIERFSYNC */)`; if that fails, `fsync(fd)`. The comment says Apple's `fsync` does not flush the drive's write cache and `F_FULLFSYNC` does. `uv__fs_fdatasync` on Apple calls the same function. `fs.fsyncSync` and `fs.fsync` go through `uv_fs_fsync`.
+- So the spec reviewer's claim ("fsync on macOS does not reach the disk") does not hold for Node: Node asks for a full flush. libuv 1.44.0, 1.46.0 and 1.48.0 have the same `F_FULLFSYNC` code (counted with `grep` on GitHub, 23 Nov), so every Node 22 and 24 does it (Node 22.0 shipped libuv 1.48.0, believed, not checked).

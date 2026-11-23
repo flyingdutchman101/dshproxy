@@ -383,20 +383,21 @@ async function main(argv, out = console.log) {
   // before anything is read or written.
   const waits = (argv[0] === "video" && videoCommandWaits(argv.slice(1)) && notYet("video")) || (argv[0] === "dsh" && argv[1] === "bundle" && notYet("bundle"));
   if (waits) throw new Error(waits);
-  if (argv[0] === "video") return require("./video/command").run(argv.slice(1), out, { readSecret });
-  // Only the default data folder is migrated; a DSHPROXY_HOME the user set is
-  // used as given.
-  if (!process.env.DSHPROXY_HOME) {
-    const moved = settingsFile.migrateHome();
-    if (moved.moved) out(`Moved the data folder from ${moved.from} to ${settingsFile.homeDir()}.`);
-  }
-  // On macOS the data folder is private to this account (spec 0014, design 3).
+  // On macOS the data folder is private to this account (spec 0014, design 3),
+  // for every command that may use it, video commands included.
   if (process.platform === "darwin") {
     try {
       fs.chmodSync(settingsFile.homeDir(), 0o700);
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
+  }
+  if (argv[0] === "video") return require("./video/command").run(argv.slice(1), out, { readSecret });
+  // Only the default data folder is migrated; a DSHPROXY_HOME the user set is
+  // used as given.
+  if (!process.env.DSHPROXY_HOME) {
+    const moved = settingsFile.migrateHome();
+    if (moved.moved) out(`Moved the data folder from ${moved.from} to ${settingsFile.homeDir()}.`);
   }
   const [command, ...rest] = argv;
   const flags = new Set(rest.filter((item) => item.startsWith("--")));
