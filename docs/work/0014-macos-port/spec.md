@@ -129,7 +129,7 @@ Proven before any production code, 23 Nov, with `spike/proof.js` on two GitHub M
 - Did not hold as first written: a read of a locked keychain does not end with an error. It waits for a dialog, on a machine with nobody at it too, and has to be ended. Design 1 and C9 are written to that.
 - The backend: both archives match their SHA-256, unpack with `/usr/bin/tar`, hold `cli-proxy-api`, start with the gateway's own configuration, answer on `/v1/models` in half a second, and end on SIGTERM. Both processors.
 
-The proof can be repeated on any Mac: `node docs/work/0014-macos-port/spike/proof.js`. Off GitHub it touches only a keychain file it creates in the temporary folder.
+The proof was removed in slice A6, once its facts were covered by tests (`test/keywrap-darwin.test.js`, `test/backend.test.js`, `test/modes-darwin.test.js`, `scripts/start-stop-check.js`). It is in the history at commit `154ce01` (`docs/work/0014-macos-port/spike/proof.js`).
 
 ## What the Keychain does and does not protect
 
