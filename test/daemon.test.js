@@ -1366,7 +1366,7 @@ test("a restart after a backend rollback waits for the request in flight, then t
 
 // ------------------------------- the video picker's own path -------------------------------
 
-test("a request for a video entry is answered by the gateway itself and never forwarded; a chat request beside it is forwarded as before", { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
+test("a request for a video entry is answered by the gateway itself and never forwarded; a chat request beside it is forwarded as before", async (t) => {
   const g = await startGateway(t);
   const body = JSON.stringify({ model: "seedance-2.5/720p/krea", max_tokens: 4096, stream: true, messages: [{ role: "user", content: "A red ball rolls slowly across a wooden table" }] });
   const video = await call(g.port, { method: "POST", target: "/dshproxy/video/v1/messages", headers: { "content-type": "application/json" }, body }).done;
