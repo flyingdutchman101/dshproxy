@@ -212,8 +212,6 @@ function offeredModels(settings, activeAccounts, readable, discovery = { catalog
 // models`, image checks and account lookups never see them. Video settings
 // that cannot be read offer no entry and never stand in the way of chat.
 async function videoModels(home) {
-  // On macOS no video entry is offered until stage B of 0014.
-  if (require("./not-yet").notYet("video")) return { video: [], videoError: null };
   try {
     return { video: await require("./video/picker/entries").models(home), videoError: null };
   } catch (error) {
