@@ -1,5 +1,5 @@
 'use strict';
-// Throwaway proof for 0012 (macOS port). Not production code; removed before
+// Throwaway proof for 0013 (macOS port). Not production code; removed before
 // the branch is merged. It runs on a GitHub macOS machine and answers, with
 // observations instead of beliefs:
 //
