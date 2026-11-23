@@ -181,4 +181,4 @@ The Windows app has five pages (Accounts, API keys, Lanes, DeepSeek Harness, Log
 1. Scope: the same functionality as on Windows. **Decided by the user, 23 Nov.**
 2. Pushing the `macos-port` branch. **Decided by the user, 23 Nov: yes.**
 3. Key wrapper: the Keychain. Not decided by the user in so many words; taken from "exactly the same as win" and from the proof having passed. Say so if a plain private file is preferred.
-4. Stage D: web page or native app. **Open**, for the user, at the start of stage D.
+4. Stage D: web page or native app. **Decided by the user, 23 Nov: a native app, built like DroidProxy** (Swift, a menu-bar item without a Dock icon, a window with the pages; it starts the gateway and drives it through the control API). While the gateway is stopped only the menu-bar item shows it and offers Start. A native prototype comes before production code.
