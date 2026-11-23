@@ -6,7 +6,6 @@ const NOT_YET = {
   // Stage B: video. Paid jobs, the video picker of the chat model list and
   // everything on the Krea route.
   video: 'Paid video is not available on macOS yet. Nothing was changed.',
-  krea: 'The Krea sign-in is not available on macOS yet. Nothing was changed.',
   // Stage C: the video tools plugin for DeepSeek Harness.
   bundle: 'Installing the video plugin into DeepSeek Harness is not available on macOS yet. Nothing was changed.'
 };

@@ -15,7 +15,6 @@ const YAML = require('yaml');
 
 const ROOT = path.join(__dirname, '..');
 const CLI = path.join(ROOT, 'bin', 'dshproxy.js');
-const KREA = path.join(ROOT, 'bin', 'dshproxy-krea.js');
 const macOnly = process.platform === 'darwin' ? {} : { skip: 'macOS only: on Windows video, the Krea sign-in and the plugin install work' };
 
 function box(t) {
@@ -51,8 +50,6 @@ for (const [file, args, sentence] of [
   [CLI, ['video', 'krea', 'wan-3.0'], /^DSHProxy: Paid video is not available on macOS yet\. Nothing was changed\.$/],
   [CLI, ['dsh', 'bundle', 'status'], /^DSHProxy: Installing the video plugin into DeepSeek Harness is not available on macOS yet\. Nothing was changed\.$/],
   [CLI, ['dsh', 'bundle', 'install'], /^DSHProxy: Installing the video plugin into DeepSeek Harness is not available on macOS yet\. Nothing was changed\.$/],
-  [KREA, ['status'], /^The Krea sign-in is not available on macOS yet\. Nothing was changed\.$/],
-  [KREA, ['login'], /^The Krea sign-in is not available on macOS yet\. Nothing was changed\.$/]
 ]) {
   test(`on macOS, ${path.basename(file)} ${args.join(' ')} says it is not available yet and changes nothing`, macOnly, (t) => {
     const found = box(t);

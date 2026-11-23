@@ -122,13 +122,35 @@ const LOCK_STALE_MS = 120000;
 // protection unless a test replaces it.
 function windowsStore({lockWaitMs=30000,protect=dpapi}={}) {
   check(process.platform==='win32' && process.env.LOCALAPPDATA && path.isAbsolute(process.env.LOCALAPPDATA));
-  const dir=path.join(process.env.LOCALAPPDATA,'DSHProxy','KreaOAuth');const file=path.join(dir,'session.v1');
+  return sessionStore({dir:path.join(process.env.LOCALAPPDATA,'DSHProxy','KreaOAuth'),lockWaitMs,protect});
+}
+// The same store on macOS (docs/work/0014-macos-port, stage B): the same file,
+// in ~/Library/Application Support/DSHProxy/KreaOAuth, the folder readable by
+// this account only, the file's key wrapped through the Keychain by the key
+// wrapper of src/keywrap-darwin.js where Windows uses DPAPI.
+function macStore({lockWaitMs=30000,home=process.env.HOME,keywrap,protect}={}) {
+  check(process.platform==='darwin' && typeof home==='string' && path.isAbsolute(home));
+  return sessionStore({dir:path.join(home,'Library','Application Support','DSHProxy','KreaOAuth'),lockWaitMs,protect:protect||keychainProtect(keywrap),folderMode:0o700});
+}
+function keychainProtect(given) {
+  return async (mode,bytes)=>{
+    const keywrap=given||require('../keywrap-darwin').defaultKeywrap();
+    try {
+      if(mode==='Protect') return Buffer.from(await keywrap.wrap(Buffer.from(bytes)),'utf8');
+      const key=await keywrap.unwrap(Buffer.from(bytes).toString('utf8'));
+      check(key && key.length===32);return key;
+    } catch { throw Error('KREA_REFUSED'); }
+  };
+}
+function sessionStore({dir,lockWaitMs,protect,folderMode=null}) {
+  const file=path.join(dir,'session.v1');
+  const makeFolder=async()=>{await fs.mkdir(dir,{recursive:true});if(folderMode!==null)await fs.chmod(dir,folderMode);};
   const raw={async save(session){
     const key=crypto.randomBytes(32),iv=crypto.randomBytes(12);let packed;
     try {const cipher=crypto.createCipheriv('aes-256-gcm',key,iv);const data=Buffer.concat([cipher.update(JSON.stringify(session),'utf8'),cipher.final()]);
       packed=JSON.stringify([await protect('Protect',key),iv,cipher.getAuthTag(),data].map(x=>x.toString('base64')));
     }finally{key.fill(0)}
-    await fs.mkdir(dir,{recursive:true});
+    await makeFolder();
     // Written beside the file, flushed to the disk, then put in its place: a
     // reader sees the old sign-in or the new one, and a renewed sign-in that
     // was reported as saved is on the disk.
@@ -145,7 +167,7 @@ function windowsStore({lockWaitMs=30000,protect=dpapi}={}) {
   },async clear(){await patiently(()=>fs.rm(file,{force:true}));}};
   // `waitMs` is how long this call waits for the lock, if not the store's own time.
   async function transaction(work,{waitMs=lockWaitMs}={}) {
-    await fs.mkdir(dir,{recursive:true});
+    await makeFolder();
     let finished=false,result;
     try { await withLock(file,async()=>{result=await work(raw);finished=true;},{waitMs,staleMs:LOCK_STALE_MS}); }
     // The work is done and its result stands even when the lock was taken
@@ -265,4 +287,4 @@ async function status(store,now=Date.now,{fetchImpl=globalThis.fetch}={}) {
   try { const s=await current(store,now,fetchImpl,{waitMs:STATUS_LOCK_WAIT_MS}); return {signedIn:true,expiresAt:s.expiresAt,canRenew:renewable(s)}; } catch { /* not usable now */ }
   try { return {signedIn:false,canRenew:renewable(await store.load())}; } catch { return {signedIn:false,canRenew:false}; }
 }
-module.exports={login,access,status,windowsStore};
+module.exports={login,access,status,windowsStore,macStore};
