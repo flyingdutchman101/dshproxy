@@ -1,6 +1,6 @@
 # DeepSeekProxy (DSHProxy)
 
-A local model gateway for DeepSeek Harness on Windows. It runs a pinned, unmodified [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) release and puts one small HTTP server in front of it.
+A local model gateway for DeepSeek Harness on Windows and macOS. It runs a pinned, unmodified [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) release and puts one small HTTP server in front of it.
 
 DeepSeek Harness gets two kinds of model from it:
 
@@ -11,8 +11,27 @@ It is a standalone project. It shares no code or git history with DroidProxy or 
 
 ## Requirements
 
-- Windows, x64 or arm64
+- Windows, x64 or arm64, or macOS on Apple Silicon or Intel
 - Node.js 22 or later
+
+## macOS
+
+The gateway and the command line work on macOS as on Windows: sign in to providers, save API keys, apply the routes to DeepSeek Harness, chat through a lane, stop, update the backend. Install and run them as in [Set up from the command line](#set-up-from-the-command-line), in Terminal:
+
+```sh
+npm ci --ignore-scripts
+node bin/dshproxy.js login claude
+node bin/dshproxy.js key set deepseek    # the key is read from standard input
+node bin/dshproxy.js start               # keep this window open
+```
+
+The first `start` downloads the macOS release of CLIProxyAPI for your processor and installs it only if its SHA-256 matches [backend.lock.json](backend.lock.json).
+
+**Not there yet on macOS.** Paid video (`video submit`, `video status`, the video picker, everything on the Krea route), the Krea sign-in, and `dsh bundle` say "not available on macOS yet" and change nothing. `video list`, the offline `video quote` of the API routes and `video key` work. There is no app yet: no window and no menu-bar icon, and nothing starts at login.
+
+**What protects which secret.** The key that encrypts your saved API keys (`master.key`) is wrapped with a key DSHProxy keeps in your login Keychain (an item named `DSHProxy`, account `key-wrapper`), as Windows wraps it with DPAPI. Every file and folder DSHProxy writes is readable by your account only. `backend-config.yaml` and `auth/` hold API keys and sign-ins in plain text, as on Windows, because CLIProxyAPI reads them from there. If your login Keychain is locked, macOS asks for its password; DSHProxy waits 10 seconds, then says that the Keychain is locked and saves nothing. Decision: [0009](docs/decisions/0009-keys-on-macos-are-wrapped-through-the-keychain.md).
+
+`dsh apply` makes `~/.dsh/.credentials.yaml` readable by your account only every time, because DeepSeek Harness refuses one that others can read, and `dsh verify` reports one that is not.
 
 ## Windows app
 
@@ -85,6 +104,9 @@ The first `start` or `login` downloads the CLIProxyAPI release named in [backend
 | `key remove <provider>` | Removes a saved API key |
 | `key list` | Lists API-key providers and their regions |
 | `models` | Lists the models that can be offered right now |
+| `backend version` | Shows the CLIProxyAPI version in use |
+| `backend update` | Asks the running gateway to look for a newer CLIProxyAPI and switch to it, as the app's **Update...** does |
+| `backend rollback` | With the gateway stopped, goes back to the previous CLIProxyAPI version |
 | `dsh apply [--dry-run]` | Writes the models into every DeepSeek Harness profile; repairs a missing default model |
 | `dsh verify` | Checks the profiles back: routes, base URLs, offered models, image caps, default model, credential, leftover DroidProxy providers |
 | `dsh status` | Shows which DSHProxy routes each profile has |
@@ -158,7 +180,7 @@ Everything is under `~/.dshproxy` (override with `DSHPROXY_HOME`):
 | File | Contents |
 |---|---|
 | `settings.json` | Ports, lanes, and API keys in encrypted form |
-| `master.key` | The key that encrypts the API keys, wrapped by Windows DPAPI for your account |
+| `master.key` | The key that encrypts the API keys, wrapped by Windows DPAPI for your account, or on macOS with a key kept in your login Keychain |
 | `auth/` | Subscription credentials written by CLIProxyAPI |
 | `backend-config.yaml` | The CLIProxyAPI configuration, rewritten on every start. **It holds your API keys in plain text**, because CLIProxyAPI reads them from there. |
 | `bin/<version>/` | The installed CLIProxyAPI release |
@@ -193,11 +215,11 @@ Once the ladders have been edited by hand (in settings.json), the tab shows **Cu
 **Lanes are never changed for you.** When a newer version of a model on a lane appears (for example Fable 5.3 for Fable 5.2), the Models tab suggests it; nothing changes until you press **Use** and confirm.
 
 **Backend updates.** Every 6 hours DSHProxy asks GitHub for the latest CLIProxyAPI release (no drafts or pre-releases). When one is newer, the app shows **Update...**. Updating:
-1. downloads the release's Windows zip and checks it against the `checksums.txt` that release publishes (addresses outside the official release path are refused);
+1. downloads the release's archive for your system (the Windows zip, or the macOS `.tar.gz`) and checks it against the `checksums.txt` that release publishes (addresses outside the official release path are refused);
 2. starts it on a spare loopback port with your accounts and sends one short request per signed-in service (an out-of-quota answer does not count against it);
 3. only if that passes, switches `~/.dshproxy/backend.lock.json` to it, keeps the version it replaces, and restarts the gateway (a few seconds offline). The restart waits for a moment with no request in flight; if none comes within 15 minutes it restarts anyway and the log says how many requests were cut.
 
-If the new version will not start, DSHProxy goes back to the previous one by itself. **Roll back...** in the app, or `dshproxy backend rollback` with the gateway stopped, returns to the previous version. The version shipped in the repo's `backend.lock.json` is the floor: an older update is ignored.
+If the new version will not start, DSHProxy goes back to the previous one by itself. From the command line, `dshproxy backend update` does the same while the gateway runs. **Roll back...** in the app, or `dshproxy backend rollback` with the gateway stopped, returns to the previous version. The version shipped in the repo's `backend.lock.json` is the floor: an older update is ignored.
 
 ## Sign-in and limits
 
@@ -230,7 +252,7 @@ The Windows app reaches these through a control API on the gateway (`/dshproxy/c
 
 ## Updating the backend
 
-Edit `version`, the two `url` values and the two `sha256` values in [backend.lock.json](backend.lock.json). Take the checksums from `checksums.txt` on the CLIProxyAPI release page. The next `start` installs the new version.
+Edit `version`, the four `url` values and the four `sha256` values (Windows and macOS, two processors each) in [backend.lock.json](backend.lock.json). Take the checksums from `checksums.txt` on the CLIProxyAPI release page. The next `start` installs the new version.
 
 ## Tests
 
@@ -238,6 +260,8 @@ Edit `version`, the two `url` values and the two `sha256` values in [backend.loc
 npm test
 npm run check
 ```
+
+On macOS the tests use throwaway keychain files and never your login Keychain. The tests that lock a keychain make macOS show a password dialog, so they run only on CI or with `DSHPROXY_TEST_LOCKED_KEYCHAIN=1`. `node scripts/start-stop-check.js` downloads the backend, starts and stops it in a throwaway folder.
 
 ## Video routing (CLI)
 
