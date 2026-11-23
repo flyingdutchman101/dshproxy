@@ -49,14 +49,38 @@ function windowsProcessPath(pid) {
   });
 }
 
-const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+// On macOS: the path the program was started with, as `ps` shows it. DSHProxy
+// starts the backend by its full path, so its own backend shows that path.
+function macProcessPath(pid) {
+  return new Promise((resolve) => {
+    execFile("/bin/ps", ["-ww", "-o", "comm=", "-p", String(Number(pid))], { timeout: 15000, env: {} }, (error, stdout) => {
+      resolve(error ? null : String(stdout).trim() || null);
+    });
+  });
+}
+
+// Windows compares paths without case. macOS compares the real paths (links
+// such as /var -> /private/var resolved) exactly; a path that does not exist
+// any more is nobody's.
+function samePathWindows(a, b) {
+  return path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+}
+function samePathMac(a, b) {
+  try {
+    return fs.realpathSync(a) === fs.realpathSync(b);
+  } catch {
+    return false;
+  }
+}
+const samePath = process.platform === "win32" ? samePathWindows : samePathMac;
+const defaultProcessPath = process.platform === "win32" ? windowsProcessPath : macProcessPath;
 
 // A gateway that was killed leaves its backend running and holding the port.
 // The backend's process ID is recorded when it starts; it is stopped here only
 // when that process is still this gateway's own backend program. A process ID
 // that now belongs to anything else (including another program's
 // cli-proxy-api.exe) is left alone.
-async function reclaimOrphan({ pidFile, binary, processPath = windowsProcessPath, kill = (pid) => process.kill(pid) }) {
+async function reclaimOrphan({ pidFile, binary, processPath = defaultProcessPath, kill = (pid) => process.kill(pid) }) {
   let pid;
   try {
     pid = Number(fs.readFileSync(pidFile, "utf8").trim());
@@ -74,7 +98,7 @@ async function reclaimOrphan({ pidFile, binary, processPath = windowsProcessPath
   }
 }
 
-function createSupervisor({ binary, configPath, host, port, pidFile = null, log = () => {} }) {
+function createSupervisor({ binary, configPath, host, port, pidFile = null, log = () => {}, processPath = defaultProcessPath, kill }) {
   let child = null;
   let stopping = false;
   let restartTimer = null;
@@ -126,7 +150,7 @@ function createSupervisor({ binary, configPath, host, port, pidFile = null, log 
   // Never stops another program to free the port: VeryCuteDroidProxy or a
   // second DSHProxy may own it.
   async function start({ timeoutMs = 30000 } = {}) {
-    if (pidFile && await reclaimOrphan({ pidFile, binary })) {
+    if (pidFile && await reclaimOrphan({ pidFile, binary, processPath, ...(kill ? { kill } : {}) })) {
       log("stopped a backend left running by an earlier DSHProxy");
       for (let attempt = 0; attempt < 20 && await portInUse(host, port); attempt += 1) await sleep(250);
     }
