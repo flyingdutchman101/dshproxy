@@ -60,7 +60,12 @@ const COMPACTION = 'You are now acting as a compaction engine';
 const AUTOMATION = ['<goal_round', '[SCHEDULE REMINDER]'];
 // What the Harness tells a subagent about itself in its session reminder. A
 // required part of that reminder: the agent that delegated cannot leave it out.
-const DELEGATED = 'You are a subagent delegated by agent "';
+// The reminder's own first line is asked for as well, so that text which only
+// names the tag and quotes the wording is not taken for one.
+const REMINDER_OPEN = '<system-reminder>';
+const REMINDER_CLOSE = '</system-reminder>';
+const REMINDER_INTRO = 'The following information describes your current session';
+const SUBAGENT = 'You are a subagent delegated by agent "';
 // Text with one of these in it was not typed as a prompt, whatever frames
 // it, and is never sent to a provider. So is text over the prompt limit.
 const UNFIT = ['JSON array of human messages', '<goal_round', '[SCHEDULE REMINDER]', '<system-reminder>'];
@@ -134,6 +139,27 @@ function units(content) {
   return Array.isArray(content) ? content.filter(textBlock).map((block) => block.text) : [];
 }
 
+// True when the text holds a session reminder of the Harness that says the
+// session is a subagent's: the tag, the reminder's first line, and the wording
+// before the tag closes. A reminder that is never closed counts. One pass:
+// neither position is looked for twice from the same place.
+function subagentReminder(text) {
+  let said = -2;
+  let close = -2;
+  for (let open = text.indexOf(REMINDER_OPEN); open >= 0; open = text.indexOf(REMINDER_OPEN, open + 1)) {
+    let body = open + REMINDER_OPEN.length;
+    if (text.startsWith('\r\n', body)) body += 2;
+    else if (text.startsWith('\n', body)) body += 1;
+    else continue;
+    if (!text.startsWith(REMINDER_INTRO, body)) continue;
+    if (said !== -1 && said < body) said = text.indexOf(SUBAGENT, body);
+    if (said === -1) return false;
+    if (close !== -1 && close < body) close = text.indexOf(REMINDER_CLOSE, body);
+    if (close === -1 || said < close) return true;
+  }
+  return false;
+}
+
 function systemText(system) {
   if (typeof system === 'string') return system;
   if (!Array.isArray(system)) return '';
@@ -172,7 +198,7 @@ function read(body) {
     const message = messages[index];
     if (!record(message) || (message.role !== 'user' && message.role !== 'assistant')) return { kind: 'malformed' };
     if (message.role === 'assistant') last = index;
-    else if (!delegated) delegated = units(message.content).some((unit) => unit.trimStart().startsWith(INJECTED[0]) && unit.includes(DELEGATED));
+    else if (!delegated) delegated = subagentReminder(units(message.content).join('\n'));
   }
 
   // Units: a message whose content is a string is one; in a list every text

@@ -275,8 +275,9 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
 
   // A profile needs a default model that exists. If none is set (or it names
   // something this gateway does not serve), point it at a lane so a new session
-  // never starts on a model that is gone. A video entry is not a default model
-  // either: no new session may start on a paid entry.
+  // never starts on a model that is gone. A video entry as the default is what
+  // picking one in a chat leaves behind (decision 0008); applying sets a lane
+  // again, so that new sessions start on a chat model.
   let repairedDefault = false;
   const laneNames = Object.keys(options.lanes || {});
   const preferredLane = laneNames.includes("google") ? "google" : laneNames[0];
@@ -402,32 +403,36 @@ function videoExposures(doc) {
   };
   const found = [];
   let searched = 0;
-  const walk = (node, owner, trail, followed) => {
+  // `entry`: this node is one of the profile's own entries. `ownerIsEntry`:
+  // the entry ID in `owner` was read from one of those, not from a mapping
+  // further down that merely has an `id`.
+  const walk = (node, owner, trail, followed, entry = false, ownerIsEntry = false) => {
     if (!node || node === providersNode) return;
     searched += 1;
     if (searched > MAX_SEARCHED_NODES) throw new Error("the profile is too large to search for the paid video route");
     if (YAML.isAlias(node)) {
       // A reference that leads back to itself ends here.
-      if (!followed.includes(node)) walk(node.resolve(doc), owner, trail, [...followed, node]);
+      if (!followed.includes(node)) walk(node.resolve(doc), owner, trail, [...followed, node], entry, ownerIsEntry);
       return;
     }
     if (YAML.isSeq(node)) {
       // An entry without an ID is named by its position in the file.
-      node.items.forEach((item, index) => walk(item, owner, node === doc.contents ? `entry ${index + 1}` : `${trail}[${index}]`, followed));
+      const top = node === doc.contents;
+      node.items.forEach((item, index) => walk(item, owner, top ? `entry ${index + 1}` : `${trail}[${index}]`, followed, top, top ? false : ownerIsEntry));
       return;
     }
     if (!YAML.isMap(node)) return;
     const id = plain(node.get("id", true));
-    if (typeof id === "string" && id) [owner, trail] = [id, ""];
+    if (typeof id === "string" && id) [owner, trail, ownerIsEntry] = [id, "", entry];
     if (plain(node.get("provider", true)) === VIDEO_ROUTE) {
       const model = plain(node.get("model", true));
       const where = owner ? `${owner}${trail ? ` at ${trail}` : ""}` : `the profile at ${trail}`;
-      const pickedDefault = owner === "agent-default-model" && trail === "config";
+      const pickedDefault = ownerIsEntry && owner === "agent-default-model" && trail === "config";
       if (!pickedDefault) found.push({ where, model: typeof model === "string" ? model : "" });
     }
     for (const pair of node.items) {
       const key = String(YAML.isScalar(pair.key) ? pair.key.value : pair.key);
-      walk(pair.value, owner, trail ? `${trail}.${key}` : key, followed);
+      walk(pair.value, owner, trail ? `${trail}.${key}` : key, followed, false, ownerIsEntry);
     }
   };
   walk(doc.contents, null, "", []);
