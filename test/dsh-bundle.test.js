@@ -52,6 +52,13 @@ else if (mode === "fail") {
   process.exitCode = 1;
 } else if (mode === "noop") console.log("Already up to date");
 else if (mode === "hang") setInterval(() => {}, 1000);
+else if (mode === "stubborn") {
+  // A descendant that ignores SIGTERM and holds none of the command's output.
+  const { spawn } = require("child_process");
+  const late = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  fs.writeFileSync(path.join(__dirname, "stubborn.pid"), String(late.pid));
+  setInterval(() => {}, 1000);
+}
 else if (mode === "ok-then-hang") {
   install();
   setInterval(() => {}, 1000);
@@ -870,9 +877,13 @@ test("on macOS, Harness is looked for in DSHPROXY_HARNESS_DIR, then /Application
   assert.equal(look({ DSHPROXY_HARNESS_DIR: path.join(box.base, "nothing here"), HOME: own }, [system]), null);
   assert.equal(look({ HOME: own }, [system, path.join(own, "Applications")]), inSystem);
   assert.equal(look({ HOME: own }, [path.join(box.base, "empty"), path.join(own, "Applications")]), inOwn);
-  // The default places are /Applications and the home folder's Applications.
-  assert.equal(look({ HOME: own }, undefined), fs.existsSync("/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh") ? "/Applications/DeepSeek Harness.app" : inOwn);
-  // An application folder without the command is not it.
+  // The default places are /Applications and the home folder's Applications (named, not looked in, here).
+  assert.deepEqual(bundle.macApplicationFolders({ HOME: own }), ["/Applications", path.join(own, "Applications")]);
+  assert.deepEqual(bundle.macApplicationFolders({}), ["/Applications"]);
+  // An application folder without its program, or without the command, is not it.
+  fs.rmSync(path.join(inOwn, "Contents", "MacOS", "DeepSeek Harness"));
+  assert.equal(look({ HOME: own }, [path.join(own, "Applications")]), null);
+  writeStandIn(inOwn);
   fs.rmSync(path.join(commandDir(inOwn), "dsh"));
   assert.equal(look({ HOME: own }, [path.join(own, "Applications")]), null);
 });
@@ -906,4 +917,41 @@ test("on macOS, the command's output on standard error is kept in the log and it
   const log = fs.readFileSync(result.log, "utf8");
   assert.match(log, /an earlier line that must not be shown/);
   assert.match(log, /dsh: plugin command failed/);
+});
+
+test("on macOS, a command that ends after the time limit is not signalled again afterwards", macOnly, async (t) => {
+  const box = sandbox(t, { standIn: "hang" });
+  const command = path.join(commandDir(box.harness), "dsh");
+  const signals = [];
+  const realKill = process.kill;
+  process.kill = (pid, signal) => { signals.push([pid, signal]); return realKill.call(process, pid, signal); };
+  t.after(() => { process.kill = realKill; });
+  const result = await bundle.runCommand({ command, args: ["plugin"], env: process.env, cwd: box.base, timeoutMs: 1000 });
+  assert.equal(result.timedOut, true);
+  const after = signals.length;
+  // Longer than the pause before the last resort; nothing more is sent.
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  assert.equal(signals.length, after, JSON.stringify(signals));
+  assert.ok(signals.every(([pid]) => pid < 0), "only the command's own group is signalled");
+  // The group ended on SIGTERM, so the last resort was never needed.
+  assert.equal(signals.some(([, signal]) => signal === "SIGKILL"), false, JSON.stringify(signals));
+});
+
+test("on macOS, a descendant that ignores SIGTERM and holds no output is ended too", macOnly, async (t) => {
+  const box = sandbox(t, { standIn: "stubborn" });
+  const command = path.join(commandDir(box.harness), "dsh");
+  const pidFile = path.join(commandDir(box.harness), "stubborn.pid");
+  t.after(() => { try { process.kill(Number(fs.readFileSync(pidFile, "utf8")), "SIGKILL"); } catch { /* gone */ } });
+  const result = await bundle.runCommand({ command, args: ["plugin"], env: process.env, cwd: box.base, timeoutMs: 1500 });
+  assert.equal(result.timedOut, true);
+  const late = Number(fs.readFileSync(pidFile, "utf8"));
+  assert.equal(await untilGone(late, 2000), true, "the descendant outlived the command");
+});
+
+test("on macOS, a Harness program named in another case on this file system is the same program", macOnly, async (t) => {
+  const box = sandbox(t);
+  writeProfile(box);
+  const shouted = { name: "DEEPSEEK HARNESS", path: path.join(box.harness, "Contents", "MacOS", "DeepSeek Harness").toUpperCase() };
+  const insensitive = fs.existsSync(shouted.path);
+  assert.equal((await bundle.state(deps(box, { processes: async () => [shouted] }))).harnessRunning, insensitive);
 });

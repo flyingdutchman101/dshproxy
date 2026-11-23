@@ -46,15 +46,15 @@ const firstLine = (text) => String(text || "").split(/\r?\n/)[0].trim();
 const pathKey = (item) => path.resolve(item).replace(/[\\/]+$/, "").toLowerCase();
 const samePath = (a, b) => pathKey(a) === pathKey(b);
 const inside = (item, dir) => pathKey(item).startsWith(`${pathKey(dir)}\\`);
-// macOS: real paths (links resolved), without regard to case as the usual
-// file system has it, separated by "/".
+// macOS: real paths, links resolved and in the case the file system stores
+// (the system's own realpath does both), separated by "/".
 function realKey(item) {
   // The deepest part of the path that exists is resolved; the rest is kept.
   let head = path.resolve(item);
   let tail = "";
   for (;;) {
     try {
-      head = fs.realpathSync(head);
+      head = fs.realpathSync.native(head);
       break;
     } catch {
       const parent = path.dirname(head);
@@ -63,7 +63,7 @@ function realKey(item) {
       head = parent;
     }
   }
-  return path.join(head, tail).replace(/\/+$/, "").toLowerCase();
+  return path.join(head, tail).replace(/\/+$/, "");
 }
 const insideMac = (item, dir) => realKey(item).startsWith(`${realKey(dir)}/`);
 const commandIn = (dir) => path.join(dir, ...COMMAND);
@@ -101,12 +101,18 @@ function registeredCommand() {
 // %DSHPROXY_HARNESS_DIR% when set (then nothing else is tried), else
 // %LOCALAPPDATA%\Programs\DeepSeek Harness, else the folder of the program
 // registered for dsh: links.
+// macOS: where applications usually are, in the order they are looked in.
+function macApplicationFolders(env = process.env) {
+  return ["/Applications", ...(env.HOME ? [path.join(env.HOME, "Applications")] : [])];
+}
+
 function locateHarness({ env = process.env, registry = registeredCommand, applications } = {}) {
-  const usable = (dir) => (dir && isFile(commandIn(dir)) ? path.resolve(dir) : null);
+  // On macOS an application folder must hold its program as well as the command.
+  const usable = (dir) => (dir && isFile(commandIn(dir)) && (!MAC || isFile(path.join(dir, ...MAC_PROGRAM))) ? path.resolve(dir) : null);
   if (env.DSHPROXY_HARNESS_DIR) return usable(env.DSHPROXY_HARNESS_DIR);
   // macOS: /Applications, then the Applications folder in the home folder.
   if (MAC) {
-    const places = applications || ["/Applications", ...(env.HOME ? [path.join(env.HOME, "Applications")] : [])];
+    const places = applications || macApplicationFolders(env);
     for (const place of places) {
       const found = usable(path.join(place, MAC_APP));
       if (found) return found;
@@ -427,20 +433,37 @@ function runMacCommand({ command, args, env, cwd, timeoutMs }) {
     let settled = false;
     let timer = null;
     let grace = null;
+    let lastResort = null;
     const finish = (code, error = null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       clearTimeout(grace);
+      clearTimeout(lastResort);
       resolve({ code: timedOut ? null : code, timedOut, output, error });
     };
+    // Whether the command's process group still has a member. While it has,
+    // its number cannot be given to anyone else, so signalling it is safe.
+    const groupAlive = () => {
+      try {
+        process.kill(-child.pid, 0);
+        return true;
+      } catch (error) {
+        return error.code === "EPERM";
+      }
+    };
     const group = (signal) => {
+      if (settled || !groupAlive()) return;
       try {
         process.kill(-child.pid, signal);
-      } catch { /* gone already */ }
+      } catch { /* gone meanwhile */ }
     };
     child.on("error", (error) => finish(null, `not started: ${firstLine(error.message)}`));
-    child.on("close", (code) => finish(code));
+    // After the time limit the run ends when the whole group is gone, not when
+    // the output closes: a descendant can close it and live on.
+    child.on("close", (code) => {
+      if (!timedOut) finish(code);
+    });
     if (!child.pid) return undefined;
     // Standard output and standard error in one, in the order they arrive.
     for (const stream of [child.stdout, child.stderr]) {
@@ -452,14 +475,23 @@ function runMacCommand({ command, args, env, cwd, timeoutMs }) {
     timer = setTimeout(() => {
       timedOut = true;
       group("SIGTERM");
-      setTimeout(() => group("SIGKILL"), 2000).unref();
-      // Something that outlived the group may still hold the output open.
-      grace = setTimeout(() => {
-        child.stdout.destroy();
-        child.stderr.destroy();
-        child.unref();
-        finish(null);
-      }, STOPPED_GRACE_MS);
+      // SIGKILL to whatever of the group is left after two seconds; the run
+      // ends as soon as the group is gone, or after the grace time at most.
+      const startedAt = Date.now();
+      const watch = () => {
+        if (settled) return;
+        if (!groupAlive()) return finish(null);
+        if (Date.now() - startedAt >= 2000) group("SIGKILL");
+        if (Date.now() - startedAt >= STOPPED_GRACE_MS) {
+          child.stdout.destroy();
+          child.stderr.destroy();
+          child.unref();
+          return finish(null);
+        }
+        lastResort = setTimeout(watch, 100);
+        return undefined;
+      };
+      watch();
     }, timeoutMs);
     return undefined;
   });
@@ -542,4 +574,4 @@ async function install(deps = {}) {
   return { ok, bundle: after.bundle, message, log };
 }
 
-module.exports = { PACKAGE, PROFILE, state, install, describe, locateHarness, runCommand };
+module.exports = { PACKAGE, PROFILE, state, install, describe, locateHarness, macApplicationFolders, runCommand };
