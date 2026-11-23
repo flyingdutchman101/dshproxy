@@ -11,7 +11,7 @@
 | Plan review, stage A | done | 23 Nov on the Mac, one fresh-context reviewer subagent (the `reviewer` role could not be started: tool error; same model family as the author, so not cross-family): 2 Blocker, 9 Major, 4 Nit. Plan revised, spec C3, C9, C10, C12 and design 4 amended; below. |
 | A0 baseline on the Mac | done | 23 Nov, user's Mac (arm64, macOS 26, Node 24.19.0). Proof: 17 passed, 1 failed (K7 after unlocking: a pending Keychain dialog blocks the next read; new fact). Tests: 914, 877 pass, 35 fail, 2 skipped; every failure explained in `research/facts.md` section 6. `package.json` and the lock allow `darwin`. |
 | A1 key wrapper | done on the Mac; Windows CI pending | 23 Nov. `src/keywrap-darwin.js`; `src/secrets.js` takes it on `darwin` (DPAPI code untouched). Red first: 12 of 13 new tests failed with "Windows could not protect a new key" before `secrets.js` was wired; green after. Full suite on the Mac: 929, 901 pass, 25 fail (all A2, A3, A5/B/C), 3 skipped; the 10 key-wrapper failures of A0 pass. Locked-keychain test (C9 through the CLI) not run here: CI only, from A6. |
-| A2 private files | open | |
+| A2 private files | done on the Mac; Windows CI pending | 23 Nov. Mask `077` in both `bin/` programs, data folder `0700` in `src/cli.js`, `.credentials.yaml` and backups `0600` and the `verify` report in `src/dsh/profile.js`, all on `darwin` only. Red first: the 3 tests of `test/modes-darwin.test.js` failed (folder `755`, no report), green after. `profile.test.js:535` split: skipped on macOS, new macOS test with a locked (`chflags uchg`) file; that one is a characterization (passes on the old code too). Suite on the Mac: 933, 905 pass, 24 fail (A3, A5/B/C), 4 skipped. |
 | A3 backend on a Mac | open | |
 | A4 updates | open | |
 | A5 not-yet sentences | open | |
@@ -21,7 +21,7 @@
 | Stage C plugin install: facts on the Mac, plan, build | open | outline in the spec |
 | Stage D app: inventory, decision, prototype, build | open | outline in the spec; decision 4 is the user's |
 
-Next step: slice A2 (`plan.md`, revised).
+Next step: slice A3 (`plan.md`, revised).
 
 ## Rulings
 

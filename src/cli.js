@@ -338,6 +338,14 @@ async function main(argv, out = console.log) {
     const moved = settingsFile.migrateHome();
     if (moved.moved) out(`Moved the data folder from ${moved.from} to ${settingsFile.homeDir()}.`);
   }
+  // On macOS the data folder is private to this account (spec 0014, design 3).
+  if (process.platform === "darwin") {
+    try {
+      fs.chmodSync(settingsFile.homeDir(), 0o700);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
   const [command, ...rest] = argv;
   const flags = new Set(rest.filter((item) => item.startsWith("--")));
   const args = rest.filter((item) => !item.startsWith("--"));

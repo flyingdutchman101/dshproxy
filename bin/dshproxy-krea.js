@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// On macOS what this helper creates is private to this account (spec 0014).
+if(process.platform==='darwin')process.umask(0o077);
 // Dedicated process: DSHProxy does not import this module or gain access to tokens.
 const {access,login,status,windowsStore}=require('../src/krea-helper/oauth');
 const codes=new Set(['KREA_LOGIN_REQUIRED','KREA_UNCERTAIN','KREA_REFUSED']);
