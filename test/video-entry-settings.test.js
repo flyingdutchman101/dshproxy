@@ -322,3 +322,24 @@ test('video settings prints what it printed before, with Flux 3 as a fifth model
   assert.deepEqual(await s.exec('settings', 'set', 'flux-3', 'krea', 'enabled'), { models: printed.models.map((row) => (row.model === 'flux-3' ? { ...row, enabled: true, route: 'krea' } : row)) });
   assert.deepEqual((await s.exec('entries')).entries.filter((entry) => entry.on).map((entry) => entry.label), ['Wan 3.0 - 720p - Krea']);
 });
+test('a settings file far larger than any real one is refused, not read', async (t) => {
+  const home = tempHome(t);
+  // Valid JSON, 300,000 items that are not entries: before the limit this was read and walked in full.
+  const huge = JSON.stringify({ models: {}, entries: Array.from({ length: 300000 }, () => 'x') });
+  assert.ok(Buffer.byteLength(huge) > 1024 * 1024);
+  fs.writeFileSync(file(home), huge);
+  const before = snapshot(home);
+  const tooLarge = /video-settings\.json is larger than 64 KB/;
+  await assert.rejects(async () => video.entries(home), tooLarge);
+  await assert.rejects(async () => video.entriesOn(home), tooLarge);
+  await assert.rejects(async () => video.read(home), tooLarge);
+  await assert.rejects(async () => video.setEntry(home, SEEDANCE, true), tooLarge);
+  assert.deepEqual(snapshot(home), before, 'a refused file is left exactly as it was');
+});
+
+test('a settings file with every entry switched on is far below the size limit', async (t) => {
+  const home = tempHome(t);
+  for (const { model, resolution, route } of catalog.entries()) await video.setEntry(home, { model, resolution, route }, true);
+  assert.equal((await video.entriesOn(home)).length, catalog.entries().length);
+  assert.ok(fs.statSync(file(home)).size < 16 * 1024, `the full file is ${fs.statSync(file(home)).size} bytes`);
+});

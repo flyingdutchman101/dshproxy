@@ -21,6 +21,9 @@ const { withLock, replaceFile } = require('../filelock');
 const { homeDir } = require('../settings');
 
 const FILE_NAME = 'video-settings.json';
+// With every entry of the catalog switched on the file is a few kilobytes. One
+// far beyond that is not a settings file, and is refused before it is read.
+const MAX_BYTES = 64 * 1024;
 // Signed-in workspace route: the `video` command takes it for every model, but
 // whether an account can run a given model there is not known in advance.
 const WORKSPACE_ROUTE = 'krea';
@@ -127,12 +130,20 @@ function loadAll(home) {
   const target = file(home);
   const state = { ...defaults(), on: new Set() };
   let text;
+  let size;
   try {
-    text = fs.readFileSync(target, 'utf8');
+    const handle = fs.openSync(target, 'r');
+    try {
+      size = fs.fstatSync(handle).size;
+      if (size <= MAX_BYTES) text = fs.readFileSync(handle, 'utf8');
+    } finally {
+      fs.closeSync(handle);
+    }
   } catch (error) {
     if (error.code === 'ENOENT') return state;
     throw new Error(`${target} cannot be read (${error.code || 'unknown error'}).`);
   }
+  if (text === undefined) throw new Error(`${target} is larger than 64 KB, which no video settings file is. Fix it, or move it away to start with every video model disabled.`);
   let saved;
   try {
     saved = JSON.parse(text);
