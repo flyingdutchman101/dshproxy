@@ -118,13 +118,15 @@ async function patiently(work) {
 // twice, the request and saving twice have ten seconds each at most, and a
 // helper started for a workspace call is ended after 90 seconds.
 const LOCK_STALE_MS = 120000;
-function windowsStore({lockWaitMs=30000}={}) {
+// `protect(mode, bytes)` wraps and unwraps the file's key; Windows data
+// protection unless a test replaces it.
+function windowsStore({lockWaitMs=30000,protect=dpapi}={}) {
   check(process.platform==='win32' && process.env.LOCALAPPDATA && path.isAbsolute(process.env.LOCALAPPDATA));
   const dir=path.join(process.env.LOCALAPPDATA,'DSHProxy','KreaOAuth');const file=path.join(dir,'session.v1');
   const raw={async save(session){
     const key=crypto.randomBytes(32),iv=crypto.randomBytes(12);let packed;
     try {const cipher=crypto.createCipheriv('aes-256-gcm',key,iv);const data=Buffer.concat([cipher.update(JSON.stringify(session),'utf8'),cipher.final()]);
-      packed=JSON.stringify([await dpapi('Protect',key),iv,cipher.getAuthTag(),data].map(x=>x.toString('base64')));
+      packed=JSON.stringify([await protect('Protect',key),iv,cipher.getAuthTag(),data].map(x=>x.toString('base64')));
     }finally{key.fill(0)}
     await fs.mkdir(dir,{recursive:true});
     // Written beside the file, flushed to the disk, then put in its place: a
@@ -139,7 +141,7 @@ function windowsStore({lockWaitMs=30000}={}) {
   },async load(){const h=await patiently(()=>fs.open(file,'r'));let packed;try{check((await h.stat()).size<=65536);packed=JSON.parse(await h.readFile('utf8'));}finally{await h.close()}
     check(Array.isArray(packed) && packed.length===4 && packed.every(v=>typeof v==='string' && /^[A-Za-z0-9+/]+={0,2}$/.test(v)));
     const [wrapped,iv,tag,data]=packed.map(v=>Buffer.from(v,'base64'));check(iv.length===12 && tag.length===16);
-    const key=await dpapi('Unprotect',wrapped);try{const decipher=crypto.createDecipheriv('aes-256-gcm',key,iv);decipher.setAuthTag(tag);return JSON.parse(Buffer.concat([decipher.update(data),decipher.final()]).toString('utf8'));}finally{key.fill(0)}
+    const key=await protect('Unprotect',wrapped);try{const decipher=crypto.createDecipheriv('aes-256-gcm',key,iv);decipher.setAuthTag(tag);return JSON.parse(Buffer.concat([decipher.update(data),decipher.final()]).toString('utf8'));}finally{key.fill(0)}
   },async clear(){await patiently(()=>fs.rm(file,{force:true}));}};
   // `waitMs` is how long this call waits for the lock, if not the store's own time.
   async function transaction(work,{waitMs=lockWaitMs}={}) {

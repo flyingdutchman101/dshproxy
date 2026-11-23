@@ -13,6 +13,11 @@ const { fork } = require('node:child_process');
 const modulePath = path.resolve(__dirname, '../src/krea-helper/oauth.js');
 const resource = 'https://api.krea.ai/mcp';
 const NOW = 1000000;
+// Windows data protection is reached through PowerShell, which takes a second
+// here and more than the helper's ten seconds on a cold build machine. These
+// tests are about the file and its lock between processes, so the file's key
+// is wrapped by this stand-in instead; everything else is the real store.
+const protect = async (mode, bytes) => Buffer.from(bytes).map((byte) => byte ^ 0x5a);
 const ended = { resource, accessToken: 'invented-old-access', refreshToken: 'invented-old-refresh', clientId: 'invented-client', tokenEndpoint: 'https://api.krea.ai/token', expiresAt: NOW - 1000 };
 
 if (process.argv[2] === 'worker') {
@@ -21,19 +26,19 @@ if (process.argv[2] === 'worker') {
   const told = () => new Promise((resolve) => process.once('message', resolve));
   const jobs = {
     // Renews; the fake token endpoint answers when the test says so.
-    renew: () => access(windowsStore(), () => NOW, { fetchImpl: async (url, options) => {
+    renew: () => access(windowsStore({ protect }), () => NOW, { fetchImpl: async (url, options) => {
       process.send(`fetch ${new URLSearchParams(options.body).get('refresh_token')}`);
       await told();
       return Response.json({ access_token: 'invented-new-access', refresh_token: 'invented-new-refresh', token_type: 'Bearer', expires_in: 3600 });
     } }).then((token) => process.send(`token ${token}`)),
-    logout: () => windowsStore().clear(),
+    logout: () => windowsStore({ protect }).clear(),
     // A sign-in that waits at the consent page until the test says so.
     login: () => {
       const issuer = 'https://api.krea.ai';
       const redirect = 'http://127.0.0.1:12345/callback';
       const replies = [{ resource, authorization_servers: [issuer] }, { issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`, registration_endpoint: `${issuer}/register`, code_challenge_methods_supported: ['S256'], response_types_supported: ['code'] }, { client_id: 'invented-client', token_endpoint_auth_method: 'none', redirect_uris: [redirect] }, { access_token: 'invented-login-access', token_type: 'Bearer', expires_in: 3600 }];
       let count = 0;
-      return login({ store: windowsStore(), now: () => NOW, fetchImpl: async () => Response.json(replies[count++]), showUrl: () => {}, openCallback: async (state) => ({ redirectUri: redirect, wait: async () => { process.send('consent'); await told(); return { state, code: 'invented-code' }; }, close() {} }) });
+      return login({ store: windowsStore({ protect }), now: () => NOW, fetchImpl: async () => Response.json(replies[count++]), showUrl: () => {}, openCallback: async (state) => ({ redirectUri: redirect, wait: async () => { process.send('consent'); await told(); return { state, code: 'invented-code' }; }, close() {} }) });
     }
   };
   process.send('started');
@@ -72,7 +77,7 @@ if (process.argv[2] === 'worker') {
       child.on('message', look);
       look();
     });
-    return { dir, oauth, store: oauth.windowsStore(), start, heard, folder: path.join(dir, 'DSHProxy', 'KreaOAuth') };
+    return { dir, oauth, store: oauth.windowsStore({ protect }), start, heard, folder: path.join(dir, 'DSHProxy', 'KreaOAuth') };
   }
 
   test('the real store renews a sign-in whose hour has ended, and what it stored can be read back', async (t) => {
@@ -134,7 +139,7 @@ if (process.argv[2] === 'worker') {
     await w.store.save(ended);
     const lock = path.join(w.folder, 'session.v1.lock');
     const held = (age) => fs.writeFile(lock, `${JSON.stringify({ id: 'a'.repeat(24), pid: process.pid, at: Date.now() - age })}\n`);
-    const impatient = w.oauth.windowsStore({ lockWaitMs: 300 });
+    const impatient = w.oauth.windowsStore({ lockWaitMs: 300, protect });
     let asked = 0;
     const fetchImpl = async () => { asked += 1; return Response.json({ access_token: 'invented-new-access', refresh_token: 'invented-new-refresh', token_type: 'Bearer', expires_in: 3600 }); };
 
