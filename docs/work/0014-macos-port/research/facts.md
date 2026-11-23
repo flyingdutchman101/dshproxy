@@ -96,3 +96,26 @@ Also published: `checksums.txt`, Linux and FreeBSD archives. Not known: the name
 - Renaming over a read-only (444) file succeeds. `test/profile.test.js:535-549` expects a refusal; that is Windows behaviour.
 - A file deleted and made again 60 ms later has a new creation time (for Release B).
 - `os.homedir()` is right in a child that is given no `HOME`.
+
+## 6. The proof and the tests on the user's Mac, 23 Nov
+
+Machine: Apple Silicon (arm64), macOS 26.6.2 (25G83), Node 24.19.0, libuv 1.52.1. A user logged in at the screen. Proof output kept out of the repository (it names temporary paths only).
+
+**Proof: 17 passed, 1 failed (K7, "after unlocking, the key is what it was").** Everything else as on GitHub's Macs.
+- Locked keychain: the read was ended after 10 s, the write too, `show-keychain-info` after 5 s; afterwards a `SecurityAgent` process was running (a dialog on the user's screen). Then `unlock-keychain -p` and a read of the same throwaway keychain **also waited 10 s and was ended.** On GitHub's Macs that read answered. So on a Mac with someone at the screen, a pending Keychain dialog blocks later calls on that keychain until the dialog is answered; unlocking with the password from a program does not clear it. The `SecurityAgent` process was still running after the proof ended and its keychain had been deleted.
+- Consequence for the tests: a test that locks a throwaway keychain puts a dialog on the developer's screen and can make the keychain tests that follow it wait. To be settled in the plan review (A1).
+- The downloaded archive carries the extended attribute `com.apple.provenance` (empty), which GitHub's Macs did not show. Not `com.apple.quarantine`. The backend started and answered all the same (B4, 0.5 s).
+- The proof's `create-keychain` did not leave the throwaway keychain in the search list (`login.keychain-db` and `System.keychain` only, afterwards).
+
+**Tests (`node --test`, before any change, `npm ci --ignore-scripts --force`):** 914 tests, 877 pass, 35 fail, 2 skipped (two existing `skip` on non-Windows in `integrations/dsh-video/test/dsh-video.test.mjs`). `node scripts/check.js`: 104 files OK. Failing, by cause:
+
+| Cause | Tests | Slice |
+|---|---|---|
+| Key wrapper: "Windows could not protect a new key" (PowerShell absent) | `backend.test.js` 238, 255, 270, 286; `cli.test.js` 25, 49; `video-command.test.js` 356; `video-concurrency.test.js` 341, 346; `video-picker-callers.test.js` 81 | A1 |
+| Unpacking: `spawnSync C:\Windows/System32/tar.exe ENOENT` | `backend.test.js` 114, 125, 134, 145 | A3 |
+| Rename over a read-only file succeeds on a Mac | `profile.test.js` 535 | A2 |
+| Harness plugin install: process list, `cmd.exe`, batch stand-in | `dsh-bundle.test.js` 322, 497, 543, 574, 589, 601, 614, 631, 673, 693, 738, 778 | A5 (skip naming stage C), C |
+| Krea store refuses off Windows (`KREA_REFUSED`) and `status` prints `{"signedIn":false}` without `canRenew` | `krea-oauth.test.js` 128; `krea-renewal-process.test.js` 83, 98, 116, 137, 158, 170 | A5 (skip naming stage B), B |
+| macOS adds `__CF_USER_TEXT_ENCODING` to the environment of the plugin runner's child (Windows has its own allowance, `ADDED_BY_NODE_ON_WINDOWS`) | `integrations/dsh-video/test/dsh-video.test.mjs` 151 | not forecast; A5 or C |
+
+Compared with the forecast (section 3): `cli.test.js` and `video-picker-callers.test.js` fail through the key wrapper as well; the plugin runner's environment test was not forecast.

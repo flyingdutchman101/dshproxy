@@ -1,6 +1,6 @@
 # Ledger — 0014 DSHProxy on macOS
 
-**Start here on the Mac.** Branch `macos-port`. Read this file, then `spec.md`, then `plan.md`. No production code has been written; the next step is slice A0 of the plan.
+**Start here on the Mac.** Branch `macos-port`. Read this file, then `spec.md`, then `plan.md`. On the user's Mac the checkout is `~/Projects/dshproxy` (cloned 23 Nov).
 
 | Gate | Status | Evidence |
 |---|---|---|
@@ -9,7 +9,7 @@
 | Goal and scope by the user | done | 23 Nov: "it does need same fuctionality, exactly the same as win". Spec rewritten to four stages. |
 | Spec read and approved by the user | open | The user set the goal and said to push and continue on the Mac; the document itself was not confirmed. Stages B to D are outlines and were not reviewed. |
 | Plan review, stage A | open | `plan.md` is a draft; the plan lens has not run. Run it before A1. |
-| A0 baseline on the Mac | open | |
+| A0 baseline on the Mac | done | 23 Nov, user's Mac (arm64, macOS 26.6.2, Node 24.19.0). Proof: 17 passed, 1 failed (K7 after unlocking: a pending Keychain dialog blocks the next read; new fact). Tests: 914, 877 pass, 35 fail, 2 skipped; every failure explained in `research/facts.md` section 6. `package.json` and the lock allow `darwin`. |
 | A1 key wrapper | open | |
 | A2 private files | open | |
 | A3 backend on a Mac | open | |
@@ -21,7 +21,7 @@
 | Stage C plugin install: facts on the Mac, plan, build | open | outline in the spec |
 | Stage D app: inventory, decision, prototype, build | open | outline in the spec; decision 4 is the user's |
 
-Next step: on the Mac, slice A0 (`plan.md`).
+Next step: plan review of stage A (running), then slice A1.
 
 ## Rulings
 
@@ -66,13 +66,14 @@ Design risk:
 - 23 Nov: GitHub API, release `v8.0.72`: `darwin_aarch64` and `darwin_amd64` archives exist; digests in `research/facts.md` section 1.
 - 23 Nov: survey of Windows-only code and of the Harness sources for macOS, condensed in `research/facts.md` sections 2 to 4.
 - 23 Nov: the proof on two GitHub Macs, `research/facts.md` section 5. First run: 18 passed, 1 failed (the locked keychain). Second run, with the check rewritten to what was seen: 19 passed on both.
+- 23 Nov, on the user's Mac: `node docs/work/0014-macos-port/spike/proof.js` and `node --test` before any change (A0); `research/facts.md` section 6. A `SecurityAgent` process (a Keychain dialog for the proof's throwaway keychain, which no longer exists) was still running afterwards; it is the user's to dismiss with Cancel.
 - Read in the code: an update is applied only through the control routes `update/check`, `update/apply`, `update/rollback` (`src/daemon.js`); the command line has `backend version` and `backend rollback` only (`src/cli.js:55-56, 578-591`).
 
 ## Not verified
 
-- No production code has been written. Nothing of DSHProxy itself has run on a Mac; only the proof script and the unmodified backend.
+- Nothing of DSHProxy itself has run on a Mac beyond its test suite; the proof script and the unmodified backend ran on the user's Mac.
 - What a locked Keychain does over SSH with nobody logged in at the screen.
-- Whether the user's Mac lets the downloaded backend run without a question (on GitHub's Macs it did).
+- Whether the user's Mac lets the downloaded backend run without a question when DSHProxy downloads it (the proof's download, by Node, ran with no question on 23 Nov; it carried `com.apple.provenance`, not quarantine). M1 settles it.
 - The Mac layout of the Harness application, its launcher and its process name: inferred from the Windows install (`research/facts.md` section 2).
 - What `fsync` in Node does on macOS.
 - The forecast of which tests fail on a Mac (`research/facts.md` section 3) comes from reading, not from running them.
@@ -95,4 +96,4 @@ On the user's word (asked what "Go!" meant; answer: "Only push the leftovers, I 
 - Reading and confirming the spec, in particular the outlines of stages B to D.
 - Decision 4: the app in stage D as a local web page with a menu-bar item, or as a native Mac app.
 - Whether `gateway-receipt-wip` and `work-documents` are to be merged, and where.
-- Apple Silicon or Intel (asked, not answered; both are covered).
+- Apple Silicon or Intel: the user's Mac is Apple Silicon (seen, 23 Nov); Intel stays covered by the lock and CI.
