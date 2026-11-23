@@ -83,7 +83,7 @@ The Keychain is the counterpart of what Windows does (DPAPI ties the key to the 
 
 ### 4. What is not available yet says so
 
-Until stages B and C are done: on macOS, `dshproxy video ...`, `dshproxy dsh bundle ...` and the Krea helper each print one sentence, exit non-zero and change nothing; the gateway does not mount the video picker; `dshproxy dsh apply` writes no video route. Each sentence is removed by the stage that brings the function.
+Until stages B and C are done: on macOS, `dshproxy video picker`, `video submit`, `video status`, every Krea route and `video krea`, `dshproxy dsh bundle ...` and the Krea helper each print one sentence, exit non-zero and change nothing; the gateway does not mount the video picker; there are no video entries, so `dshproxy dsh apply` writes no video route. `video help`, `video list`, the offline `video quote` on API routes and `video key ...` work in stage A, since they need only the master key. Each sentence is removed by the stage that brings the function. *(Narrowed on the Mac after the plan review.)*
 
 ### 5. Packaging and checks
 
@@ -98,16 +98,18 @@ Automatic, on a Mac and, where the same, on Windows:
 
 - **C1.** `npm ci --ignore-scripts` and `node --test` succeed on macOS. On Windows `node --test` runs at least the tests it runs today (914) and all pass.
 - **C2.** With an empty data folder on macOS, `dshproxy start` downloads the pinned backend for the machine's processor from the official release address, refuses it if its SHA-256 differs from the lock, unpacks it, starts it, and `GET /dshproxy/status` answers. `dshproxy stop --when-idle` ends the gateway and no backend process is left.
-- **C3.** The shipped lock lists four assets, each under the official release address, each with the SHA-256 that the release's `checksums.txt` gives.
+- **C3.** The shipped lock lists four assets, each under the official release address, each with the SHA-256 that the release's `checksums.txt` gives (its lines kept as a test fixture).
+
+C2 downloads the real backend; it runs on the Mac by hand and as its own step in the macOS CI job, not in `node --test`.
 - **C4.** An update made on macOS from a release with all four assets writes a four-asset lock; from a release without a Windows asset it writes the two macOS ones; from a release without a macOS asset it is refused. On Windows, which releases are accepted is what it is today.
 - **C5.** `dshproxy backend update` against a running gateway reports "up to date", or applies a newer release and the gateway answers on it afterwards; with no gateway running it says so and changes nothing. Tested with a stand-in for GitHub.
 - **C6.** A leftover backend is ended on the next start only when its program path is DSHProxy's own; another program's process with the recorded id is left alone.
 - **C7.** On macOS an API key saved with `dshproxy key set` is read back by a new process; `master.key` and `settings.json` do not contain it; the Keychain item is created once; a second process started at the same moment ends with the same key.
 - **C8.** No secret is in the arguments or the environment of any process the macOS key wrapper starts. Shown twice: with a stand-in for `security` that records what it was given, and against the real program with a throwaway keychain.
-- **C9.** When the Keychain cannot be read (a locked throwaway keychain; a `security` that does not answer for 10 seconds; no `security`), every command that needs the key ends with one sentence and a non-zero exit within 15 seconds, and the data folder and the keychain are byte for byte what they were.
-- **C10.** After any DSHProxy command on macOS, the data folder is `0700` and nothing that command created or replaced, there or in the Harness home, has a group or others bit. After `dshproxy dsh apply`, `.credentials.yaml` is `0600`, also when it was `0644` and already held the reference. `dshproxy dsh verify` reports one that is `0644`.
+- **C9.** When the Keychain cannot be read (a locked throwaway keychain; a `security` that does not answer for 10 seconds; no `security`), every command that saves a key (`key set`, `key custom add`, `video key set`) ends with one sentence and a non-zero exit within 15 seconds; every command that only reads keys (`status`, `models`, `start`, `dsh apply`) does what it does on Windows when a key cannot be unwrapped (the key counts as unreadable, the log says so) and ends or answers within 15 seconds; in both cases the data folder and the keychain are byte for byte what they were. *(Revised on the Mac after the plan review: on Windows the readers never stop on an unreadable key, and that is not changed.)*
+- **C10.** After any DSHProxy command on macOS that uses the data folder, the data folder is `0700` and nothing that command created or replaced, there or in the Harness home, has a group or others bit. After `dshproxy dsh apply`, `.credentials.yaml` is `0600`, also when it was `0644` and already held the reference. `dshproxy dsh verify` reports one that is `0644`.
 - **C11.** `dshproxy dsh apply`, `verify`, `status` and `remove` produce the same profile text on macOS as on Windows for the same input (the existing profile tests, run on both).
-- **C12.** On macOS, until stages B and C: `dshproxy video picker`, `dshproxy dsh bundle status`, `dshproxy dsh bundle install` and `dshproxy-krea status` each print the one sentence, exit non-zero and change nothing; a request to the gateway's video path is answered "not found".
+- **C12.** On macOS, until stages B and C: `dshproxy video picker`, `dshproxy video submit`, `dshproxy video quote <model> krea`, `dshproxy dsh bundle status`, `dshproxy dsh bundle install` and `dshproxy-krea status` each print the one sentence, exit non-zero and change nothing; a request to the gateway's video path is answered "not found".
 - **C13.** On Windows, a data folder written by the current version is read by the new one, and the files the new one writes are read by the current one.
 
 By hand, on the user's Mac (needs sign-ins):
