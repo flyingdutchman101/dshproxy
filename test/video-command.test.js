@@ -55,8 +55,8 @@ test('a Callirra credit approval cannot borrow another provider credential', asy
   assert.equal(result.reservedCredits, 10);
   assert.equal(result.chargedUsd, undefined);
 });
-test('Krea handoff cannot generate or claim a quote', async()=>{ const q=await run('krea','wan-3.0'); assert.equal(q.contacted,false);assert.match(q.instructions,/preflight: true/);assert.equal(q.usdMicros,undefined); });
-test('a promptless Krea quote refuses before workspace access, never a USD estimate', async () => {
+test('Krea handoff cannot generate or claim a quote', { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async()=>{ const q=await run('krea','wan-3.0'); assert.equal(q.contacted,false);assert.match(q.instructions,/preflight: true/);assert.equal(q.usdMicros,undefined); });
+test('a promptless Krea quote refuses before workspace access, never a USD estimate', { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async () => {
   await assert.rejects(run('quote', 'wan-3.0', 'krea'), /workspace OAuth.*--prompt.*No request sent/i);
 });
 test('Krea workspace requests use the dedicated helper with an explicit prompt and native cap', async () => {
@@ -68,7 +68,7 @@ test('Krea workspace requests use the dedicated helper with an explicit prompt a
   for(const args of [['submit','wan-3.0','krea','--max-usd','3','--confirm-charge','Rain'],['submit','wan-3.0','krea','--max-units','Infinity','--confirm-charge','Rain'],['status','wan-3.0','krea','../abc']]) await assert.rejects(command(args,()=>{},deps));
   assert.equal(calls.length,3);
 });
-test('real workspace helper with an empty temporary profile never starts login or falls back', async () => {
+test('real workspace helper with an empty temporary profile never starts login or falls back', { skip: process.platform === "darwin" ? "macOS: video comes with stage B of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async () => {
   const fs=require('node:fs/promises'), os=require('node:os'), path=require('node:path');
   const {execFile}=require('node:child_process');const runChild=require('node:util').promisify(execFile);
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'dshproxy-empty-workspace-'));

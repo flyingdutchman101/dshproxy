@@ -320,7 +320,7 @@ test("Harness is not found when its command is not in the program folder", async
   assert.equal(asked, 0, "there is no folder to match processes against");
 });
 
-test("Harness is running when a DeepSeek Harness.exe from its folder exists", async (t) => {
+test("Harness is running when a DeepSeek Harness.exe from its folder exists", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const exe = path.join(box.harness, "DeepSeek Harness.exe");
@@ -495,7 +495,7 @@ test("Harness is looked for in DSHPROXY_HARNESS_DIR, then the usual folder, then
 
 // ---------------------------------------------------------------- install
 
-test("install runs Harness's command once, with exactly its arguments and a clean environment", async (t) => {
+test("install runs Harness's command once, with exactly its arguments and a clean environment", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const env = { ...process.env, DSH_HOME: "C:\\somebody\\elses\\.dsh", DSH_WEB_URL: "http://127.0.0.1:1", DSH_INSTALL_DIR: "C:\\x", dsh_lowercase: "1", ELECTRON_RUN_AS_NODE: "1", DSHPROXY_KEPT: "yes" };
@@ -541,7 +541,7 @@ test("install when the plugin is already installed runs nothing", async (t) => {
   assert.deepEqual(snapshot(box.base), before);
 });
 
-test("install runs nothing when it cannot install, and gives the reason", async (t) => {
+test("install runs nothing when it cannot install, and gives the reason", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
   const cases = [
     { name: "Harness is running", profile: {}, extra: (box) => ({ processes: async () => [{ name: "DeepSeek Harness.exe", path: path.join(box.harness, "DeepSeek Harness.exe") }] }), reason: /DeepSeek Harness is running/ },
     { name: "the process list cannot be read", profile: {}, extra: () => ({ processes: async () => { throw new Error("denied"); } }), reason: /could not check whether DeepSeek Harness is running/ },
@@ -572,7 +572,7 @@ test("install runs nothing when it cannot install, and gives the reason", async 
   }
 });
 
-test("a command that exits 1 ends not ok, with its last line and the manual way, after one run", async (t) => {
+test("a command that exits 1 ends not ok, with its last line and the manual way, after one run", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
   const box = sandbox(t, { standIn: "fail" });
   writeProfile(box);
   const result = await bundle.install(deps(box));
@@ -587,7 +587,7 @@ test("a command that exits 1 ends not ok, with its last line and the manual way,
   assert.deepEqual(readProfile(box).dependencies, {});
 });
 
-test("a command that exits 0 without changing the profile ends not ok, after one run", async (t) => {
+test("a command that exits 0 without changing the profile ends not ok, after one run", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
   const box = sandbox(t, { standIn: "noop" });
   writeProfile(box);
   const result = await bundle.install(deps(box));
@@ -599,7 +599,7 @@ test("a command that exits 0 without changing the profile ends not ok, after one
   assert.equal(calls(box.harness).length, 1);
 });
 
-test("a plugin relinked from another folder that was not selected ends not ok and says it is switched off", async (t) => {
+test("a plugin relinked from another folder that was not selected ends not ok and says it is switched off", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
   const box = sandbox(t);
   const other = path.join(box.base, "older", "integrations", "dsh-video");
   fs.mkdirSync(other, { recursive: true });
@@ -612,7 +612,7 @@ test("a plugin relinked from another folder that was not selected ends not ok an
   assert.match(result.message, /switched off in DeepSeek Harness/);
 });
 
-test("a command that hangs is ended with its children after the time limit, after one run", async (t) => {
+test("a command that hangs is ended with its children after the time limit, after one run", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
   const box = sandbox(t, { standIn: "hang" });
   writeProfile(box);
   const started = Date.now();
@@ -629,7 +629,7 @@ test("a command that hangs is ended with its children after the time limit, afte
   assert.match(fs.readFileSync(result.log, "utf8"), /stopped after/);
 });
 
-test("after a time limit the result is what the profile says", async (t) => {
+test("after a time limit the result is what the profile says", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
   const box = sandbox(t, { standIn: "ok-then-hang" });
   writeProfile(box);
   const result = await bundle.install(deps(box, { timeoutMs: 4000 }));
@@ -671,7 +671,7 @@ function runCli(box, args) {
 
 const OWN_FOLDER = path.join(__dirname, "..", "integrations", "dsh-video");
 
-test("dshproxy dsh bundle status --json prints the contract as one line and exits 0", (t) => {
+test("dshproxy dsh bundle status --json prints the contract as one line and exits 0", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const before = snapshot(box.base);
@@ -691,7 +691,7 @@ test("dshproxy dsh bundle status --json prints the contract as one line and exit
   assert.equal(JSON.parse(empty.stdout).canInstall, false);
 });
 
-test("dshproxy dsh bundle status says in plain words what is so and what to do", (t) => {
+test("dshproxy dsh bundle status says in plain words what is so and what to do", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const ready = runCli(box, ["dsh", "bundle", "status"]);
@@ -705,7 +705,7 @@ test("dshproxy dsh bundle status says in plain words what is so and what to do",
   assert.doesNotMatch(never.stdout, /^\{/);
 });
 
-test("a plugin switched off in the home-level patch: JSON and plain text both say where to switch it on", (t) => {
+test("a plugin switched off in the home-level patch: JSON and plain text both say where to switch it on", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
   const box = sandbox(t);
   writeProfile(box, { dependencies: { [NAME]: link(OWN_FOLDER) }, bundles: [...BASE_BUNDLES, NAME], homePatch: DISABLED });
   const before = snapshot(box.base);
@@ -736,7 +736,7 @@ test("each state is told in one or two sentences that end with what to do", asyn
   assert.equal(await told({ dependencies: { [NAME]: link(gone) } }), `DeepSeek Harness points at a video plugin folder that is gone (${gone}). Run \`dshproxy dsh bundle install\` to point it at ${box.folder}.`);
 });
 
-test("dshproxy dsh bundle install --json installs once, and a second time changes nothing", (t) => {
+test("dshproxy dsh bundle install --json installs once, and a second time changes nothing", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const first = runCli(box, ["dsh", "bundle", "install", "--json"]);
@@ -759,7 +759,7 @@ test("dshproxy dsh bundle install --json installs once, and a second time change
   assert.equal(fs.readFileSync(path.join(profileDir(box), "package.json"), "utf8"), profileAfterFirst);
 });
 
-test("dshproxy dsh bundle install exits 1 with the reason and runs nothing when it cannot install", (t) => {
+test("dshproxy dsh bundle install exits 1 with the reason and runs nothing when it cannot install", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
   const box = sandbox(t);
   const json = runCli(box, ["dsh", "bundle", "install", "--json"]);
   assert.equal(json.status, 1);
@@ -776,7 +776,7 @@ test("dshproxy dsh bundle install exits 1 with the reason and runs nothing when 
   assert.equal(fs.existsSync(path.join(box.home, "profiles")), false);
 });
 
-test("dshproxy dsh bundle install exits 1 when the command fails", (t) => {
+test("dshproxy dsh bundle install exits 1 when the command fails", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
   const box = sandbox(t, { standIn: "fail" });
   writeProfile(box);
   const result = runCli(box, ["dsh", "bundle", "install", "--json"]);
@@ -787,7 +787,7 @@ test("dshproxy dsh bundle install exits 1 when the command fails", (t) => {
   assert.equal(calls(box.harness).length, 1);
 });
 
-test("the help names both bundle commands, and an unknown one is refused", (t) => {
+test("the help names both bundle commands, and an unknown one is refused", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
   const box = sandbox(t);
   const help = runCli(box, ["help"]);
   assert.match(help.stdout, /^ {2}dshproxy dsh bundle status \[--json\] {2}\S/m);

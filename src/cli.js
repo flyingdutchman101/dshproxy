@@ -13,6 +13,7 @@ const fs = require("fs");
 const http = require("http");
 const { PREFIX: CONTROL_PREFIX } = require("./control");
 const { readLock, compareVersions } = require("./backend/updater");
+const { notYet, videoCommandWaits } = require("./not-yet");
 
 // A restart after a backend update or rollback waits this long, at most, for
 // a moment with no request in flight, and says so in the log this often.
@@ -378,6 +379,10 @@ function rollbackLock(out) {
 async function main(argv, out = console.log) {
   // Offline media quotes must not migrate, read, or modify the user's chat settings.
   // `video key set` reads its key from standard input, like `key set` below.
+  // On macOS, what stages B and C of 0014 bring says that it is not there yet,
+  // before anything is read or written.
+  const waits = (argv[0] === "video" && videoCommandWaits(argv.slice(1)) && notYet("video")) || (argv[0] === "dsh" && argv[1] === "bundle" && notYet("bundle"));
+  if (waits) throw new Error(waits);
   if (argv[0] === "video") return require("./video/command").run(argv.slice(1), out, { readSecret });
   // Only the default data folder is migrated; a DSHPROXY_HOME the user set is
   // used as given.

@@ -148,7 +148,7 @@ test('a workspace quote without a sign-in never starts one and writes nothing', 
   assert.deepEqual(await fs.readdir(facts.profile), [])
 })
 
-test('a workspace quote hands the prompt over standard input only and returns just the verified preflight', async (t) => {
+test('a workspace quote hands the prompt over standard input only and returns just the verified preflight', { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
   const facts = await host(t)
   const stub = await stubRoot(t, { settings: kreaEnabled, quote: { ...preflight, access_token: SECRET, job_id: 'job_1' } })
   const watch = spy()
