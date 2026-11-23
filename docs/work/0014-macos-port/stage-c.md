@@ -1,6 +1,6 @@
 # Stage C — the video tools plugin on macOS: criteria and plan
 
-Status: written on the Mac on 23 Nov. **For the user to read.** Not reviewed. Facts: `research/facts.md` section 7 (the Harness on this Mac, read 23 Nov); the code: `src/dsh/bundle.js`, `integrations/dsh-video/`.
+Status: written on the Mac on 23 Nov; built the same evening after the user's "go" (C1 to C4). Not reviewed yet. Facts: `research/facts.md` section 7 (the Harness on this Mac, read 23 Nov); the code: `src/dsh/bundle.js`, `integrations/dsh-video/`.
 
 ## What works afterwards
 
@@ -14,7 +14,7 @@ Status: written on the Mac on 23 Nov. **For the user to read.** Not reviewed. Fa
 | The command | `<dir>\resources\runtime\cli\bin\dsh.cmd`, run through `cmd.exe` | `<app>/Contents/Resources/runtime/cli/bin/dsh` (a `sh` script inside the application; seen on this Mac). Started directly with its arguments as a list: no shell of DSHProxy's, no `/usr/local/bin/dsh` (not there on this Mac) |
 | Is it running | PowerShell lists `DeepSeek Harness.exe` and its path | `/bin/ps -ww -axo comm=`: a process whose program is `<app>/Contents/MacOS/DeepSeek Harness` (seen in `ps` on this Mac), paths compared with `realpath` |
 | A run that takes too long | `taskkill /T /F` | the command is started in its own process group and the group is ended (`SIGTERM`, then `SIGKILL`) |
-| Characters refused in a folder name | those `cmd.exe` would read (`% " ^ & | < > !`) | a line break and a NUL only: nothing passes through a shell |
+| Characters refused in a folder name | those `cmd.exe` would read (`% " ^ & | < > !`), a line break, a trailing backslash | the same set (decided while building: one rule on both systems; nothing passes through a shell on macOS, so the refusal is caution, not need) |
 | The runner's environment (`integrations/dsh-video/lib/config.js`) | `SystemRoot, LOCALAPPDATA, TEMP, TMP, USERPROFILE` (+ `DSHPROXY_HOME`) | `HOME, TMPDIR, DSHPROXY_KEYCHAIN` (+ `DSHPROXY_HOME`); macOS adds `__CF_USER_TEXT_ENCODING` to every process, which the tests allow as they allow Windows' additions |
 | Finding `node` for the runner | `PATH`, then `%ProgramFiles%\nodejs` | `PATH`, then `/opt/homebrew/bin` and `/usr/local/bin`: an application started from the Dock gets a short `PATH` without Homebrew |
 

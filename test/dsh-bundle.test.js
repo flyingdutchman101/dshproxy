@@ -58,13 +58,31 @@ else if (mode === "ok-then-hang") {
 }
 `;
 
-const commandDir = (harness) => path.join(harness, "resources", "runtime", "cli", "bin");
+// On macOS the Harness is an application folder and its command is a `sh`
+// script inside it (docs/work/0014-macos-port, stage C); on Windows a folder
+// with a batch file.
+const MAC = process.platform === "darwin";
+const commandDir = (harness) => (MAC ? path.join(harness, "Contents", "Resources", "runtime", "cli", "bin") : path.join(harness, "resources", "runtime", "cli", "bin"));
+// The arguments as the stand-in's first line records them: cmd.exe hands the
+// folder over in quotes; sh's "$*" joins them with spaces.
+const rawLine = (folder) => (MAC ? `plugin --profile desktop add ${folder}` : `plugin --profile desktop add "${folder}"`);
+// A Harness process as the process list gives it.
+const harnessProcess = (harness) => (MAC ? { name: "DeepSeek Harness", path: path.join(harness, "Contents", "MacOS", "DeepSeek Harness") } : { name: "DeepSeek Harness.exe", path: path.join(harness, "DeepSeek Harness.exe") });
 
 function writeStandIn(harness, mode = "ok") {
   const dir = commandDir(harness);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "standin.js"), STAND_IN_SCRIPT);
   fs.writeFileSync(path.join(dir, "mode.txt"), mode);
+  if (MAC) {
+    // The application's program, which the real command runs.
+    fs.mkdirSync(path.join(harness, "Contents", "MacOS"), { recursive: true });
+    fs.writeFileSync(path.join(harness, "Contents", "MacOS", "DeepSeek Harness"), "", { mode: 0o755 });
+    // The first line records the arguments as sh was given them; the program
+    // runs as a child of sh, as the real command's program does of its launcher.
+    fs.writeFileSync(path.join(dir, "dsh"), ["#!/bin/sh", "here=$(dirname \"$0\")", "printf '%s\\n' \"$*\" >> \"$here/raw.log\"", `"${process.execPath}" "$here/standin.js" "$@"`, "exit $?", ""].join("\n"), { mode: 0o755 });
+    return;
+  }
   // The first line records the arguments exactly as cmd.exe handed them over.
   fs.writeFileSync(path.join(dir, "dsh.cmd"), ["@echo off", "setlocal DisableDelayedExpansion", ">>\"%~dp0raw.log\" echo(%*", `"${process.execPath}" "%~dp0standin.js" %*`, "exit /b %errorlevel%", ""].join("\r\n"));
 }
@@ -84,7 +102,7 @@ function rawCalls(harness) {
 function sandbox(t, { rootName = "DSH Proxy root", standIn = "ok" } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "dshproxy-bundle-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const box = { base, home: path.join(base, "home"), harness: path.join(base, "harness"), root: path.join(base, rootName), logFile: path.join(base, "data", "dsh-bundle-install.log") };
+  const box = { base, home: path.join(base, "home"), harness: path.join(base, MAC ? "DeepSeek Harness.app" : "harness"), root: path.join(base, rootName), logFile: path.join(base, "data", "dsh-bundle-install.log") };
   box.folder = path.join(box.root, "integrations", "dsh-video");
   fs.mkdirSync(box.home, { recursive: true });
   fs.mkdirSync(box.folder, { recursive: true });
@@ -320,7 +338,7 @@ test("Harness is not found when its command is not in the program folder", async
   assert.equal(asked, 0, "there is no folder to match processes against");
 });
 
-test("Harness is running when a DeepSeek Harness.exe from its folder exists", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
+test("Harness is running when a DeepSeek Harness.exe from its folder exists", { skip: MAC ? "Windows process names and paths; macOS has its own test below" : false }, async (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const exe = path.join(box.harness, "DeepSeek Harness.exe");
@@ -470,7 +488,7 @@ test("the way the command is run refuses every character cmd.exe acts on", async
 
 // ---------------------------------------------------------------- where Harness is
 
-test("Harness is looked for in DSHPROXY_HARNESS_DIR, then the usual folder, then the dsh: link's program", (t) => {
+test("Harness is looked for in DSHPROXY_HARNESS_DIR, then the usual folder, then the dsh: link's program", { skip: MAC ? "the Windows places; macOS has its own test below" : false }, (t) => {
   const box = sandbox(t);
   const local = path.join(box.base, "local");
   const usual = path.join(local, "Programs", "DeepSeek Harness");
@@ -495,7 +513,7 @@ test("Harness is looked for in DSHPROXY_HARNESS_DIR, then the usual folder, then
 
 // ---------------------------------------------------------------- install
 
-test("install runs Harness's command once, with exactly its arguments and a clean environment", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
+test("install runs Harness's command once, with exactly its arguments and a clean environment", async (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const env = { ...process.env, DSH_HOME: "C:\\somebody\\elses\\.dsh", DSH_WEB_URL: "http://127.0.0.1:1", DSH_INSTALL_DIR: "C:\\x", dsh_lowercase: "1", ELECTRON_RUN_AS_NODE: "1", DSHPROXY_KEPT: "yes" };
@@ -509,7 +527,7 @@ test("install runs Harness's command once, with exactly its arguments and a clea
   const seen = calls(box.harness);
   assert.equal(seen.length, 1);
   assert.deepEqual(seen[0].argv, ["plugin", "--profile", "desktop", "add", box.folder]);
-  assert.deepEqual(rawCalls(box.harness), [`plugin --profile desktop add "${box.folder}"`]);
+  assert.deepEqual(rawCalls(box.harness), [rawLine(box.folder)]);
 
   const childEnv = seen[0].env;
   const dshNames = Object.keys(childEnv).filter((name) => /^DSH_/i.test(name));
@@ -541,9 +559,9 @@ test("install when the plugin is already installed runs nothing", async (t) => {
   assert.deepEqual(snapshot(box.base), before);
 });
 
-test("install runs nothing when it cannot install, and gives the reason", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
+test("install runs nothing when it cannot install, and gives the reason", async (t) => {
   const cases = [
-    { name: "Harness is running", profile: {}, extra: (box) => ({ processes: async () => [{ name: "DeepSeek Harness.exe", path: path.join(box.harness, "DeepSeek Harness.exe") }] }), reason: /DeepSeek Harness is running/ },
+    { name: "Harness is running", profile: {}, extra: (box) => ({ processes: async () => [harnessProcess(box.harness)] }), reason: /DeepSeek Harness is running/ },
     { name: "the process list cannot be read", profile: {}, extra: () => ({ processes: async () => { throw new Error("denied"); } }), reason: /could not check whether DeepSeek Harness is running/ },
     { name: "Harness was never opened", profile: null, extra: () => ({}), reason: /has not been opened/ },
     { name: "Harness is not found", profile: {}, standIn: null, extra: () => ({}), reason: /was not found/ },
@@ -572,7 +590,7 @@ test("install runs nothing when it cannot install, and gives the reason", { skip
   }
 });
 
-test("a command that exits 1 ends not ok, with its last line and the manual way, after one run", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
+test("a command that exits 1 ends not ok, with its last line and the manual way, after one run", async (t) => {
   const box = sandbox(t, { standIn: "fail" });
   writeProfile(box);
   const result = await bundle.install(deps(box));
@@ -587,7 +605,7 @@ test("a command that exits 1 ends not ok, with its last line and the manual way,
   assert.deepEqual(readProfile(box).dependencies, {});
 });
 
-test("a command that exits 0 without changing the profile ends not ok, after one run", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
+test("a command that exits 0 without changing the profile ends not ok, after one run", async (t) => {
   const box = sandbox(t, { standIn: "noop" });
   writeProfile(box);
   const result = await bundle.install(deps(box));
@@ -599,7 +617,7 @@ test("a command that exits 0 without changing the profile ends not ok, after one
   assert.equal(calls(box.harness).length, 1);
 });
 
-test("a plugin relinked from another folder that was not selected ends not ok and says it is switched off", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
+test("a plugin relinked from another folder that was not selected ends not ok and says it is switched off", async (t) => {
   const box = sandbox(t);
   const other = path.join(box.base, "older", "integrations", "dsh-video");
   fs.mkdirSync(other, { recursive: true });
@@ -612,7 +630,7 @@ test("a plugin relinked from another folder that was not selected ends not ok an
   assert.match(result.message, /switched off in DeepSeek Harness/);
 });
 
-test("a command that hangs is ended with its children after the time limit, after one run", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
+test("a command that hangs is ended with its children after the time limit, after one run", async (t) => {
   const box = sandbox(t, { standIn: "hang" });
   writeProfile(box);
   const started = Date.now();
@@ -624,12 +642,12 @@ test("a command that hangs is ended with its children after the time limit, afte
   assert.match(result.message, /Plugins > Add plugin/);
   const seen = calls(box.harness);
   assert.equal(seen.length, 1);
-  // The program the batch file started is gone too, not only cmd.exe.
-  assert.equal(await untilGone(seen[0].pid), true, "the child of cmd.exe is still running");
+  // The program the batch file (or sh script) started is gone too, not only cmd.exe (or sh).
+  assert.equal(await untilGone(seen[0].pid), true, "the child of the command is still running");
   assert.match(fs.readFileSync(result.log, "utf8"), /stopped after/);
 });
 
-test("after a time limit the result is what the profile says", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
+test("after a time limit the result is what the profile says", async (t) => {
   const box = sandbox(t, { standIn: "ok-then-hang" });
   writeProfile(box);
   const result = await bundle.install(deps(box, { timeoutMs: 4000 }));
@@ -671,7 +689,7 @@ function runCli(box, args) {
 
 const OWN_FOLDER = path.join(__dirname, "..", "integrations", "dsh-video");
 
-test("dshproxy dsh bundle status --json prints the contract as one line and exits 0", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
+test("dshproxy dsh bundle status --json prints the contract as one line and exits 0", (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const before = snapshot(box.base);
@@ -691,7 +709,7 @@ test("dshproxy dsh bundle status --json prints the contract as one line and exit
   assert.equal(JSON.parse(empty.stdout).canInstall, false);
 });
 
-test("dshproxy dsh bundle status says in plain words what is so and what to do", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
+test("dshproxy dsh bundle status says in plain words what is so and what to do", (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const ready = runCli(box, ["dsh", "bundle", "status"]);
@@ -705,7 +723,7 @@ test("dshproxy dsh bundle status says in plain words what is so and what to do",
   assert.doesNotMatch(never.stdout, /^\{/);
 });
 
-test("a plugin switched off in the home-level patch: JSON and plain text both say where to switch it on", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
+test("a plugin switched off in the home-level patch: JSON and plain text both say where to switch it on", (t) => {
   const box = sandbox(t);
   writeProfile(box, { dependencies: { [NAME]: link(OWN_FOLDER) }, bundles: [...BASE_BUNDLES, NAME], homePatch: DISABLED });
   const before = snapshot(box.base);
@@ -736,7 +754,7 @@ test("each state is told in one or two sentences that end with what to do", asyn
   assert.equal(await told({ dependencies: { [NAME]: link(gone) } }), `DeepSeek Harness points at a video plugin folder that is gone (${gone}). Run \`dshproxy dsh bundle install\` to point it at ${box.folder}.`);
 });
 
-test("dshproxy dsh bundle install --json installs once, and a second time changes nothing", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
+test("dshproxy dsh bundle install --json installs once, and a second time changes nothing", (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const first = runCli(box, ["dsh", "bundle", "install", "--json"]);
@@ -759,7 +777,7 @@ test("dshproxy dsh bundle install --json installs once, and a second time change
   assert.equal(fs.readFileSync(path.join(profileDir(box), "package.json"), "utf8"), profileAfterFirst);
 });
 
-test("dshproxy dsh bundle install exits 1 with the reason and runs nothing when it cannot install", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
+test("dshproxy dsh bundle install exits 1 with the reason and runs nothing when it cannot install", (t) => {
   const box = sandbox(t);
   const json = runCli(box, ["dsh", "bundle", "install", "--json"]);
   assert.equal(json.status, 1);
@@ -776,7 +794,7 @@ test("dshproxy dsh bundle install exits 1 with the reason and runs nothing when 
   assert.equal(fs.existsSync(path.join(box.home, "profiles")), false);
 });
 
-test("dshproxy dsh bundle install exits 1 when the command fails", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
+test("dshproxy dsh bundle install exits 1 when the command fails", (t) => {
   const box = sandbox(t, { standIn: "fail" });
   writeProfile(box);
   const result = runCli(box, ["dsh", "bundle", "install", "--json"]);
@@ -787,7 +805,7 @@ test("dshproxy dsh bundle install exits 1 when the command fails", { skip: proce
   assert.equal(calls(box.harness).length, 1);
 });
 
-test("the help names both bundle commands, and an unknown one is refused", { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, (t) => {
+test("the help names both bundle commands, and an unknown one is refused", (t) => {
   const box = sandbox(t);
   const help = runCli(box, ["help"]);
   assert.match(help.stdout, /^ {2}dshproxy dsh bundle status \[--json\] {2}\S/m);
@@ -796,4 +814,96 @@ test("the help names both bundle commands, and an unknown one is refused", { ski
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /Usage: dshproxy dsh bundle status\|install \[--json\]/);
   assert.deepEqual(calls(box.harness), []);
+});
+
+// ---------------------------------------------------------------- macOS (0014, stage C)
+
+const macOnly = MAC ? {} : { skip: "macOS only; Windows has the tests above" };
+
+test("on macOS, Harness is running when its application's program runs, and not for another copy or another program", macOnly, async (t) => {
+  const box = sandbox(t);
+  writeProfile(box);
+  const running = await bundle.state(deps(box, { processes: async () => [harnessProcess(box.harness)] }));
+  assert.equal(running.harnessRunning, true);
+  assert.equal(running.canInstallAfterQuit, true);
+  assert.match(running.reason, /DeepSeek Harness is running\. Quit it/);
+  // Its helper processes count as well: they belong to the application.
+  const helper = { name: "DeepSeek Harness Helper (Renderer)", path: path.join(box.harness, "Contents", "Frameworks", "DeepSeek Harness Helper (Renderer).app", "Contents", "MacOS", "DeepSeek Harness Helper (Renderer)") };
+  assert.equal((await bundle.state(deps(box, { processes: async () => [helper] }))).harnessRunning, true);
+  // A copy elsewhere, a folder whose name only begins like it, another program: not it.
+  const elsewhere = await bundle.state(deps(box, { processes: async () => [harnessProcess(path.join(box.base, "Other", "DeepSeek Harness.app")), harnessProcess(`${box.harness}-old`), { name: "node", path: "/opt/homebrew/bin/node" }] }));
+  assert.equal(elsewhere.harnessRunning, false);
+  assert.equal(elsewhere.canInstall, true);
+  // A Harness process whose path is not given counts as running.
+  assert.equal((await bundle.state(deps(box, { processes: async () => [{ name: "DeepSeek Harness", path: null }] }))).harnessRunning, true);
+});
+
+test("on macOS, the real process list finds a running program by its full path", macOnly, async (t) => {
+  const box = sandbox(t);
+  writeProfile(box);
+  // A real process started from inside the stand-in application.
+  const program = path.join(box.harness, "Contents", "MacOS", "DeepSeek Harness");
+  fs.copyFileSync("/bin/sleep", program);
+  require("child_process").execFileSync("/usr/bin/codesign", ["-f", "-s", "-", program], { stdio: "ignore" });
+  const child = require("child_process").spawn(program, ["30"], { stdio: "ignore" });
+  t.after(() => child.kill("SIGKILL"));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const { processes, ...rest } = deps(box);
+  const found = await bundle.state(rest);
+  assert.equal(found.harnessRunning, true, found.reason);
+  child.kill("SIGKILL");
+  await untilGone(child.pid);
+  assert.equal((await bundle.state(rest)).harnessRunning, false);
+});
+
+test("on macOS, Harness is looked for in DSHPROXY_HARNESS_DIR, then /Applications, then ~/Applications", macOnly, (t) => {
+  const box = sandbox(t);
+  const system = path.join(box.base, "system-apps");
+  const own = path.join(box.base, "home-folder");
+  const inSystem = path.join(system, "DeepSeek Harness.app");
+  const inOwn = path.join(own, "Applications", "DeepSeek Harness.app");
+  writeStandIn(inSystem);
+  writeStandIn(inOwn);
+  const look = (env, applications) => bundle.locateHarness({ env, applications });
+  // The variable wins, and when it is set nothing else is tried.
+  assert.equal(look({ DSHPROXY_HARNESS_DIR: box.harness, HOME: own }, [system]), box.harness);
+  assert.equal(look({ DSHPROXY_HARNESS_DIR: path.join(box.base, "nothing here"), HOME: own }, [system]), null);
+  assert.equal(look({ HOME: own }, [system, path.join(own, "Applications")]), inSystem);
+  assert.equal(look({ HOME: own }, [path.join(box.base, "empty"), path.join(own, "Applications")]), inOwn);
+  // The default places are /Applications and the home folder's Applications.
+  assert.equal(look({ HOME: own }, undefined), fs.existsSync("/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh") ? "/Applications/DeepSeek Harness.app" : inOwn);
+  // An application folder without the command is not it.
+  fs.rmSync(path.join(commandDir(inOwn), "dsh"));
+  assert.equal(look({ HOME: own }, [path.join(own, "Applications")]), null);
+});
+
+test("on macOS, the command is started directly, its arguments as a list: a folder name with shell characters reaches it unchanged", macOnly, async (t) => {
+  const box = sandbox(t);
+  const command = path.join(commandDir(box.harness), "dsh");
+  const cwd = path.join(box.base, "cwd");
+  fs.mkdirSync(cwd);
+  // Characters a shell acts on but cmd.exe does not, so not refused on either system.
+  const odd = path.join(box.base, "a $(touch INJECTED) `x` 'q' ;b * ~");
+  const result = await bundle.runCommand({ command, args: ["plugin", "--profile", "desktop", "add", odd], env: process.env, cwd, timeoutMs: 20000 });
+  assert.equal(result.error, null);
+  assert.deepEqual(calls(box.harness).map((call) => call.argv), [["plugin", "--profile", "desktop", "add", odd]]);
+  assert.deepEqual(fs.readdirSync(cwd), []);
+  assert.equal(fs.existsSync(path.join(box.base, "INJECTED")), false);
+  // A line break or a NUL is refused before anything is started.
+  for (const bad of ["a\nb", "a\rb", "a\u0000b"]) {
+    const refused = await bundle.runCommand({ command, args: ["plugin", bad], env: process.env, cwd, timeoutMs: 20000 });
+    assert.match(refused.error, /not started/);
+  }
+  assert.equal(calls(box.harness).length, 1);
+});
+
+test("on macOS, the command's output on standard error is kept in the log and its last line is told", macOnly, async (t) => {
+  const box = sandbox(t, { standIn: "fail" });
+  writeProfile(box);
+  const result = await bundle.install(deps(box));
+  assert.equal(result.ok, false);
+  assert.ok(result.message.includes("dsh: plugin command failed"), result.message);
+  const log = fs.readFileSync(result.log, "utf8");
+  assert.match(log, /an earlier line that must not be shown/);
+  assert.match(log, /dsh: plugin command failed/);
 });

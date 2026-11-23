@@ -7,17 +7,30 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { build } from '../index.js'
+
+// On macOS: a throwaway keychain for these tests and their children, never a
+// login Keychain (docs/work/0014-macos-port).
+createRequire(import.meta.url)('../../../test/support/keychain.js')
+const MAC = process.platform === 'darwin'
 
 export const bundleDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const realRoot = path.resolve(bundleDir, '..', '..')
 export const runner = path.join(bundleDir, 'runner.cjs')
 export const SECRET = 'synthetic-secret-value-9f2c'
 export const PROMPT = 'A paper boat crossing a rain puddle, slow dolly-in'
-export const ALLOWED_ENV = ['SYSTEMROOT', 'LOCALAPPDATA', 'TEMP', 'TMP', 'USERPROFILE', 'DSHPROXY_HOME']
+export const ALLOWED_ENV = MAC ? ['HOME', 'TMPDIR', 'DSHPROXY_KEYCHAIN', 'DSHPROXY_HOME'] : ['SYSTEMROOT', 'LOCALAPPDATA', 'TEMP', 'TMP', 'USERPROFILE', 'DSHPROXY_HOME']
 // On Windows, Node copies these from the parent into every child whatever
 // environment was asked for. They name the machine and user, not credentials.
 export const ADDED_BY_NODE_ON_WINDOWS = ['HOMEDRIVE', 'HOMEPATH', 'LOGONSERVER', 'PATH', 'SYSTEMDRIVE', 'USERDOMAIN', 'USERNAME', 'WINDIR']
+// On macOS, the system adds this one to every process: the user's text
+// encoding, no credential.
+export const ADDED_BY_MACOS = ['__CF_USER_TEXT_ENCODING']
+// The variables a child is started with on this system, for a profile folder.
+export const systemEnv = (profile) => (MAC
+  ? { HOME: profile, TMPDIR: profile, DSHPROXY_KEYCHAIN: process.env.DSHPROXY_KEYCHAIN }
+  : { SystemRoot: process.env.SystemRoot, LOCALAPPDATA: profile, USERPROFILE: profile, TEMP: profile, TMP: profile })
 
 export async function temporary(t, label) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), `dsh-video-${label}-`))
@@ -38,11 +51,7 @@ export async function host(t, extra = {}) {
       versions: { node: process.versions.node },
       platform: process.platform,
       env: {
-        SystemRoot: process.env.SystemRoot,
-        LOCALAPPDATA: profile,
-        USERPROFILE: profile,
-        TEMP: profile,
-        TMP: profile,
+        ...systemEnv(profile),
         PATH: process.env.PATH,
         DSHPROXY_HOME: home,
         VIDEOROUTER_API_KEY: SECRET,
