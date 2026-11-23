@@ -8,7 +8,7 @@
 | Proof of the riskiest assumption on a Mac | done | 23 Nov, runs 45221540307 and 45221963088, both processors; `research/facts.md` section 5. One assumption did not hold (a locked keychain waits instead of failing); spec changed. |
 | Goal and scope by the user | done | 23 Nov: "it does need same fuctionality, exactly the same as win". Spec rewritten to four stages. |
 | Spec read and approved by the user | open | The user set the goal and said to push and continue on the Mac; the document itself was not confirmed. Stages B to D are outlines and were not reviewed. |
-| Plan review, stage A | open | `plan.md` is a draft; the plan lens has not run. Run it before A1. |
+| Plan review, stage A | done | 23 Nov on the Mac, one fresh-context reviewer subagent (the `reviewer` role could not be started: tool error; same model family as the author, so not cross-family): 2 Blocker, 9 Major, 4 Nit. Plan revised, spec C3, C9, C10, C12 and design 4 amended; below. |
 | A0 baseline on the Mac | done | 23 Nov, user's Mac (arm64, macOS 26.6.2, Node 24.19.0). Proof: 17 passed, 1 failed (K7 after unlocking: a pending Keychain dialog blocks the next read; new fact). Tests: 914, 877 pass, 35 fail, 2 skipped; every failure explained in `research/facts.md` section 6. `package.json` and the lock allow `darwin`. |
 | A1 key wrapper | open | |
 | A2 private files | open | |
@@ -21,7 +21,7 @@
 | Stage C plugin install: facts on the Mac, plan, build | open | outline in the spec |
 | Stage D app: inventory, decision, prototype, build | open | outline in the spec; decision 4 is the user's |
 
-Next step: plan review of stage A (running), then slice A1.
+Next step: slice A1 (`plan.md`, revised).
 
 ## Rulings
 
@@ -60,6 +60,24 @@ Design risk:
 12. Nit, decision 0009: accepted.
 13. Nit, the Krea helper's environment: stage B.
 14. Nit, mode of the Krea folder: stage B (`0700`).
+
+## Plan review, findings and what was done (23 Nov, on the Mac)
+
+1. Blocker, tests that spawn the CLI would write into the login Keychain: accepted. `test/support/keychain.js` sets `DSHPROXY_KEYCHAIN` for the test process and its children; the wrapper refuses under the test runner without it; a CI step checks the CI machine's login keychain afterwards.
+2. Blocker, locked-keychain tests put dialogs on the user's screen: accepted (also seen in A0). Real locked-keychain tests on CI or by opt-in only; a stand-in that does not answer covers it on a developer's Mac. Rejected part: "`create-keychain` adds to the search list": checked on this Mac, it does not.
+3. Major, C9 unreachable for readers, and two 10 s waits per snapshot: accepted. C9 split into commands that save a key (non-zero exit) and those that only read (as on Windows); the wrapper keeps a failure for 60 s so a snapshot waits once. `src/app.js` stays as it is.
+4. Major, no seam for the wrapper, and exit 44 on an existing `master.key`: accepted. `loadMasterKey(file, { keywrap })`; 44 creates only on the create path. No environment variable chooses the `security` program.
+5. Major, `lockFromRelease` signature and `.tar.gz`: accepted. Today's updater tests get an explicit `platform: "win32"`, every assertion kept.
+6. Major, no seam for C5: accepted (`backend.checkForUpdate` in the test-only option of `daemon.start`; a failed check is reported).
+7. Major, A5 against C11 and portable tests: accepted. Video entries suppressed in `app.videoModels`, not in `profile.js`; one module `src/not-yet.js`; Krea gate in the `require.main` branch; gated set narrowed to the paid and Krea paths, the picker and the plugin install; affected tests listed in A5.
+8. Major, shared files and order: accepted. Order A1, A2, A3, A4, A5; A1's verify runs only the master-key tests of `backend.test.js`.
+9. Major, `0755` and backups copying `0644`: accepted (`0700`; backups `0600` on macOS).
+10. Major, C6 realism: accepted (real executable by full path, `-ww`, `realpath`, missing path).
+11. Major, C13: accepted. Windows CI runs `main`'s CLI from a worktree against this one and the reverse; characterization, cannot be red first.
+12. Major, modes on Windows and the call site: accepted (macOS only; `src/cli.js`; C10 applies to commands that use the data folder).
+13. Nit, C7/C8 tests through the real program and CLI: accepted, in A1.
+14. Nit, C2/C3: accepted (C2 by hand and a CI step; `checksums.txt` lines as a fixture; test count step).
+15. Nit, `profile.test.js:535`: accepted (a read-only folder on macOS).
 
 ## Evidence
 
