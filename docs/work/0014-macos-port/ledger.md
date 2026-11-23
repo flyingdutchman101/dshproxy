@@ -37,7 +37,7 @@
 | Stage D: decision 4, first round | answered in part | 23 Nov 22:1x, asked with both options. Answered: while the gateway is stopped, **only the menu-bar item** shows the state and offers Start (no page). Not answered: web page or native app; the user asked instead "Maybe it works as a droidproxy? How does it work" — answered from `research/facts.md` section 9. A second prototype of option (a) by the first subagent is kept in `prototype/alt-b/`. |
 | Stage D: decision 4, earlier text | — | the user's: (a) local web page + menu-bar item, or (b) native Swift app. Two questions the prototype raised, for the user: who draws the page while the gateway is stopped (a small window server beside the gateway, or only the menu-bar item); and the deliberate differences from the Windows app listed in `prototype/README.md`. |
 
-Next step: stages A, B and C are built, reviewed and green in CI (last `8502b2d`); what is left of them is by hand and the user's (M1 to M4, BM1 to BM4, CM1). Stage D waits for decision 4; once decided, its criteria and plan are written into this folder and shown before production code.
+Next step: stages A, B and C are built, reviewed and green in CI; what is left of them is by hand and the user's (M2 to M4 need a sign-in; BM1 to BM4 need the Krea sign-in; CM1 needs the user's word). Stage D: decided (native); the native prototype and `stage-d.md` wait for the user's go before production code; D0 probes 1 and 2 wait for the user's OK. The gateway runs on the user's Mac through a LaunchAgent. Waiting on the user, as of 23 Nov 23:2x: prototype go/changes; a provider sign-in; whether macOS showed anything at the first start (M1); Krea sign-in; CM1; C9 narrowing for `start`; OK for the D0 probes.
 
 ## Rulings
 
