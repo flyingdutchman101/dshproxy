@@ -105,12 +105,25 @@ test('the cap that is sent is the quoted amount, never rounded', async (t) => {
   }
 })
 
+test('fractional quote is displayed in full and cap rounds up, never down', async (t) => {
+  for (const [units, cap] of [[1e-7, 0.000001], [3.1234567, 3.123457], [277.77777777777777, 277.777778], [3.123456, 3.123456]]) {
+    const s = await setup(t, { quote: { ...preflight, compute_units: units } })
+    const result = await s.submit()
+    const [call] = await s.sent()
+    assert.equal(Number(call.args[4]), cap)
+    assert.ok(cap >= units)
+    assert.equal(result.cap, cap)
+    assert.ok(s.asked[0].questions[0].detail.includes(`Quoted just now: ${units} workspace compute units`))
+    assert.ok(s.asked[0].questions[0].detail.includes(`Spending cap: ${cap} workspace compute units`))
+  }
+})
+
 test('the question states the clip preset DSHProxy lists for the model, and is not asked without one', async (t) => {
   const h3 = { settings: settingsRows([['minimax-h3', true, 'krea', ['kovapi', 'callirra', 'krea']]]), quote: { ...preflight, model: 'minimax-h3' }, submit: { ...JOB, model: 'minimax-h3' } }
   const listed = { model: 'minimax-h3', route: 'kovapi', resolution: '768p', durationSeconds: 5, aspectRatio: '16:9' }
   const s = await setup(t, { ...h3, catalog: listed })
   assert.equal((await s.submit({ ...ARGS, model: 'minimax-h3' })).outcome, 'submitted')
-  assert.match(s.asked[0].questions[0].detail, /- Clip: 5 seconds, 16:9, 768p, from text only\n/)
+  assert.match(s.asked[0].questions[0].detail, /- Clip: 5 seconds, 16:9, fixed tier \(resolution unspecified\), from text only\n/)
 
   for (const catalog of [{ ...listed, resolution: undefined }, { ...listed, resolution: 'best' }, { ...listed, durationSeconds: '5' }, { ...listed, aspectRatio: 'wide' }, 'not json']) {
     const bad = await setup(t, { ...h3, catalog })
@@ -231,8 +244,6 @@ test('a quote that cannot back an exact cap never reaches the user', async (t) =
   const cases = [
     [{ quote: { ...preflight, affordable: false } }, /balance does not cover this job/],
     [{ quote: { ...preflight, compute_units: 0 } }, /cannot be used as an exact spending cap/],
-    [{ quote: { ...preflight, compute_units: 1e-7 } }, /cannot be used as an exact spending cap/],
-    [{ quote: { ...preflight, compute_units: 3.1234567 } }, /cannot be used as an exact spending cap/],
     [{ quote: { ...preflight, compute_units: 1e21 } }, /cannot be used as an exact spending cap/],
     [{ quote: { ...preflight, compute_units: '3.5' } }, /verifiable preflight.*Nothing was submitted/],
     [{ quote: { ...preflight, compute_units: undefined } }, /verifiable preflight.*Nothing was submitted/],
@@ -608,8 +619,8 @@ test('the clip preset shown for approval is the one DSHProxy sends to Krea, for 
     const { input } = prepare(model, PROMPT, everyModel, schema)
     assert.deepEqual(
       { model, durationSeconds: input.duration, aspectRatio: input.aspect_ratio, resolution: input.resolution },
-      { model, durationSeconds: shown.durationSeconds, aspectRatio: shown.aspectRatio, resolution: shown.resolution },
+      { model, durationSeconds: shown.durationSeconds, aspectRatio: shown.aspectRatio, resolution: model === 'minimax-h3' ? undefined : shown.resolution },
     )
-    assert.deepEqual(Object.keys(input).sort(), ['aspect_ratio', 'duration', 'prompt', 'resolution'])
+    assert.deepEqual(Object.keys(input).sort(), model === 'minimax-h3' ? ['aspect_ratio', 'duration', 'prompt'] : ['aspect_ratio', 'duration', 'prompt', 'resolution'])
   }
 })

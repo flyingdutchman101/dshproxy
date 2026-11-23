@@ -5,8 +5,9 @@ const help = `dshproxy video list
   video settings set MODEL ROUTE enabled|disabled
   video quote MODEL [ROUTE]              Show a dated API-route estimate (USD or plan credits)
   video krea MODEL                       Prepare a manual quote-only handoff (offline)
-  video quote MODEL krea --prompt "PROMPT"  Preflight in signed-in workspace units
-  video submit MODEL krea --max-units COUNT --confirm-charge "PROMPT"
+  video quote MODEL krea --prompt "PROMPT" [--resolution R]  Preflight in signed-in workspace units
+  video submit MODEL krea --max-units COUNT --confirm-charge [--resolution R] "PROMPT"
+  video balance krea                     Read workspace units
   video submit MODEL ROUTE --max-usd AMOUNT --confirm-charge "PROMPT"
   video submit minimax-h3 callirra --max-credits COUNT --confirm-charge "PROMPT"
   video status MODEL ROUTE JOB_ID        Check once, never resubmit
@@ -60,6 +61,11 @@ async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, work
     if (typeof secret !== 'string' || !secret.trim()) throw new Error(`No key was given on standard input. ${usage}`);
     return emit(await keys.set(home, route, secret, {loadMasterKey}));
   }
+  if (action === 'balance' && model === 'krea') {
+    const client = require('./workspace');
+    const req = client.request(args);
+    return emit(client.result(req, await (workspace || client.invoke)(req)));
+  }
   if (route === 'krea' && ['quote','submit','status'].includes(action)) {
     if (!models.includes(model)) throw new Error('Unknown video model');
     const client = require('./workspace');
@@ -76,8 +82,9 @@ async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, work
   }
   if (action === 'krea' && args.length === 2) {
     const {resolution} = quote(model);
+    const tier = model === 'minimax-h3' ? 'fixed tier (resolution unspecified)' : resolution;
     return emit({provider:'krea', mode:'external-oauth-handoff', contacted:false, server:'https://api.krea.ai/mcp',
-      instructions:`Use Krea workspace OAuth (not an API token). Inspect the standard ${model} model schema. Only if it supports exactly 5s, ${resolution}, 16:9 text-to-video without references, call generate with preflight: true. Return mode ('preflight'), compute_units, is_estimated, available_compute_units and affordable. If the exact preset or preflight is unavailable, stop. Do not submit a job.`,
+      instructions:`Use Krea workspace OAuth (not an API token). Inspect the standard ${model} model schema. Only if it supports exactly 5s, ${tier}, 16:9 text-to-video without references, call generate_video with preflight: true. Return mode ('preflight'), compute_units, is_estimated, available_compute_units and affordable. If the exact preset or preflight is unavailable, stop. Do not submit a job.`,
       source:'https://www.krea.ai/docs/developers/mcp.md'});
   }
   if (action !== 'submit' && action !== 'status') throw new Error(help);

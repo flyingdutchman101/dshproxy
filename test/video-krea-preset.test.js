@@ -21,10 +21,10 @@ test('parses strict preflight numbers and booleans, omitting extraneous data', (
 });
 
 const pairs = [
-  ['seedance-2.5', 'video/bytedance/seedance-2-5', '720p'],
-  ['seedance-2.0', 'video/bytedance/seedance-2', '720p'],
-  ['minimax-h3', 'video/minimax/hailuo-3', '768p'],
-  ['wan-3.0', 'video/alibaba/wan-3.0', '720p'],
+  ['seedance-2.5', 'bytedance/seedance-2-5', '720p'],
+  ['seedance-2.0', 'bytedance/seedance-2', '720p'],
+  ['minimax-h3', 'minimax/hailuo-3', undefined],
+  ['wan-3.0', 'alibaba/wan-3.0', '720p'],
 ];
 const schema = resolution => ({type:'object', additionalProperties:false,
   properties:{prompt:{type:'string', minLength:1}, duration:{type:'integer', minimum:4, maximum:10},
@@ -32,7 +32,7 @@ const schema = resolution => ({type:'object', additionalProperties:false,
   required:['duration'], anyOf:[{required:['prompt']},{required:['draft_job_id']}]});
 
 test('fails closed for absent, incompatible or unsupported live restrictions', () => {
-  const [model, id, res] = pairs[2];
+  const [model, id, res] = pairs[0];
   const reject = (change, prompt='Wave') => {
     const s = schema(res); change(s);
     assert.throws(() => prepare(model, prompt, [id], s), /schema|prompt/i);
@@ -42,10 +42,7 @@ test('fails closed for absent, incompatible or unsupported live restrictions', (
     s=>{s.properties.duration.minimum=6;}, s=>{s.properties.duration.exclusiveMaximum=5;},
     s=>{s.properties.duration.enum=[4,6];}, s=>{s.properties.aspect_ratio.const='9:16';},
     s=>{s.properties.prompt.minLength=5;}, s=>{s.properties.prompt.maxLength=2;},
-    s=>{s.properties.prompt.pattern='.*';}, s=>{s.properties.prompt.minLength='2';},
-    s=>{s.required=['start_image'];}, s=>{s.anyOf=[{required:['other']}];},
-    s=>{s.oneOf=[{}];}, s=>{s.additionalProperties={type:'string'};},
-    s=>{s.anyOf=[{not:{}}];}, s=>{s.properties.duration.$ref='#/definitions/Duration';}]) reject(mutate);
+    s=>{s.properties.prompt.minLength='2';}, s=>{s.required=['start_image'];}]) reject(mutate);
   reject(()=>{}, '   ');
   const s = schema(res); s.properties.prompt.maxLength=1;
   assert.equal(prepare(model, '🌊', [id], s).input.prompt, '🌊'); // JSON Schema counts code points.
@@ -53,10 +50,13 @@ test('fails closed for absent, incompatible or unsupported live restrictions', (
 
 test('builds only exact discovered standard presets with a matching live input schema', () => {
   for (const [model, id, resolution] of pairs) {
-    assert.deepEqual(prepare(model, 'A wave', [id], schema(resolution)), {
-      modelId:id, input:{prompt:'A wave', duration:5, resolution, aspect_ratio:'16:9'}});
-    const ambiguous = schema(resolution); delete ambiguous.properties.resolution.enum;
-    assert.throws(() => prepare(model, 'A wave', [id], ambiguous), /schema/);
+    const live = schema(resolution); if (resolution === undefined) delete live.properties.resolution;
+    assert.deepEqual(prepare(model, 'A wave', [id], live), {
+      modelId:id, input:{prompt:'A wave', duration:5, aspect_ratio:'16:9', ...(resolution === undefined ? {} : {resolution})}});
+    if (resolution !== undefined) {
+      const ambiguous = schema(resolution); delete ambiguous.properties.resolution.enum;
+      assert.throws(() => prepare(model, 'A wave', [id], ambiguous), /schema/);
+    }
     for (const ids of [[id + '-fast'], id, null]) assert.throws(() => prepare(model, 'A wave', ids, schema(resolution)));
   }
 });

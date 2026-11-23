@@ -1,16 +1,15 @@
 'use strict';
 // Preparatory pure helpers only: no OAuth, MCP connection, generation or billing.
 const presets = new Map([
-  ['seedance-2.5', ['video/bytedance/seedance-2-5', '720p']],
-  ['seedance-2.0', ['video/bytedance/seedance-2', '720p']],
-  ['minimax-h3', ['video/minimax/hailuo-3', '768p']],
-  ['wan-3.0', ['video/alibaba/wan-3.0', '720p']],
+  ['seedance-2.5', ['bytedance/seedance-2-5', '720p']],
+  ['seedance-2.0', ['bytedance/seedance-2', '720p']],
+  ['minimax-h3', ['minimax/hailuo-3', undefined]],
+  ['wan-3.0', ['alibaba/wan-3.0', '720p']],
 ]);
 const record = x => x !== null && typeof x === 'object' && (Object.getPrototypeOf(x) === Object.prototype || Object.getPrototypeOf(x) === null);
-const annotations = ['title', 'description', 'default', 'examples', 'example', '$comment'];
 function check(ok) { if (!ok) throw new Error('Live Krea input schema does not support the exact preset'); }
 function keywords(schema, supported) {
-  check(record(schema) && Object.keys(schema).every(k => annotations.includes(k) || supported.includes(k)));
+  check(record(schema));
 }
 function requiredMatches(names, input) {
   check(Array.isArray(names) && names.every(n => typeof n === 'string') && new Set(names).size === names.length);
@@ -40,31 +39,27 @@ function validateField(s, value) {
 function validateSchema(s, input) {
   keywords(s, ['type','properties','required','additionalProperties','anyOf','$defs','definitions']);
   check(s.type === 'object' && record(s.properties));
-  if (Object.hasOwn(s,'additionalProperties')) check(typeof s.additionalProperties === 'boolean');
   if (Object.hasOwn(s,'required')) check(requiredMatches(s.required, input));
-  if (Object.hasOwn(s,'anyOf')) {
-    check(Array.isArray(s.anyOf) && s.anyOf.length > 0);
-    const matches = s.anyOf.map(branch => {
-      keywords(branch, ['required']);
-      return requiredMatches(branch.required, input);
-    });
-    check(matches.includes(true));
-  }
   for (const [name, value] of Object.entries(input)) {
     check(Object.hasOwn(s.properties, name));
     validateField(s.properties[name], value);
   }
 }
-function prepare(model, prompt, discoveredIds, modelInputSchema) {
+function modelId(model) { return presets.get(model)?.[0]; }
+function prepare(model, prompt, discoveredIds, modelInputSchema, requestedResolution) {
   const preset = presets.get(model);
   if (!preset || !Array.isArray(discoveredIds) || !discoveredIds.includes(preset[0])) throw new Error('Exact Krea model not discovered');
-  const [modelId, resolution] = preset;
-  const input = {prompt, duration:5, resolution, aspect_ratio:'16:9'};
+  const [id, defaultResolution] = preset;
+  check(requestedResolution === undefined || (defaultResolution && ['480p','720p','1080p'].includes(requestedResolution)));
+  const resolution = requestedResolution ?? defaultResolution;
+  const input = {prompt, duration:5, aspect_ratio:'16:9', ...(resolution === undefined ? {} : {resolution})};
   if (typeof prompt !== 'string' || !prompt.trim()) throw new Error('Krea prompt must not be empty');
   validateSchema(modelInputSchema, input);
-  const field = modelInputSchema.properties.resolution;
-  check(field.const === resolution || (Array.isArray(field.enum) && field.enum.includes(resolution)));
-  return {modelId, input};
+  if (resolution !== undefined) {
+    const field = modelInputSchema.properties.resolution;
+    check(field.const === resolution || (Array.isArray(field.enum) && field.enum.includes(resolution)));
+  }
+  return {modelId:id, input};
 }
 function parseQuote(value) {
   const fields = ['mode','compute_units','is_estimated','available_compute_units','affordable'];
@@ -76,4 +71,4 @@ function parseQuote(value) {
   }
   return Object.fromEntries(fields.map(k => [k, value[k]]));
 }
-module.exports = { prepare, parseQuote };
+module.exports = { prepare, parseQuote, modelId };

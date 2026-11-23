@@ -60,7 +60,7 @@ function clipPreset(data) {
   const preset = { durationSeconds: data.durationSeconds, aspectRatio: data.aspectRatio, resolution: data.resolution, input: 'text' }
   return Number.isInteger(preset.durationSeconds) && preset.durationSeconds >= 1 && preset.durationSeconds <= 600
     && typeof preset.aspectRatio === 'string' && /^\d{1,2}:\d{1,2}$/.test(preset.aspectRatio)
-    && typeof preset.resolution === 'string' && /^\d{3,4}p$/.test(preset.resolution) ? preset : null
+    && typeof preset.resolution === 'string' && (/^\d{3,4}p$/.test(preset.resolution) || preset.resolution === 'fixed tier (resolution unspecified)') ? preset : null
 }
 
 function estimate(data, model, route) {

@@ -63,18 +63,21 @@ function validPrompt(prompt) {
   return typeof prompt === 'string' && Boolean(prompt.trim()) && !prompt.startsWith('--') && Buffer.byteLength(prompt) <= MAX_PROMPT_BYTES
 }
 
-// The quoted amount written as the cap DSHProxy will be given. It is used only
-// if it says exactly the quoted number; it is never rounded.
+// The approved cap is rounded upward, never below the full-precision quote.
 function exactCap(units) {
-  const cap = String(units)
-  return units > 0 && CAP.test(cap) && Number(cap) === units ? cap : null
+  if (!Number.isFinite(units) || units <= 0 || units > 999999999) return null
+  let micros = Math.ceil(units * 1_000_000)
+  if (micros / 1_000_000 < units) micros++
+  if (!Number.isSafeInteger(micros)) return null
+  const cap = `${Math.floor(micros / 1_000_000)}.${String(micros % 1_000_000).padStart(6, '0')}`.replace(/\.?0+$/, '')
+  return CAP.test(cap) && Number(cap) >= units ? cap : null
 }
 
 // The prompt is the only text here that the user did not write and this file
 // did not write. It is shown inside a fenced block whose fence is longer than
 // any run of backticks in it, so nothing in it can end the block and pose as
 // part of the question, a link, a mention or an answer. The facts come first.
-function approvalQuestion({ model, cap, isEstimated, preset, prompt, earlier }) {
+function approvalQuestion({ model, cap, quoted, isEstimated, preset, prompt, earlier }) {
   const longest = Math.max(0, ...(prompt.match(/`+/g) ?? []).map((run) => run.length))
   const fence = '`'.repeat(Math.max(3, longest + 1))
   const detail = [
@@ -83,7 +86,7 @@ function approvalQuestion({ model, cap, isEstimated, preset, prompt, earlier }) 
     `- Model: ${model}`,
     '- Route: krea (your signed-in Krea workspace)',
     `- Clip: ${preset.durationSeconds} seconds, ${preset.aspectRatio}, ${preset.resolution}, from text only`,
-    `- Quoted just now: ${cap} ${UNIT}${isEstimated ? ' (Krea marks this quote as an estimate)' : ''}`,
+    `- Quoted just now: ${quoted} ${UNIT}${isEstimated ? ' (Krea marks this quote as an estimate)' : ''}`,
     `- Spending cap: ${cap} ${UNIT}. If Krea's price at submission is higher, the job is not sent.`,
     '',
     'Final cost: Krea sets the final debit. It can differ from this quote, and this plugin cannot read it back. Compute units are not US dollars.',
@@ -190,7 +193,7 @@ export function createSubmitTools(call, { questions = () => undefined, now = () 
     if (signal?.aborted) throw cancelled()
 
     const warned = earlier
-    const question = approvalQuestion({ model, cap, isEstimated: quote.isEstimated, preset: quote.preset, prompt, earlier: warned })
+    const question = approvalQuestion({ model, cap, quoted: quote.amount, isEstimated: quote.isEstimated, preset: quote.preset, prompt, earlier: warned })
     let answer
     try {
       answer = await service.ask({ agent: exec.agent, signal, questions: [question] })

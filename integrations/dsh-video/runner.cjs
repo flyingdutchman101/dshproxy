@@ -183,7 +183,8 @@ async function main() {
       // The clip preset DSHProxy lists for the model, read offline before the
       // prompt goes anywhere. A Krea preflight does not state it.
       const listed = await command(run, ['quote', request.model]);
-      const preset = { durationSeconds: listed.durationSeconds, aspectRatio: listed.aspectRatio, resolution: listed.resolution };
+      if (typeof listed.resolution !== 'string' || !/^\d{3,4}p$/.test(listed.resolution)) throw new Error();
+      const preset = { durationSeconds: listed.durationSeconds, aspectRatio: listed.aspectRatio, resolution: request.model === 'minimax-h3' ? 'fixed tier (resolution unspecified)' : listed.resolution };
       return { ...(await command(run, ['quote', request.model, WORKSPACE_ROUTE, '--prompt', request.prompt])), preset };
     } catch (error) {
       throw new Refusal(quoteFailure(error));

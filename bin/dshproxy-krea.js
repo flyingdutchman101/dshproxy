@@ -7,7 +7,7 @@ function refuse(){throw Error('KREA_REFUSED');}
 async function readRequest(stream) {
   const chunks=[];let size=0;for await(const chunk of stream){size+=Buffer.byteLength(chunk);if(size>65536)refuse();chunks.push(Buffer.from(chunk));}
   const text=Buffer.concat(chunks).toString('utf8').trimEnd();if(text.includes('\n')||text.includes('\r'))refuse();
-  const request=JSON.parse(text);if(!request || !['quote','submit','status'].includes(request.action))refuse();return request;
+  const request=JSON.parse(text);if(!request || !['quote','submit','status','balance'].includes(request.action))refuse();return request;
 }
 async function main({args=process.argv.slice(2),input=process.stdin,output=s=>process.stdout.write(s+'\n'),makeStore=windowsStore,run=(r,t)=>require('../src/krea-helper/mcp').run(r,t)}={}) {
   if(args[0]==='login' && (args.length===1 || (args.length===3 && args[1]==='--client-id'))) {

@@ -3,10 +3,12 @@ const {spawn} = require('node:child_process');
 const path = require('node:path');
 const {parseQuote} = require('./krea-preset');
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const statuses = new Set(['backlogged','queued','scheduled','processing','sampling','intermediate-complete','completed','failed','cancelled']);
 const help = 'Use video quote MODEL krea --prompt "PROMPT", video submit MODEL krea --max-units COUNT --confirm-charge "PROMPT", or video status MODEL krea JOB_ID.';
 function request(args) {
   const [action,model,,flag,value,confirm,text] = args;
+  if(action==='balance' && args.length===2 && model==='krea') return {action};
+  if(action==='quote' && args.length===7 && flag==='--prompt' && args[5]==='--resolution' && ['480p','720p','1080p'].includes(args[6]) && model!=='minimax-h3' && typeof value==='string' && value.trim() && !value.startsWith('--') && Buffer.byteLength(value)<=16000) return {action,model,prompt:value,resolution:args[6]};
+  if(action==='submit' && args.length===9 && flag==='--max-units' && /^\d{1,9}(?:\.\d{1,6})?$/.test(value) && Number(value)>0 && confirm==='--confirm-charge' && text==='--resolution' && ['480p','720p','1080p'].includes(args[7]) && model!=='minimax-h3' && typeof args[8]==='string' && args[8].trim() && !args[8].startsWith('--') && Buffer.byteLength(args[8])<=16000) return {action,model,prompt:args[8],maxUnits:Number(value),confirmCharge:true,resolution:args[7]};
   const validPrompt = x => typeof x==='string' && x.trim() && !x.startsWith('--') && Buffer.byteLength(x)<=16000;
   if(action==='quote' && args.length===5 && flag==='--prompt' && validPrompt(value)) return {action,model,prompt:value};
   if(action==='submit' && args.length===7 && flag==='--max-units' && /^\d{1,9}(?:\.\d{1,6})?$/.test(value) && Number(value)>0 && confirm==='--confirm-charge' && validPrompt(text)) return {action,model,prompt:text,maxUnits:Number(value),confirmCharge:true};
@@ -14,9 +16,13 @@ function request(args) {
   throw new Error(`Krea workspace OAuth requires explicit workspace parameters. ${help} No request sent.`);
 }
 function result(req,data) {
+  if(req.action==='balance') {
+    if(!data || !data.plan || typeof data.plan.name!=='string' || typeof data.plan.billing_period!=='string' || (!Number.isFinite(data.plan.monthly_compute_units) || data.plan.monthly_compute_units<0) || !data.compute_units || !['total','plan','purchased','free'].every(k=>Number.isFinite(data.compute_units[k])&&data.compute_units[k]>=0)) throw new Error('Invalid Krea balance response.');
+    return {plan:{name:data.plan.name,billing_period:data.plan.billing_period,monthly_compute_units:data.plan.monthly_compute_units},compute_units:Object.fromEntries(['total','plan','purchased','free'].map(k=>[k,data.compute_units[k]]))};
+  }
   const origin={model:req.model,route:'krea'};
   if(req.action==='quote') return {...origin,...parseQuote(data),currency:'workspace_compute_units',budgetFlag:'--max-units'};
-  if(!data || typeof data.id!=='string' || !idPattern.test(data.id) || !statuses.has(data.status) || (req.action==='status' && req.jobId!==data.id)) throw new Error('Invalid Krea job response. Do not resubmit automatically.');
+  if(!data || typeof data.id!=='string' || !idPattern.test(data.id) || (typeof data.status!=='string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(data.status)) || (req.action==='status' && req.jobId!==data.id)) throw new Error('Invalid Krea job response. Do not resubmit automatically.');
   const job={...origin,id:data.id,status:data.status};
   if(data.outputUrl!==undefined) {
     let u;try{u=new URL(data.outputUrl);}catch{}
