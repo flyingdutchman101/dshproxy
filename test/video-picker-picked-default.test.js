@@ -102,3 +102,38 @@ test('a root session, and a person who only quotes the subagent wording, are ans
   const quote = await quoted(w, PROMPT, ENTRY, [['user', ROOT]]);
   assert.match(await ask(w, confirming(quote)), /^Buying one clip: /);
 });
+
+test('an entry called agent-default-model that sits inside another entry is not the default model', (t) => {
+  const inTool = `- id: tool-reviewer\n  config:\n    agentOptions:\n      id: agent-default-model\n      config: { provider: ${VIDEO}, model: ${ENTRY} }\n`;
+  assert.equal(profile.videoExposed(harnessHome(t, ROUTES + inTool)), true);
+  const inList = `- id: subagent-model-selection-settings\n  config:\n    allowedModels:\n      - { id: agent-default-model, config: { provider: ${VIDEO}, model: ${ENTRY} } }\n`;
+  assert.equal(profile.videoExposed(harnessHome(t, ROUTES + inList)), true);
+  // The pair of the real default, reused by a tool row: the tool row counts.
+  const shared = `- id: agent-default-model\n  config: &picked { provider: ${VIDEO}, model: ${ENTRY} }\n- id: tool-clips\n  config:\n    agentOptions: *picked\n`;
+  assert.equal(profile.videoExposed(harnessHome(t, ROUTES + shared)), true);
+  // The real default written as a reference to a pair kept in the provider list is still the default.
+  const referred = `${ROUTES}            note: &kept { provider: ${VIDEO}, model: ${ENTRY} }\n- id: agent-default-model\n  config: *kept\n`;
+  assert.equal(profile.videoExposed(harnessHome(t, referred)), false);
+});
+
+test('a subagent is recognised when its reminder is split over text blocks or has text before it', () => {
+  const user = (...texts) => ({ role: 'user', content: texts.map((text) => ({ type: 'text', text })) });
+  const cut = CHILD.indexOf('You are a subagent');
+  assert.equal(classify({ model: ENTRY, messages: [user(CHILD.slice(0, cut), CHILD.slice(cut), PROMPT)] }).kind, 'delegated');
+  assert.equal(classify({ model: ENTRY, messages: [user(`Context follows.\n${CHILD}`), user(PROMPT)] }).kind, 'delegated');
+  assert.equal(classify({ model: ENTRY, messages: [{ role: 'user', content: `${CHILD.replace(/\n/g, '\r\n')}` }, user(PROMPT)] }).kind, 'delegated');
+});
+
+test('a report that names the reminder tag and quotes the subagent wording is not a subagent', () => {
+  // As a reviewing agent wrote it, delivered to a person's session in the user role.
+  const report = 'Delegated detection requires the same unit to both `trimStart().startsWith(\'<system-reminder>\')` and `includes(\'You are a subagent delegated by agent "\')`.';
+  assert.equal(classify(request(ENTRY, [['user', report], ['assistant', 'Noted.'], ['user', ROOT], ['user', PROMPT]])).kind, 'prompt');
+  // The tag on a line of its own, without the reminder's first line.
+  const example = 'Example of the format:\n<system-reminder>\nsome session facts\nYou are a subagent delegated by agent "lead".';
+  assert.equal(classify(request(ENTRY, [['user', example], ['assistant', 'Noted.'], ['user', PROMPT]])).kind, 'prompt');
+  // A root reminder and, in the same message after it has closed, the wording.
+  const typed = `${PROMPT}. He says: You are a subagent delegated by agent "lead".`;
+  assert.equal(classify({ model: ENTRY, messages: [{ role: 'user', content: [{ type: 'text', text: ROOT }, { type: 'text', text: typed }] }] }).prompt, typed);
+  // A root reminder followed, in a later message, by the wording.
+  assert.equal(classify(request(ENTRY, [['user', ROOT], ['user', `${PROMPT}. He says: You are a subagent delegated by agent "lead".`]])).kind, 'prompt');
+});
