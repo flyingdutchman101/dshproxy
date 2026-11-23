@@ -5,6 +5,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {execFile} = require('node:child_process');
+const {withLock} = require('../filelock');
 const resource = 'https://api.krea.ai/mcp';
 const trusted = new Set(['https://api.krea.ai', 'https://krea.ai', 'https://www.krea.ai']);
 function check(ok) { if (!ok) throw Error('KREA_REFUSED'); }
@@ -15,9 +16,10 @@ function endpoint(value, origin) {
   check(trusted.has(url.origin) && (!origin || url.origin === origin) && !url.username && !url.password && !url.search && !url.hash && !value.includes('\\') && !/\s/.test(value));
   return url;
 }
-async function jsonRequest(fetchImpl, url, options={}) {
-  const response = await fetchImpl(url, {...options, redirect:'error', signal:AbortSignal.timeout(15000)});
-  check(response.ok && response.body);let size=0;const parts=[];
+async function jsonRequest(fetchImpl, url, options={}, timeoutMs=15000) {
+  const response = await fetchImpl(url, {...options, redirect:'error', signal:AbortSignal.timeout(timeoutMs)});
+  if(!response.ok) { const e=Error('KREA_REFUSED');e.status=response.status;throw e; }
+  check(response.body);let size=0;const parts=[];
   for await (const chunk of response.body) {size+=chunk.length;check(size<=131072);parts.push(chunk);}
   const json=JSON.parse(Buffer.concat(parts).toString('utf8'));check(json && typeof json==='object' && !Array.isArray(json));return json;
 }
@@ -41,7 +43,11 @@ async function openLoopback(expectedState) {
   server.on('error',()=>reject(Error('KREA_REFUSED'))); const timer=setTimeout(()=>reject(Error('KREA_REFUSED')),180000);
   return {redirectUri:`http://127.0.0.1:${port}/callback`,wait:()=>received,close(){clearTimeout(timer);server.close();server.closeAllConnections();}};
 }
-async function login({clientId, fetchImpl=globalThis.fetch, openCallback=openLoopback, showUrl, store, now=Date.now}) {
+async function login(options) {
+  // The store is locked only while the new sign-in is saved, not while the
+  // consent page is open: calls with the present sign-in go on meanwhile.
+  const {store, clientId:givenClientId, fetchImpl=globalThis.fetch, openCallback=openLoopback, showUrl, now=Date.now}=options;
+  let clientId=givenClientId;
   if(clientId!==undefined) check(validId(clientId));
   const meta=await jsonRequest(fetchImpl,'https://api.krea.ai/.well-known/oauth-protected-resource/mcp');
   check(meta.resource===resource && Array.isArray(meta.authorization_servers) && meta.authorization_servers.length===1);
@@ -56,7 +62,14 @@ async function login({clientId, fetchImpl=globalThis.fetch, openCallback=openLoo
   try {
     if(!clientId) {
       const registration=endpoint(as.registration_endpoint,i.origin);
-      const registered=await jsonRequest(fetchImpl,registration,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({client_name:'DSHProxy Krea companion',redirect_uris:[callback.redirectUri],grant_types:['authorization_code'],response_types:['code'],token_endpoint_auth_method:'none'})});
+      const register=grants=>jsonRequest(fetchImpl,registration,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({client_name:'DSHProxy Krea companion',redirect_uris:[callback.redirectUri],grant_types:grants,response_types:['code'],token_endpoint_auth_method:'none'})});
+      // Renewal is asked for where Krea offers it. A registration that Krea
+      // turns down for that reason is made again without it: a sign-in that
+      // lasts an hour is better than none.
+      const renewing=Array.isArray(as.grant_types_supported) && as.grant_types_supported.includes('refresh_token');
+      let registered;
+      try { registered=await register(renewing ? ['authorization_code','refresh_token'] : ['authorization_code']); }
+      catch(e) { if(!renewing || !(e.status>=400 && e.status<500)) throw e; registered=await register(['authorization_code']); }
       check(validId(registered.client_id) && !registered.client_secret && registered.token_endpoint_auth_method==='none' && Array.isArray(registered.redirect_uris) && registered.redirect_uris.includes(callback.redirectUri));clientId=registered.client_id;
     }
     authorize.search=new URLSearchParams({response_type:'code',client_id:clientId,redirect_uri:callback.redirectUri,state,code_challenge_method:'S256',code_challenge:crypto.createHash('sha256').update(verifier).digest('base64url'),resource}).toString();
@@ -65,10 +78,11 @@ async function login({clientId, fetchImpl=globalThis.fetch, openCallback=openLoo
     const t=await jsonRequest(fetchImpl,token,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',client_id:clientId,redirect_uri:callback.redirectUri,code:result.code,code_verifier:verifier,resource}).toString()});
     check(validToken(t.access_token) && typeof t.token_type==='string' && t.token_type.toLowerCase()==='bearer' && Number.isSafeInteger(t.expires_in) && t.expires_in>30 && t.expires_in<=31622400);
     if(t.resource!==undefined) check(t.resource===resource);
-    await store.save({accessToken:t.access_token,expiresAt:now()+t.expires_in*1000,resource});
+    if(t.refresh_token!==undefined) check(validToken(t.refresh_token));
+    await store.save({accessToken:t.access_token,expiresAt:now()+t.expires_in*1000,resource,clientId,tokenEndpoint:token.href,...(t.refresh_token ? {refreshToken:t.refresh_token} : {})});
   } finally {callback.close();}
 }
-// DPAPI protects only an independent AES key. The OAuth token never crosses the
+// DPAPI protects only an independent AES key. No OAuth token ever crosses the
 // PowerShell subprocess boundary. Both programs and pipes are non-interactive.
 function dpapi(mode,data) {
   check(process.platform==='win32' && ['Protect','Unprotect'].includes(mode));
@@ -81,33 +95,156 @@ function dpapi(mode,data) {
     });child.stdin.on('error',fail);child.stdin.end(data.toString('base64'));
   });
 }
-function windowsStore() {
+const IN_USE = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Tries again for a moment while Windows says another program has the file open.
+async function patiently(work) {
+  for (let attempt = 0; ; attempt += 1) {
+    try { return await work(); }
+    catch (e) { if (!IN_USE.has(e.code) || attempt === 6) throw e; await pause(10 << attempt); }
+  }
+}
+// The sign-in on disk: one file, encrypted for the current Windows user, in
+// <LOCALAPPDATA>/DSHProxy/KreaOAuth.
+//
+//   load()              the stored session; throws when there is none
+//   save(s), clear()    each under the lock
+//   transaction(work)   runs work({load, save, clear}) under the lock
+//
+// The lock is the one of src/filelock.js: it names its holder, so a helper
+// that died is recognised at once and its lock taken over; nobody has to
+// clear anything by hand. A lock held by a helper that is alive is taken over
+// only after 30 seconds, longer than a renewal can take.
+function windowsStore({lockWaitMs=30000}={}) {
   check(process.platform==='win32' && process.env.LOCALAPPDATA && path.isAbsolute(process.env.LOCALAPPDATA));
   const dir=path.join(process.env.LOCALAPPDATA,'DSHProxy','KreaOAuth');const file=path.join(dir,'session.v1');
-  return {async save(session){
+  const raw={async save(session){
     const key=crypto.randomBytes(32),iv=crypto.randomBytes(12);let packed;
     try {const cipher=crypto.createCipheriv('aes-256-gcm',key,iv);const data=Buffer.concat([cipher.update(JSON.stringify(session),'utf8'),cipher.final()]);
       packed=JSON.stringify([await dpapi('Protect',key),iv,cipher.getAuthTag(),data].map(x=>x.toString('base64')));
     }finally{key.fill(0)}
-    await fs.mkdir(dir,{recursive:true});const tmp=path.join(dir,crypto.randomUUID()+'.tmp');
-    try {await fs.writeFile(tmp,packed,{flag:'wx',mode:0o600});await fs.rename(tmp,file);}finally{await fs.rm(tmp,{force:true});}
-  },async load(){const h=await fs.open(file,'r');let packed;try{check((await h.stat()).size<=65536);packed=JSON.parse(await h.readFile('utf8'));}finally{await h.close()}
+    await fs.mkdir(dir,{recursive:true});
+    // Written beside the file, flushed to the disk, then put in its place: a
+    // reader sees the old sign-in or the new one, and a renewed sign-in that
+    // was reported as saved is on the disk.
+    const temporary=`${file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+    try {
+      const h=await fs.open(temporary,'wx',0o600);
+      try{await h.writeFile(packed);await h.sync();}finally{await h.close()}
+      await patiently(()=>fs.rename(temporary,file));
+    } finally {await fs.rm(temporary,{force:true}).catch(()=>{});}
+  },async load(){const h=await patiently(()=>fs.open(file,'r'));let packed;try{check((await h.stat()).size<=65536);packed=JSON.parse(await h.readFile('utf8'));}finally{await h.close()}
     check(Array.isArray(packed) && packed.length===4 && packed.every(v=>typeof v==='string' && /^[A-Za-z0-9+/]+={0,2}$/.test(v)));
     const [wrapped,iv,tag,data]=packed.map(v=>Buffer.from(v,'base64'));check(iv.length===12 && tag.length===16);
     const key=await dpapi('Unprotect',wrapped);try{const decipher=crypto.createDecipheriv('aes-256-gcm',key,iv);decipher.setAuthTag(tag);return JSON.parse(Buffer.concat([decipher.update(data),decipher.final()]).toString('utf8'));}finally{key.fill(0)}
-  },async clear(){await fs.rm(file,{force:true});}};
+  },async clear(){await patiently(()=>fs.rm(file,{force:true}));}};
+  async function transaction(work) {
+    await fs.mkdir(dir,{recursive:true});
+    let finished=false,result;
+    try { await withLock(file,async()=>{result=await work(raw);finished=true;},{waitMs:lockWaitMs}); }
+    // The work is done and its result stands even when the lock was taken
+    // over meanwhile; anything else is a failure of the work or of the wait.
+    catch(e) { if(!finished) throw e; }
+    return result;
+  }
+  return {load:raw.load,transaction,save:s=>transaction(store=>store.save(s)),clear:()=>transaction(store=>store.clear())};
 }
-// The one rule for a usable sign-in: a stored session for the Krea resource
-// with a well-formed token and more than 30 seconds left.
-async function usable(store,now) {
-  const s=await store.load();check(s.resource===resource && validToken(s.accessToken) && Number.isSafeInteger(s.expiresAt) && s.expiresAt>now()+30000);return s;
+
+// ------------------------------- staying signed in -------------------------------
+//
+// Krea's access token lasts an hour. A sign-in that came with a renewal token
+// is renewed by the helper itself, with one request to Krea's token endpoint,
+// when a call finds less than two minutes left: more than the 90 seconds a
+// workspace request may take. A sign-in without one works until 30 seconds
+// before its end and then needs a new sign-in, as before.
+//
+// What a failed renewal means:
+//   400, 401, 403   Krea no longer accepts the renewal token. It is dropped;
+//                   the sign-in works for what is left of its hour and then a
+//                   new sign-in is needed (KREA_LOGIN_REQUIRED).
+//   anything else   (no answer, 408, 425, 429, 5xx, an answer that cannot be
+//                   read) nothing is changed and the next call tries again
+//                   with the same renewal token. Until then KREA_REFUSED,
+//                   unless the access token is still good.
+// Trying the same renewal token again is safe: at worst Krea had already
+// replaced it and refuses, which is the first case.
+const RENEW_MARGIN_MS = 120000;
+const PLAIN_MARGIN_MS = 30000;
+const RENEW_TIMEOUT_MS = 10000;
+function validSession(s) {
+  return Boolean(s) && typeof s==='object' && !Array.isArray(s) && s.resource===resource && validToken(s.accessToken) && Number.isSafeInteger(s.expiresAt);
 }
-async function access(store,now=Date.now) {
-  try{return (await usable(store,now)).accessToken;}catch{throw Error('KREA_LOGIN_REQUIRED');}
+// Whether a session carries what a renewal needs. The token endpoint must be
+// one of Krea's own https addresses: a renewal token is sent nowhere else.
+function renewable(s) {
+  if(!validSession(s) || !validId(s.clientId) || !validToken(s.refreshToken)) return false;
+  try { endpoint(s.tokenEndpoint);return true; } catch { return false; }
 }
-// Whether a request would find a sign-in, and until when. Never the token.
-// Any failure to read the store counts as signed out. Contacts nothing.
-async function status(store,now=Date.now) {
-  try{return {signedIn:true,expiresAt:(await usable(store,now)).expiresAt};}catch{return {signedIn:false};}
+function validAnswer(t) {
+  check(validToken(t.access_token) && typeof t.token_type==='string' && t.token_type.toLowerCase()==='bearer' && Number.isSafeInteger(t.expires_in) && t.expires_in>RENEW_MARGIN_MS/1000 && t.expires_in<=31622400);
+  if(t.resource!==undefined) check(t.resource===resource);
+  if(t.refresh_token!==undefined) check(validToken(t.refresh_token));
+}
+const loginRequired=()=>Error('KREA_LOGIN_REQUIRED');
+const usable=(s,now)=>s.expiresAt>now()+PLAIN_MARGIN_MS;
+const fresh=(s,now)=>s.expiresAt>now()+(renewable(s)?RENEW_MARGIN_MS:PLAIN_MARGIN_MS);
+// One renewal, under the store's lock. `locked` is the store inside the lock.
+async function renew(locked,now,fetchImpl) {
+  let s;
+  try { s=await locked.load(); } catch { throw loginRequired(); }
+  if(!validSession(s)) throw loginRequired();
+  // Another helper renewed it while this one waited for the lock.
+  if(fresh(s,now)) return s;
+  if(!renewable(s)) throw loginRequired();
+  let t;
+  try {
+    t=await jsonRequest(fetchImpl,endpoint(s.tokenEndpoint),{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'refresh_token',refresh_token:s.refreshToken,client_id:s.clientId,resource}).toString()},RENEW_TIMEOUT_MS);
+    if(t.error!==undefined) { const e=Error('KREA_REFUSED');e.status=400;throw e; }
+    validAnswer(t);
+  } catch(e) {
+    if([400,401,403].includes(e && e.status)) {
+      const {refreshToken,...rest}=s;
+      // If this cannot be saved the next call asks Krea again and is refused again.
+      try { await locked.save(rest); } catch { /* see above */ }
+      if(usable(rest,now)) return rest;
+      throw loginRequired();
+    }
+    if(usable(s,now)) return s;
+    throw Error('KREA_REFUSED');
+  }
+  const next={...s,accessToken:t.access_token,expiresAt:now()+t.expires_in*1000,refreshToken:t.refresh_token || s.refreshToken};
+  // The renewed sign-in is good whether or not it could be stored; stored it
+  // must be for the next call, so a save that fails is tried once more.
+  try { await locked.save(next); } catch { await pause(200); try { await locked.save(next); } catch { /* this call still has its token */ } }
+  return next;
+}
+// The session in force now, renewed first when it is about to end.
+async function current(store,now,fetchImpl) {
+  let s;
+  try { s=await store.load(); } catch { throw loginRequired(); }
+  if(!validSession(s)) throw loginRequired();
+  if(fresh(s,now)) return s;
+  if(!renewable(s) || typeof store.transaction!=='function') { if(usable(s,now)) return s; throw loginRequired(); }
+  try { return await store.transaction(locked=>renew(locked,now,fetchImpl)); }
+  catch(e) {
+    if(e && (e.message==='KREA_LOGIN_REQUIRED' || e.message==='KREA_REFUSED')) throw e;
+    // The lock could not be had in time.
+    if(usable(s,now)) return s;
+    throw Error('KREA_REFUSED');
+  }
+}
+// The access token for one workspace call. KREA_LOGIN_REQUIRED: a new sign-in
+// is needed. KREA_REFUSED: the sign-in could not be renewed just now.
+async function access(store,now=Date.now,{fetchImpl=globalThis.fetch}={}) {
+  try { return (await current(store,now,fetchImpl)).accessToken; }
+  catch(e) { throw Error(e && e.message==='KREA_REFUSED' ? 'KREA_REFUSED' : 'KREA_LOGIN_REQUIRED'); }
+}
+// Whether a sign-in is present, renewing it first when it is about to end, so
+// that "signed in" means the next call will work. Never exposes a credential.
+//   {signedIn:true, expiresAt, canRenew}   canRenew: it renews itself
+//   {signedIn:false, canRenew}             canRenew: a later call may still renew it
+async function status(store,now=Date.now,{fetchImpl=globalThis.fetch}={}) {
+  try { const s=await current(store,now,fetchImpl); return {signedIn:true,expiresAt:s.expiresAt,canRenew:renewable(s)}; } catch { /* not usable now */ }
+  try { return {signedIn:false,canRenew:renewable(await store.load())}; } catch { return {signedIn:false,canRenew:false}; }
 }
 module.exports={login,access,status,windowsStore};

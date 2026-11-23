@@ -13,10 +13,10 @@ function fixture(overrides={}) {
 }
 test('login exchanges only an S256-bound authorization code for a resource-specific bearer session',async()=>{
  const f=fixture(); const {login}=require('../src/krea-helper/oauth'); await login(f.options);
- assert.equal(f.calls.length,4); assert.equal(f.url.origin,issuer); assert.equal(f.url.searchParams.get('resource'),resource);
+ assert.equal(f.calls.length,4); assert.deepEqual(JSON.parse(f.calls[2].o.body).grant_types,['authorization_code']); assert.equal(f.url.origin,issuer); assert.equal(f.url.searchParams.get('resource'),resource);
  const body=new URLSearchParams(f.calls[3].o.body);assert.equal(body.get('resource'),resource);assert.equal(body.get('redirect_uri'),callback);
  assert.equal(createHash('sha256').update(body.get('code_verifier')).digest('base64url'),f.url.searchParams.get('code_challenge'));assert.equal(f.url.searchParams.get('code_challenge_method'),'S256');
- assert.deepEqual(f.saved,{accessToken:'synthetic-access',expiresAt:1801000,resource}); assert.ok(f.calls.every(c=>c.o.redirect==='error'));
+ assert.deepEqual(f.saved,{accessToken:'synthetic-access',expiresAt:1801000,resource,clientId:'public-client',tokenEndpoint:issuer+'/token',refreshToken:'discard'}); assert.ok(f.calls.every(c=>c.o.redirect==='error'));
 });
 const {login,access}=require('../src/krea-helper/oauth');
 const {main}=require('../bin/dshproxy-krea');
@@ -76,17 +76,17 @@ const signedOut=[
 ];
 test('status reports a stored session that a request would accept, with its expiry and nothing else',async()=>{
  const state=await oauth.status({load:async()=>session()},()=>NOW);
- assert.deepEqual(state,{signedIn:true,expiresAt:NOW+3600000});
- assert.equal(JSON.stringify(state),`{"signedIn":true,"expiresAt":${NOW+3600000}}`);
- assert.deepEqual(await oauth.status({load:async()=>session({expiresAt:NOW+30001})},()=>NOW),{signedIn:true,expiresAt:NOW+30001});
+ assert.deepEqual(state,{signedIn:true,expiresAt:NOW+3600000,canRenew:false});
+ assert.equal(JSON.stringify(state),`{"signedIn":true,"expiresAt":${NOW+3600000},"canRenew":false}`);
+ assert.deepEqual(await oauth.status({load:async()=>session({expiresAt:NOW+30001})},()=>NOW),{signedIn:true,expiresAt:NOW+30001,canRenew:false});
  // More than was stored never comes out, whatever the store holds.
- assert.deepEqual(await oauth.status({load:async()=>session({refreshToken:'synthetic-STATUS-refresh',note:TOKEN})},()=>NOW),{signedIn:true,expiresAt:NOW+3600000});
+ assert.deepEqual(await oauth.status({load:async()=>session({refreshToken:'synthetic-STATUS-refresh',note:TOKEN})},()=>NOW),{signedIn:true,expiresAt:NOW+3600000,canRenew:false});
  assert.equal(await access({load:async()=>session()},()=>NOW),TOKEN);
 });
 test('status is signed out for an expired, missing or corrupt session, exactly where a request would ask for a sign-in',async()=>{
  for(const [name,store] of signedOut){
   const state=await oauth.status(store,()=>NOW);
-  assert.deepEqual(state,{signedIn:false},name);assert.equal(JSON.stringify(state),'{"signedIn":false}',name);
+  assert.deepEqual(state,{signedIn:false,canRenew:false},name);assert.equal(JSON.stringify(state),'{"signedIn":false,"canRenew":false}',name);
   await assert.rejects(access(store,()=>NOW),/KREA_LOGIN_REQUIRED/,name);
  }
 });
@@ -105,7 +105,7 @@ test('helper status prints exactly one JSON line and succeeds whether signed in 
  const expiresAt=Date.now()+3600000;
  const present=statusRun(()=>({load:async()=>session({expiresAt})}));
  assert.equal(await main(present.params),undefined);
- assert.deepEqual(present.output,[`{"signedIn":true,"expiresAt":${expiresAt}}`]);
+ assert.deepEqual(present.output,[`{"signedIn":true,"expiresAt":${expiresAt},"canRenew":false}`]);
  assert.equal(present.output.join('').includes(TOKEN),false);assert.equal(present.used,0);
 
  const absent=[['expired',()=>({load:async()=>session({expiresAt:Date.now()-1000})})],['about to expire',()=>({load:async()=>session({expiresAt:Date.now()+20000})})],
@@ -113,7 +113,7 @@ test('helper status prints exactly one JSON line and succeeds whether signed in 
   ['wrong shape',()=>({load:async()=>({accessToken:TOKEN})})],['no store on this system',()=>{throw Error('KREA_REFUSED')}]];
  for(const [name,makeStore] of absent){
   const x=statusRun(makeStore);assert.equal(await main(x.params),undefined,name);
-  assert.deepEqual(x.output,['{"signedIn":false}'],name);assert.equal(x.used,0,name);
+  assert.deepEqual(x.output,[name==='no store on this system' ? '{"signedIn":false}' : '{"signedIn":false,"canRenew":false}'],name);assert.equal(x.used,0,name);
  }
  assert.equal(fetched,0);
 });
@@ -131,12 +131,12 @@ test('the real helper with an empty or damaged temporary store answers signed ou
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'dshproxy-krea-status-'));
  const helper=path.resolve(__dirname,'../bin/dshproxy-krea.js');
  const run=(env)=>spawnSync(process.execPath,[helper,'status'],{env:{SystemRoot:process.env.SystemRoot,HOME:dir,USERPROFILE:dir,TEMP:dir,TMP:dir,...env},input:'{"action":"quote"}\n',encoding:'utf8',windowsHide:true,timeout:20000});
- const signedOutLine=r=>{assert.equal(r.status,0,r.stderr);assert.equal(r.stdout,'{"signedIn":false}\n');assert.equal(r.stderr,'');};
+ const signedOutLine=r=>{assert.equal(r.status,0,r.stderr);assert.equal(r.stdout,'{"signedIn":false,"canRenew":false}\n');assert.equal(r.stderr,'');};
  try {
   signedOutLine(run({LOCALAPPDATA:dir}));
   assert.deepEqual(await fs.readdir(dir),[]);
   // No store location at all, as on a system this helper does not support.
-  signedOutLine(run({}));
+  const unsupported=run({});assert.equal(unsupported.status,0,unsupported.stderr);assert.equal(unsupported.stdout,'{"signedIn":false}\n');assert.equal(unsupported.stderr,'');
   // A session file that is not one: refused before Windows is asked to unwrap anything.
   const store=path.join(dir,'DSHProxy','KreaOAuth');await fs.mkdir(store,{recursive:true});
   for(const text of ['not a session {','["only","two"]','{"accessToken":"synthetic-STATUS-plain","resource":"https://api.krea.ai/mcp","expiresAt":99999999999999}','']){
