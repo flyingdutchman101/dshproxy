@@ -1362,3 +1362,30 @@ test("a restart after a backend rollback waits for the request in flight, then t
   assert.deepEqual(await g.ended(), { code: 0, signal: null });
   assert.equal(g.output().includes(firstToken), false);
 });
+
+// ------------------------------- the video picker's own path -------------------------------
+
+test("a request for a video entry is answered by the gateway itself and never forwarded; a chat request beside it is forwarded as before", async (t) => {
+  const g = await startGateway(t);
+  const body = JSON.stringify({ model: "seedance-2.5/720p/krea", max_tokens: 4096, stream: true, messages: [{ role: "user", content: "A red ball rolls slowly across a wooden table" }] });
+  const video = await call(g.port, { method: "POST", target: "/dshproxy/video/v1/messages", headers: { "content-type": "application/json" }, body }).done;
+  assert.equal(video.status, 200);
+  assert.match(video.headers["content-type"], /^text\/event-stream/);
+  // No entry is switched on in this data folder: the picker says so, and asks nobody.
+  assert.match(video.text, /This video entry is switched off in DSHProxy\. Nothing was quoted or bought\./);
+  assert.match(video.text, /event: message_stop/);
+  assert.deepEqual(g.backend.seen, [], "nothing reached the backend");
+
+  // From a web page: refused at the door.
+  const page = await call(g.port, { method: "POST", target: "/dshproxy/video/v1/messages", headers: { "content-type": "application/json", origin: "https://example.com" }, body }).done;
+  assert.equal(page.status, 403);
+  assert.deepEqual(g.backend.seen, []);
+
+  // A chat request is forwarded whole, and the gateway's own status still answers.
+  assert.deepEqual(JSON.parse((await get(g.port, "/v1/models?how=ok&id=chat")).text), { served: "chat" });
+  assert.deepEqual(g.backend.seen.map((item) => item.id), ["chat"]);
+  await idle(g);
+  assert.equal((await liveStatus(g.port)).inFlight, 0);
+  // The purchase record exists from the first start, so that it is old enough when it is needed.
+  assert.ok(fs.existsSync(path.join(g.home, "video-picker", "claims.log")));
+});

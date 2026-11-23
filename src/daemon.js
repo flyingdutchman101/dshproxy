@@ -18,6 +18,7 @@ const { createAccountOrder } = require("./primary");
 const { createLogins } = require("./login");
 const catalog = require("./catalog");
 const profile = require("./dsh/profile");
+const videoPicker = require("./video/picker");
 const { fetchCatalog } = require("./models");
 const { checkForUpdate, createUpdater } = require("./backend/updater");
 const { runTrial } = require("./backend/trial");
@@ -490,6 +491,11 @@ async function start({ home, print = console.log, restart = null, exit = null, b
     status,
     control
   });
+
+  // Paid video entries picked in DeepSeek Harness are answered here and never
+  // forwarded. Every other request reaches the gateway's own handler
+  // untouched. This must come before the request counter below.
+  videoPicker.mount(gateway, { home: state.home, origin: state.origin, log });
 
   // ---- Requests in flight, and stopping when there are none ----
   // Everything the gateway forwards is counted. What it answers itself is

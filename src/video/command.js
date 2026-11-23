@@ -5,6 +5,7 @@ const help = `dshproxy video list
   video settings set MODEL ROUTE enabled|disabled
   video entries                          List every model, resolution and route that exists, each on or off
   video entries set MODEL RESOLUTION ROUTE on|off
+  video picker                           Buying from the chat model picker: on or off, the ceiling, the last jobs (video picker help)
   video quote MODEL [ROUTE] [--resolution R]  Show a dated API-route estimate (USD or plan credits)
   video krea MODEL                       Prepare a manual quote-only handoff (offline)
   video quote MODEL krea --prompt "PROMPT" [--resolution R]  Preflight in signed-in workspace units
@@ -79,6 +80,8 @@ async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, work
     if (args.length !== 6 || model !== 'set' || !['on','off'].includes(args[5])) throw new Error('Use video entries, or video entries set MODEL RESOLUTION ROUTE on|off.');
     return emit({entries:await settings.setEntry(home, {model:args[2], resolution:args[3], route:args[4]}, args[5] === 'on')});
   }
+  // Buying from the chat model picker: the switch, the ceiling, the last jobs.
+  if (action === 'picker') return require('./picker/cli').run(args.slice(1), out, { env });
   if (action === 'key') {
     const keys = require('./keys');
     const usage = `Use video key list, video key set PROVIDER (the key is read from standard input, never from the command line), or video key remove PROVIDER. Providers: ${keys.providers.join(', ')}.`;
