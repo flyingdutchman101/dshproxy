@@ -1,7 +1,7 @@
 // Writes the gateway's models into DeepSeek Harness as provider routes of the
 // pi-ai plugin (~/.dsh/profiles/<profile>/cordis.patch.yml).
 //
-// Only the four `dshproxy-*` routes are written or removed. Every other patch
+// Only the five `dshproxy-*` routes are written or removed. Every other patch
 // entry, route (including VeryCuteDroidProxy's `droidproxy-*`) and comment in
 // the file is left as it is.
 
@@ -20,7 +20,10 @@ const KEY_PLACEHOLDER = "dshproxy-local";
 const ADDED_MARK = " added by dshproxy";
 // The app was called dshgate before; its routes and marks are migrated.
 const LEGACY_ADDED_MARK = " added by dshgate";
-const legacyKey = (key) => key.replace(/^dshproxy-/, "dshgate-");
+const VIDEO_ROUTE = "dshproxy-video";
+// The video route is newer than the rename, so it has no old name: a route
+// called `dshgate-video` would be somebody else's.
+const legacyKey = (key) => (key === VIDEO_ROUTE ? null : key.replace(/^dshproxy-/, "dshgate-"));
 // Providers shrink the per-image size limit once a request carries many
 // images (Anthropic: 2000-3000 px instead of 8000). Keeping the retained count
 // below that threshold makes DeepSeek Harness replace older images with text
@@ -33,12 +36,21 @@ const MAX_REQUEST_IMAGE_BYTES = 8 * 1024 * 1024;
 
 // Each model family is declared with its native protocol. Lanes use Anthropic
 // Messages; CLIProxyAPI translates for whichever model serves the request.
+//
+// The video route lists paid video entries for a person to pick in the chat
+// model picker. Picking one can lead to a purchase, so it differs from the
+// other four: its entries are exactly the ones passed in (none is ever kept),
+// DeepSeek Harness is told not to send a request again by itself, and the
+// route must not be named anywhere an agent could select it (videoExposures).
+// A long answer sends text while it waits; the idle limit is a margin.
 const ROUTES = {
   "dshproxy-lanes": { api: "lanes", protocol: "anthropic-messages", suffix: "", label: "DSHProxy · Lanes (automatic failover)" },
   "dshproxy-claude": { api: "claude", protocol: "anthropic-messages", suffix: "", label: "DSHProxy · Claude" },
   "dshproxy-openai": { api: "openai", protocol: "openai-responses", suffix: "/v1", label: "DSHProxy · GPT" },
-  "dshproxy-compat": { api: "compat", protocol: "openai-completions", suffix: "/v1", label: "DSHProxy · Gemini, Kimi and API keys" }
+  "dshproxy-compat": { api: "compat", protocol: "openai-completions", suffix: "/v1", label: "DSHProxy · Gemini, Kimi and API keys" },
+  [VIDEO_ROUTE]: { api: "video", protocol: "anthropic-messages", suffix: "/dshproxy/video", label: "DSHProxy · Video (paid)", options: { streamIdleTimeoutMs: 900000, retryPolicy: { mode: "normal", maxRetries: 0 } } }
 };
+const isVideo = (model) => model?.api === ROUTES[VIDEO_ROUTE].api;
 
 // DeepSeek Harness refuses an attachment unless the model declares it; `text`
 // and `image` are the only modalities it accepts.
@@ -72,7 +84,8 @@ function modelEntry(model, existing) {
 
 // `previous` holds each route's current model entries. Models of the providers
 // in `keepModelPrefixes` stay even when `models` no longer lists them: their
-// saved API key cannot be read right now, which is not a removal.
+// saved API key cannot be read right now, which is not a removal. That never
+// applies to the video route: a video entry that is not passed is switched off.
 function buildRoutes(models, origin, previous = {}, keepModelPrefixes = []) {
   const routes = {};
   for (const [key, route] of Object.entries(ROUTES)) {
@@ -80,11 +93,13 @@ function buildRoutes(models, origin, previous = {}, keepModelPrefixes = []) {
     const list = models.filter((model) => model.api === route.api).map((model) => modelEntry(model, before.get(model.id)));
     const listed = new Set(list.map((entry) => entry.id));
     for (const [id, entry] of before) {
-      if (listed.has(id) || !keepModelPrefixes.some((prefix) => id.startsWith(`${prefix}/`))) continue;
+      if (key === VIDEO_ROUTE || listed.has(id) || !keepModelPrefixes.some((prefix) => id.startsWith(`${prefix}/`))) continue;
       list.push({ ...entry, input: declaredInput(entry) || [...DEFAULT_INPUT] });
     }
     if (!list.length) continue;
-    routes[key] = { displayName: route.label, apiKeyEnv: KEY_REF, api: route.protocol, baseURL: `${origin}${route.suffix}`, maxRequestImages: MAX_REQUEST_IMAGES, maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES, models: list };
+    // Route options sit beside the other route settings, where DeepSeek Harness
+    // reads `streamIdleTimeoutMs` and `retryPolicy`.
+    routes[key] = { displayName: route.label, apiKeyEnv: KEY_REF, api: route.protocol, baseURL: `${origin}${route.suffix}`, maxRequestImages: MAX_REQUEST_IMAGES, maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES, ...structuredClone(route.options || {}), models: list };
   }
   return routes;
 }
@@ -233,9 +248,10 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
   const previous = {};
   for (const key of Object.keys(ROUTES)) {
     const list = providersNode.getIn([key, "models"], true);
-    const legacy = providersNode.getIn([legacyKey(key), "models"], true);
+    const old = legacyKey(key);
+    const legacy = old ? providersNode.getIn([old, "models"], true) : null;
     previous[key] = YAML.isSeq(list) ? list.toJSON() : YAML.isSeq(legacy) ? legacy.toJSON() : [];
-    providersNode.delete(legacyKey(key));
+    if (old) providersNode.delete(old);
   }
   const routes = buildRoutes(models, origin, previous, options.keepModelPrefixes || []);
   for (const key of Object.keys(ROUTES)) {
@@ -249,21 +265,25 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
       const input = item.get("input", true);
       if (YAML.isSeq(input)) input.flow = true;
     }
+    const retryPolicy = node.get("retryPolicy", true);
+    if (YAML.isMap(retryPolicy)) retryPolicy.flow = true;
     providersNode.set(key, node);
   }
   const written = Object.values(routes).flatMap((route) => route.models.map((model) => model.id));
   const requested = new Set(models.map((model) => model.id));
+  const chatModels = Object.keys(routes).filter((key) => key !== VIDEO_ROUTE).flatMap((key) => routes[key].models.map((model) => model.id));
 
   // A profile needs a default model that exists. If none is set (or it names
   // something this gateway does not serve), point it at a lane so a new session
-  // never starts on a model that is gone.
+  // never starts on a model that is gone. A video entry is not a default model
+  // either: no new session may start on a paid entry.
   let repairedDefault = false;
   const laneNames = Object.keys(options.lanes || {});
   const preferredLane = laneNames.includes("google") ? "google" : laneNames[0];
   const defaultEntry = doc.contents.items.find((item) => YAML.isMap(item) && String(item.get("id") || "") === "agent-default-model");
   const defaultProvider = defaultEntry ? String(defaultEntry.getIn(["config", "provider"]) || "") : "";
   const defaultModel = defaultEntry ? String(defaultEntry.getIn(["config", "model"]) || "") : "";
-  const defaultOk = defaultEntry && ROUTES[defaultProvider] && (written.includes(defaultModel) || defaultModel.startsWith("lane-"));
+  const defaultOk = defaultEntry && ROUTES[defaultProvider] && defaultProvider !== VIDEO_ROUTE && (chatModels.includes(defaultModel) || defaultModel.startsWith("lane-"));
   if (!defaultOk && preferredLane && routes["dshproxy-lanes"]) {
     const block = doc.createNode({ id: "agent-default-model", name: "@deepseek-ai/dsh-agent-default-model", config: { provider: "dshproxy-lanes", model: laneId(preferredLane) } });
     if (defaultEntry) doc.contents.items[doc.contents.items.indexOf(defaultEntry)] = block;
@@ -288,13 +308,15 @@ function applyToProfile(profile, models, origin, home = dshHome(), options = {})
 // must never add DSHProxy to a profile the user did not apply it to).
 function hasRoutes(profile, home) {
   const providersNode = findEntry(readPatch(profile, home).doc)?.getIn(["config", "providers"], true);
-  return YAML.isMap(providersNode) && Object.keys(ROUTES).some((key) => providersNode.has(key) || providersNode.has(legacyKey(key)));
+  return YAML.isMap(providersNode) && Object.keys(ROUTES).some((key) => providersNode.has(key) || (legacyKey(key) !== null && providersNode.has(legacyKey(key))));
 }
 
 function apply(models, origin, home = dshHome(), options = {}) {
   let names = profiles(home);
   if (!names.length) throw new Error("DeepSeek Harness profiles were not found. Open DeepSeek Harness once, then try again.");
-  if (!models.length) throw new Error("No models are available yet. Sign in to an account or add an API key first.");
+  // Video entries alone do not count: a profile whose only route is the paid
+  // one would start every session on it.
+  if (!models.some((model) => !isVideo(model))) throw new Error("No models are available yet. Sign in to an account or add an API key first.");
   if (options.only) names = names.filter((name) => options.only.includes(name));
   if (options.onlyApplied) {
     names = names.filter((name) => hasRoutes(name, home));
@@ -319,7 +341,8 @@ function remove(home = dshHome(), options = {}) {
     if (YAML.isMap(providersNode)) {
       for (const key of Object.keys(ROUTES)) {
         if (providersNode.delete(key)) removed.push(key);
-        if (providersNode.delete(legacyKey(key))) removed.push(legacyKey(key));
+        const old = legacyKey(key);
+        if (old && providersNode.delete(old)) removed.push(old);
       }
       const ownEntry = [ADDED_MARK, LEGACY_ADDED_MARK].includes(entry.get("id", true)?.comment);
       if (ownEntry && !providersNode.items.length) patch.doc.contents.items.splice(patch.doc.contents.items.indexOf(entry), 1);
@@ -332,7 +355,9 @@ function remove(home = dshHome(), options = {}) {
 // Every `{ provider: dshproxy-…, model }` pair in the profile, wherever it
 // sits (a tool's agentOptions, the allowed subagent models), that names a route
 // or a model the profile's own provider list does not have. The default model
-// is left to its own check. Each is described by the nearest entry ID.
+// is left to its own check, and the video route to videoExposures, which
+// reports it whether the route is defined or not. Each is described by the
+// nearest entry ID.
 function danglingReferences(doc, providersNode) {
   const defined = new Map();
   for (const pair of YAML.isMap(providersNode) ? providersNode.items : []) {
@@ -344,7 +369,7 @@ function danglingReferences(doc, providersNode) {
     Map(_key, node, ancestors) {
       const provider = node.get("provider");
       const model = node.get("model");
-      if (typeof provider !== "string" || typeof model !== "string" || !provider.startsWith("dshproxy-")) return;
+      if (typeof provider !== "string" || typeof model !== "string" || !provider.startsWith("dshproxy-") || provider === VIDEO_ROUTE) return;
       if (defined.get(provider)?.has(model)) return;
       const owner = [...ancestors].reverse().find((item) => YAML.isMap(item) && typeof item.get("id") === "string");
       const name = owner ? owner.get("id") : "an entry";
@@ -355,6 +380,100 @@ function danglingReferences(doc, providersNode) {
   return [...new Set(found)].sort();
 }
 
+// A profile larger than this is not searched to the end; it is treated as one
+// that cannot be read.
+const MAX_SEARCHED_NODES = 200000;
+
+// Every place outside the provider list where the profile names the video
+// route as a provider: the allowed subagent models, a tool's agentOptions, the
+// default model, or any other mapping with `provider: dshproxy-video`. Any of
+// them would let an agent, or a new session, reach a route that can buy.
+// A mapping reused by reference (`*name`, `<<`) is read where it is used.
+// Each place is `{ where, model }`, `where` being the nearest entry ID and the
+// path below it.
+function videoExposures(doc) {
+  const providersNode = findEntry(doc)?.getIn(["config", "providers"], true);
+  const plain = (node) => {
+    const target = YAML.isAlias(node) ? node.resolve(doc) : node;
+    return YAML.isScalar(target) ? target.value : undefined;
+  };
+  const found = [];
+  let searched = 0;
+  const walk = (node, owner, trail, followed) => {
+    if (!node || node === providersNode) return;
+    searched += 1;
+    if (searched > MAX_SEARCHED_NODES) throw new Error("the profile is too large to search for the paid video route");
+    if (YAML.isAlias(node)) {
+      // A reference that leads back to itself ends here.
+      if (!followed.includes(node)) walk(node.resolve(doc), owner, trail, [...followed, node]);
+      return;
+    }
+    if (YAML.isSeq(node)) {
+      // An entry without an ID is named by its position in the file.
+      node.items.forEach((item, index) => walk(item, owner, node === doc.contents ? `entry ${index + 1}` : `${trail}[${index}]`, followed));
+      return;
+    }
+    if (!YAML.isMap(node)) return;
+    const id = plain(node.get("id", true));
+    if (typeof id === "string" && id) [owner, trail] = [id, ""];
+    if (plain(node.get("provider", true)) === VIDEO_ROUTE) {
+      const model = plain(node.get("model", true));
+      const where = owner ? `${owner}${trail ? ` at ${trail}` : ""}` : `the profile at ${trail}`;
+      found.push({ where, owner, model: typeof model === "string" ? model : "" });
+    }
+    for (const pair of node.items) {
+      const key = String(YAML.isScalar(pair.key) ? pair.key.value : pair.key);
+      walk(pair.value, owner, trail ? `${trail}.${key}` : key, followed);
+    }
+  };
+  walk(doc.contents, null, "", []);
+  return found;
+}
+
+function exposureProblem({ where, owner, model }) {
+  const fix = owner === "agent-default-model" ? "Choose another default model, or run `dshproxy dsh apply` to set a lane." : "Remove it there.";
+  return `${where} names ${VIDEO_ROUTE}${model ? `/${model}` : ""}: the paid video route must not be selectable for agents or be the default model. ${fix}`;
+}
+
+// True when any DeepSeek Harness profile names the video route outside its
+// provider list (see videoExposures). The gateway asks this before a purchase,
+// so every doubt counts as exposed: a profile that cannot be read or parsed,
+// and a profiles folder that cannot be listed. Reads only.
+function videoExposed(home = dshHome()) {
+  let entries;
+  try {
+    entries = fs.readdirSync(path.join(home, "profiles"), { withFileTypes: true });
+  } catch (error) {
+    // No DeepSeek Harness on this machine names nothing.
+    return error.code !== "ENOENT";
+  }
+  // A linked folder is a profile to DeepSeek Harness as well.
+  return entries.filter((entry) => entry.isDirectory() || entry.isSymbolicLink()).some((entry) => {
+    try {
+      return videoExposures(readPatch(entry.name, home).doc).length > 0;
+    } catch {
+      return true;
+    }
+  });
+}
+
+// What is wrong with the video route of a profile: its entries are not the
+// offered ones, or DeepSeek Harness would send a request to it again by itself.
+function videoRouteProblems(route, listed, wanted) {
+  const problems = [];
+  const fix = "run `dshproxy dsh apply`";
+  const missing = wanted.filter((id) => !listed.includes(id));
+  const extra = listed.filter((id) => !wanted.includes(id));
+  if (!wanted.length) problems.push(`${VIDEO_ROUTE} is in this profile${listed.length ? ` with ${listed.join(", ")}` : ""}, but no video entry is offered; ${fix} to remove it`);
+  else if (missing.length || extra.length) {
+    if (missing.length) problems.push(`${VIDEO_ROUTE} does not list ${missing.join(", ")}; ${fix} to add ${missing.length > 1 ? "them" : "it"}`);
+    if (extra.length) problems.push(`${VIDEO_ROUTE} lists video entries that are no longer offered: ${extra.join(", ")}; ${fix} to remove ${extra.length > 1 ? "them" : "it"}`);
+  } else if (listed.join("\n") !== wanted.join("\n")) problems.push(`${VIDEO_ROUTE} lists its entries in another order than they are offered; ${fix}`);
+  const retries = route.getIn(["retryPolicy", "maxRetries"]);
+  if (retries !== 0) problems.push(`${VIDEO_ROUTE}.retryPolicy.maxRetries is ${retries === undefined ? "not set" : JSON.stringify(retries)}, expected 0 (a paid request must not be sent again automatically); ${fix}`);
+  return problems;
+}
+
 // Reads the profiles back and reports what would stop DeepSeek Harness from
 // using DSHProxy: wrong or missing routes, stale or unrouted models, a missing
 // default model, missing image caps, a leftover DroidProxy provider or a missing
@@ -363,9 +482,15 @@ function danglingReferences(doc, providersNode) {
 // A route or lane is only expected while some offered model can serve it: when a
 // provider is signed out or suspended its models disappear and the route goes
 // with them, which is correct, not a problem.
+// The video route is held to more: its entries have to be the offered ones, in
+// their order, it must not be re-sent to automatically, and nothing outside the
+// provider list may name it.
 function verify({ origin, lanes, models, home = dshHome() }) {
   const list = (models || []).map((model) => (typeof model === "string" ? { id: model, api: null } : { id: model.id, api: model.api || null }));
-  const offered = new Set(list.map((model) => model.id));
+  // Video entries are offered on the video route only: they are no model of a
+  // chat route, no member of a lane and no default model.
+  const videoIds = list.filter(isVideo).map((model) => model.id);
+  const offered = new Set(list.filter((model) => !isVideo(model)).map((model) => model.id));
   const requiredRoutes = Object.keys(ROUTES).filter((key) => list.some((model) => model.api === ROUTES[key].api));
   const laneIds = Object.keys(lanes || {})
     .filter((name) => (lanes[name] || []).some((id) => offered.has(id)))
@@ -390,10 +515,15 @@ function verify({ origin, lanes, models, home = dshHome() }) {
       problems.push(error.message);
     }
     if (providersNode && YAML.isMap(providersNode)) {
-      for (const key of requiredRoutes) {
+      // A video route that is still in the profile is checked even when no
+      // video entry is offered any more.
+      const checked = providersNode.has(VIDEO_ROUTE) && !requiredRoutes.includes(VIDEO_ROUTE) ? [...requiredRoutes, VIDEO_ROUTE] : requiredRoutes;
+      for (const key of checked) {
         const route = providersNode.get(key, true);
         if (!YAML.isMap(route)) {
-          problems.push(`route ${key} is missing`);
+          if (key !== VIDEO_ROUTE) problems.push(`route ${key} is missing`);
+          else if (videoIds.length) problems.push(`route ${key} is missing (it should list ${videoIds.join(", ")}); run \`dshproxy dsh apply\``);
+          else problems.push(`${key} is in this profile, but no video entry is offered; run \`dshproxy dsh apply\` to remove it`);
           continue;
         }
         const routeDef = ROUTES[key];
@@ -404,6 +534,10 @@ function verify({ origin, lanes, models, home = dshHome() }) {
         if (Number(route.get("maxRequestImages")) !== MAX_REQUEST_IMAGES) problems.push(`${key}.maxRequestImages is not ${MAX_REQUEST_IMAGES}`);
         if (Number(route.get("maxRequestImageBytes")) !== MAX_REQUEST_IMAGE_BYTES) problems.push(`${key}.maxRequestImageBytes is not ${MAX_REQUEST_IMAGE_BYTES}`);
         const ids = (route.get("models", true)?.items || []).map((item) => (YAML.isMap(item) ? String(item.get("id") || "") : "")).filter(Boolean);
+        if (key === VIDEO_ROUTE) {
+          problems.push(...videoRouteProblems(route, ids, videoIds));
+          continue;
+        }
         if (!ids.length) {
           problems.push(`${key} lists no models`);
           continue;
@@ -432,8 +566,12 @@ function verify({ origin, lanes, models, home = dshHome() }) {
       else {
         const provider = String(entry.getIn(["config", "provider"]) || "");
         const model = String(entry.getIn(["config", "model"]) || "");
-        if (!ROUTES[provider]) problems.push(`agent-default-model names provider ${provider || "(none)"}, which is not a DSHProxy route`);
-        if (!laneIds.includes(model) && !offered.has(model)) problems.push(`agent-default-model names model ${model || "(none)"}, which is not offered`);
+        // A default on the video route is reported once, below, with every
+        // other place that names that route.
+        if (provider !== VIDEO_ROUTE) {
+          if (!ROUTES[provider]) problems.push(`agent-default-model names provider ${provider || "(none)"}, which is not a DSHProxy route`);
+          if (!laneIds.includes(model) && !offered.has(model)) problems.push(`agent-default-model names model ${model || "(none)"}, which is not offered`);
+        }
       }
     } catch (error) {
       problems.push(error.message);
@@ -441,9 +579,12 @@ function verify({ origin, lanes, models, home = dshHome() }) {
 
     // Tools and the subagent model list name routes too. One that names a
     // DSHProxy route or model this profile does not define fails when it is
-    // used, long after the profile was written.
+    // used, long after the profile was written. One that names the video route
+    // could buy.
     try {
-      problems.push(...danglingReferences(readPatch(profile, home).doc, providersNode));
+      const doc = readPatch(profile, home).doc;
+      problems.push(...danglingReferences(doc, providersNode));
+      problems.push(...videoExposures(doc).map(exposureProblem));
     } catch (error) {
       problems.push(error.message);
     }
@@ -479,4 +620,4 @@ function state(origin, home = dshHome()) {
   return result;
 }
 
-module.exports = { ROUTES, KEY_REF, MAX_REQUEST_IMAGES, MAX_REQUEST_IMAGE_BYTES, dshHome, apply, remove, state, verify, buildRoutes };
+module.exports = { ROUTES, KEY_REF, MAX_REQUEST_IMAGES, MAX_REQUEST_IMAGE_BYTES, dshHome, apply, remove, state, verify, videoExposed, buildRoutes };
