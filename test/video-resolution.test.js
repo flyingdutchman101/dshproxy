@@ -1,4 +1,5 @@
 'use strict';
+require("./support/keychain"); // on macOS: a throwaway keychain for this file and its children, never a login Keychain
 // `--resolution R` on video quote, submit and status, for every route. Nothing
 // here reaches a provider: the API routes get an injected fetch that records
 // what would be sent, and the Krea route gets a stand-in for the helper.

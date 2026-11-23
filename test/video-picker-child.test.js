@@ -1,4 +1,5 @@
 'use strict';
+require("./support/keychain"); // on macOS: a throwaway keychain for this file and its children, never a login Keychain
 // The child process of the video picker: one request in, the video command run
 // once, the outcome of a purchase written before anything is printed, one line
 // of checked fields out.

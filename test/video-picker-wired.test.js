@@ -1,4 +1,5 @@
 'use strict';
+require("./support/keychain"); // on macOS: a throwaway keychain for this file and its children, never a login Keychain
 // The video picker as the gateway runs it: the real decision logic, the real
 // entry list from the video settings, the real ops and the real child code,
 // joined. The one thing replaced is the start of a process: the stand-in runs
