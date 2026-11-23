@@ -13,7 +13,7 @@
 | A1 key wrapper | done on the Mac; Windows CI pending | 23 Nov. `src/keywrap-darwin.js`; `src/secrets.js` takes it on `darwin` (DPAPI code untouched). Red first: 12 of 13 new tests failed with "Windows could not protect a new key" before `secrets.js` was wired; green after. Full suite on the Mac: 929, 901 pass, 25 fail (all A2, A3, A5/B/C), 3 skipped; the 10 key-wrapper failures of A0 pass. Locked-keychain test (C9 through the CLI) not run here: CI only, from A6. |
 | A2 private files | done on the Mac; Windows CI pending | 23 Nov. Mask `077` in both `bin/` programs, data folder `0700` in `src/cli.js`, `.credentials.yaml` and backups `0600` and the `verify` report in `src/dsh/profile.js`, all on `darwin` only. Red first: the 3 tests of `test/modes-darwin.test.js` failed (folder `755`, no report), green after. `profile.test.js:535` split: skipped on macOS, new macOS test with a locked (`chflags uchg`) file; that one is a characterization (passes on the old code too). Suite on the Mac: 933, 905 pass, 24 fail (A3, A5/B/C), 4 skipped. |
 | A3 backend on a Mac | done on the Mac; Windows CI pending | 23 Nov. Lock with four assets (C3, against the release's `checksums.txt` lines fetched that day); `/usr/bin/tar`, `cli-proxy-api`, `0700` on macOS; leftover backend by `ps -ww -o comm=` and exact `realpath` on macOS (C6). Red first: lock tests, the three archive tests and the reclaim test failed on the old code (the reclaim test checked again with the old `supervisor.js` put back). The stand-in backend is a copy of `/bin/sleep`, signed again ad hoc (a copy of Homebrew's `node` does not run: it needs its library; an unsigned copy of `sleep` is killed). C2 by hand: `start` in a throwaway home downloaded and started 8.0.72, `/dshproxy/status` 200, every file `600`/`700`, `stop --when-idle` → `{"stopped":true}`, no listener and no backend left. Suite on the Mac: 937, 912 pass, 20 fail (A5/B/C), 5 skipped. |
-| A4 updates | open | |
+| A4 updates | done on the Mac; Windows CI pending | 23 Nov. `lockFromRelease(release, sums, { platform })`: own system's archives required as before, the other's kept when complete (C4); today's updater tests got `{ platform: "win32" }`, no assertion changed. `dshproxy backend update` through `update/check` and `update/apply`; a failed check is reported as a failure (C5). `daemon.start`'s test-only `backend` option also takes `checkForUpdate` and `trial`, and an update now installs through `backend.install` when a test gives one (production: the same `install`). Red first: 5 new updater tests and 4 CLI tests failed on the old code ("Usage: dshproxy backend version|rollback"). Windows sees the new command in the help and in that usage line; nothing else. GitHub, 23 Nov: latest release 8.1.2 publishes both macOS archives. Suite on the Mac: 946, 921 pass, 20 fail (A5/B/C), 5 skipped. |
 | A5 not-yet sentences | open | |
 | A6 packaging, README, decision 0009, remove the proof | open | |
 | A7 independent review; M1 to M4 by hand | open | |
@@ -21,7 +21,7 @@
 | Stage C plugin install: facts on the Mac, plan, build | open | outline in the spec |
 | Stage D app: inventory, decision, prototype, build | open | outline in the spec; decision 4 is the user's |
 
-Next step: slice A4 (`plan.md`, revised). Seen during C2: the gateway reported "CLIProxyAPI 8.1.2 is available"; whether 8.1.2 has macOS archives is for A4.
+Next step: slice A5 (`plan.md`, revised).
 
 ## Rulings
 
