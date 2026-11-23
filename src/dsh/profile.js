@@ -163,7 +163,12 @@ function writePatch({ file, existing, doc }, dryRun) {
   if (text === existing) return { changed: false, text };
   if (!dryRun) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    if (existing) fs.copyFileSync(file, backupPath(file));
+    if (existing) {
+      const backup = backupPath(file);
+      fs.copyFileSync(file, backup);
+      // A copy takes the mode of what it copies; on macOS it is made private.
+      if (process.platform === "darwin") fs.chmodSync(backup, 0o600);
+    }
     writeWhole(file, text);
     tidy(file);
   }
@@ -201,6 +206,21 @@ function tidy(file) {
   }
 }
 
+// On macOS DeepSeek Harness refuses a credentials file that group or others
+// can read, so every apply leaves it readable by this account only. Windows
+// is left as it is.
+function keepPrivate(file) {
+  if (process.platform === "darwin") fs.chmodSync(file, 0o600);
+}
+
+// What is wrong with the credentials file's mode on macOS, or null.
+function credentialModeProblem(file) {
+  if (process.platform !== "darwin" || !fs.existsSync(file)) return null;
+  const mode = fs.statSync(file).mode & 0o777;
+  if (!(mode & 0o077)) return null;
+  return `${path.basename(file)} can be read by other accounts on this Mac (mode ${mode.toString(8)}), so DeepSeek Harness will not read it. Run \`dshproxy dsh apply\`, or \`chmod 600 ${file}\`.`;
+}
+
 // Adds the placeholder credential the routes refer to. A reference that is
 // already there is never overwritten, and a file that is not in the form
 // DeepSeek Harness writes is left alone. No backup copy is made: it would be a
@@ -217,9 +237,15 @@ function ensureCredentialRef(home = dshHome(), dryRun = false) {
     const refs = doc.get("refs", true);
     if (refs === undefined || (YAML.isScalar(refs) && refs.value == null)) doc.set("refs", doc.createNode({}));
     else if (!YAML.isMap(refs)) return { created: false, reason: "the credentials file is not in the expected form; add the DSHPROXY_API_KEY reference by hand" };
-    if (doc.getIn(["refs", KEY_REF]) !== undefined) return { created: false, reason: "already present" };
+    if (doc.getIn(["refs", KEY_REF]) !== undefined) {
+      if (!dryRun) keepPrivate(file);
+      return { created: false, reason: "already present" };
+    }
     doc.setIn(["refs", KEY_REF], KEY_PLACEHOLDER);
-    if (!dryRun) writeWhole(file, doc.toString({ lineWidth: 0 }));
+    if (!dryRun) {
+      writeWhole(file, doc.toString({ lineWidth: 0 }));
+      keepPrivate(file);
+    }
     return { created: true };
   } catch (error) {
     return { created: false, reason: error.message };
@@ -510,6 +536,8 @@ function verify({ origin, lanes, models, home = dshHome() }) {
     const text = fs.existsSync(credentials) ? fs.readFileSync(credentials, "utf8") : "";
     const doc = text.trim() ? YAML.parseDocument(text) : null;
     if (!doc || doc.getIn(["refs", KEY_REF]) === undefined) result.credential.push(`${path.basename(credentials)} has no ${KEY_REF} reference`);
+    const modeProblem = credentialModeProblem(credentials);
+    if (modeProblem) result.credential.push(modeProblem);
   } catch (error) {
     result.credential.push(`.credentials.yaml cannot be read: ${error.message}`);
   }

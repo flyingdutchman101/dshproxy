@@ -532,7 +532,7 @@ test("a default model that is gone is reported once, by its own check", (t) => {
 
 // Windows refuses to replace a read-only file, which is how a write can fail
 // half-way: the new text is already in a temporary file next to the profile.
-test("a profile that cannot be replaced is left as it was, with no temporary file beside it", (t) => {
+test("a profile that cannot be replaced is left as it was, with no temporary file beside it", { skip: process.platform === "darwin" ? "a Mac replaces a read-only file; the same behaviour is tested with a locked file in the next test" : false }, (t) => {
   const home = tempHome(t);
   profile.apply(MODELS, ORIGIN, home);
   const file = patchPath(home);
@@ -543,6 +543,25 @@ test("a profile that cannot be replaced is left as it was, with no temporary fil
   } finally {
     // So the temporary folder can be removed afterwards.
     fs.chmodSync(file, 0o666);
+  }
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+  assert.deepEqual(fs.readdirSync(path.dirname(file)).filter((name) => name.endsWith(".tmp")), []);
+});
+
+// On a Mac a read-only file is replaced all the same; a locked one (the
+// "user immutable" flag) is not, which is the same failure half-way.
+test("on macOS, a profile that cannot be replaced is left as it was, with no temporary file beside it", { skip: process.platform === "darwin" ? false : "macOS only; Windows has the test above" }, (t) => {
+  const { execFileSync } = require("child_process");
+  const home = tempHome(t);
+  profile.apply(MODELS, ORIGIN, home);
+  const file = patchPath(home);
+  const before = fs.readFileSync(file, "utf8");
+  execFileSync("/usr/bin/chflags", ["uchg", file]);
+  try {
+    assert.throws(() => profile.apply([...MODELS, ...API_KEY], ORIGIN, home), /EPERM|EACCES/);
+  } finally {
+    // So the temporary folder can be removed afterwards.
+    execFileSync("/usr/bin/chflags", ["nouchg", file]);
   }
   assert.equal(fs.readFileSync(file, "utf8"), before);
   assert.deepEqual(fs.readdirSync(path.dirname(file)).filter((name) => name.endsWith(".tmp")), []);
