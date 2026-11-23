@@ -3,6 +3,9 @@
 //
 // `state` only reads. `install` runs DeepSeek Harness's own command once:
 //   <Harness>\resources\runtime\cli\bin\dsh.cmd plugin --profile desktop add "<folder>"
+// On macOS (docs/work/0014-macos-port, stage C) the Harness is an application
+// and its command a `sh` script inside it, started directly:
+//   <DeepSeek Harness.app>/Contents/Resources/runtime/cli/bin/dsh plugin --profile desktop add <folder>
 // Nothing here writes a profile's package.json, node_modules or lock file:
 // only that command does.
 
@@ -19,7 +22,11 @@ const PACKAGE = "@local/dshproxy-video";
 const ENTRY_ID = "dshproxy-video";
 const HARNESS = "DeepSeek Harness";
 const PROCESS_NAME = `${HARNESS}.exe`;
-const COMMAND = ["resources", "runtime", "cli", "bin", "dsh.cmd"];
+const MAC = process.platform === "darwin";
+const COMMAND = MAC ? ["Contents", "Resources", "runtime", "cli", "bin", "dsh"] : ["resources", "runtime", "cli", "bin", "dsh.cmd"];
+// macOS: the application's own program, and the folders it is usually in.
+const MAC_PROGRAM = ["Contents", "MacOS", HARNESS];
+const MAC_APP = `${HARNESS}.app`;
 const REGISTRY_KEY = "HKCU\\Software\\Classes\\dsh\\shell\\open\\command";
 const INSTALL_MS = 120000;
 const PROCESS_LIST_MS = 20000;
@@ -39,6 +46,26 @@ const firstLine = (text) => String(text || "").split(/\r?\n/)[0].trim();
 const pathKey = (item) => path.resolve(item).replace(/[\\/]+$/, "").toLowerCase();
 const samePath = (a, b) => pathKey(a) === pathKey(b);
 const inside = (item, dir) => pathKey(item).startsWith(`${pathKey(dir)}\\`);
+// macOS: real paths (links resolved), without regard to case as the usual
+// file system has it, separated by "/".
+function realKey(item) {
+  // The deepest part of the path that exists is resolved; the rest is kept.
+  let head = path.resolve(item);
+  let tail = "";
+  for (;;) {
+    try {
+      head = fs.realpathSync(head);
+      break;
+    } catch {
+      const parent = path.dirname(head);
+      if (parent === head) break;
+      tail = path.join(path.basename(head), tail);
+      head = parent;
+    }
+  }
+  return path.join(head, tail).replace(/\/+$/, "").toLowerCase();
+}
+const insideMac = (item, dir) => realKey(item).startsWith(`${realKey(dir)}/`);
 const commandIn = (dir) => path.join(dir, ...COMMAND);
 
 function isFile(file) {
@@ -74,9 +101,18 @@ function registeredCommand() {
 // %DSHPROXY_HARNESS_DIR% when set (then nothing else is tried), else
 // %LOCALAPPDATA%\Programs\DeepSeek Harness, else the folder of the program
 // registered for dsh: links.
-function locateHarness({ env = process.env, registry = registeredCommand } = {}) {
+function locateHarness({ env = process.env, registry = registeredCommand, applications } = {}) {
   const usable = (dir) => (dir && isFile(commandIn(dir)) ? path.resolve(dir) : null);
   if (env.DSHPROXY_HARNESS_DIR) return usable(env.DSHPROXY_HARNESS_DIR);
+  // macOS: /Applications, then the Applications folder in the home folder.
+  if (MAC) {
+    const places = applications || ["/Applications", ...(env.HOME ? [path.join(env.HOME, "Applications")] : [])];
+    for (const place of places) {
+      const found = usable(path.join(place, MAC_APP));
+      if (found) return found;
+    }
+    return null;
+  }
   const usual = env.LOCALAPPDATA ? usable(path.join(env.LOCALAPPDATA, "Programs", HARNESS)) : null;
   if (usual) return usual;
   let registered = null;
@@ -93,7 +129,19 @@ function locateHarness({ env = process.env, registry = registeredCommand } = {})
 // path>`; the last line proves the list is whole.
 const PROCESS_SCRIPT = `$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process -Filter 'Name=''${PROCESS_NAME}''' | ForEach-Object { 'P|' + $_.ExecutablePath }; 'END'`;
 
+// macOS: every process's program path, as it was started (`ps` gives it
+// whole with -ww). Those inside the application are its own.
+function macProcesses() {
+  return new Promise((resolve, reject) => {
+    execFile("/bin/ps", ["-ww", "-axo", "comm="], { timeout: PROCESS_LIST_MS, maxBuffer: 16 * 1024 * 1024, env: {} }, (error, stdout) => {
+      if (error) return reject(new Error("the process list could not be read"));
+      return resolve(String(stdout).split("\n").map((line) => line.trim()).filter(Boolean).map((line) => ({ name: path.basename(line), path: line.startsWith("/") ? line : null })));
+    });
+  });
+}
+
 function harnessProcesses() {
+  if (MAC) return macProcesses();
   return new Promise((resolve, reject) => {
     execFile(system32(path.join("WindowsPowerShell", "v1.0", "powershell.exe")), ["-NoProfile", "-NonInteractive", "-Command", PROCESS_SCRIPT], { windowsHide: true, timeout: PROCESS_LIST_MS }, (error, stdout) => {
       const lines = String(stdout || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -113,6 +161,9 @@ async function harnessRunning(processes, harnessDir) {
     list = null;
   }
   if (!Array.isArray(list)) return { running: true, readable: false };
+  // macOS: any program inside the application (its helpers too); a Harness
+  // process without a path counts as running.
+  if (MAC) return { running: list.some((item) => (item?.path ? insideMac(item.path, harnessDir) : String(item?.name || "").startsWith(HARNESS))), readable: true };
   const running = list.some((item) => String(item?.name || "").toLowerCase() === PROCESS_NAME.toLowerCase() && (!item.path || inside(item.path, harnessDir)));
   return { running, readable: true };
 }
@@ -305,6 +356,7 @@ function describe(found) {
 // or cmd.exe could not be started. After `timeoutMs` the child is ended with
 // everything it started.
 function runCommand({ command, args = [], env = process.env, cwd, timeoutMs = INSTALL_MS }) {
+  if (MAC) return runMacCommand({ command, args, env, cwd, timeoutMs });
   return new Promise((resolve) => {
     const refused = [command, ...args].find((part) => typeof part !== "string" || !part || UNSAFE.test(part) || part.endsWith("\\"));
     if (refused !== undefined) return resolve({ code: null, timedOut: false, output: "", error: `not started: ${JSON.stringify(refused)} cannot be passed to cmd.exe safely` });
@@ -350,6 +402,64 @@ function runCommand({ command, args = [], env = process.env, cwd, timeoutMs = IN
           finish(null);
         }, STOPPED_GRACE_MS);
       });
+    }, timeoutMs);
+    return undefined;
+  });
+}
+
+// The same on macOS: the command is started directly, its arguments as a list,
+// so nothing passes through a shell of DSHProxy's. It gets a process group of
+// its own; after `timeoutMs` the group is ended, so what it started ends too.
+// The same characters as on Windows are refused, so a folder is accepted or
+// refused alike on both systems.
+function runMacCommand({ command, args, env, cwd, timeoutMs }) {
+  return new Promise((resolve) => {
+    const refused = [command, ...args].find((part) => typeof part !== "string" || !part || UNSAFE.test(part) || part.endsWith("\\"));
+    if (refused !== undefined) return resolve({ code: null, timedOut: false, output: "", error: `not started: ${JSON.stringify(refused)} cannot be passed to the command safely` });
+    let child;
+    try {
+      child = spawn(command, args, { cwd, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    } catch (error) {
+      return resolve({ code: null, timedOut: false, output: "", error: `not started: ${firstLine(error.message)}` });
+    }
+    let output = "";
+    let timedOut = false;
+    let settled = false;
+    let timer = null;
+    let grace = null;
+    const finish = (code, error = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(grace);
+      resolve({ code: timedOut ? null : code, timedOut, output, error });
+    };
+    const group = (signal) => {
+      try {
+        process.kill(-child.pid, signal);
+      } catch { /* gone already */ }
+    };
+    child.on("error", (error) => finish(null, `not started: ${firstLine(error.message)}`));
+    child.on("close", (code) => finish(code));
+    if (!child.pid) return undefined;
+    // Standard output and standard error in one, in the order they arrive.
+    for (const stream of [child.stdout, child.stderr]) {
+      stream.setEncoding("utf8");
+      stream.on("data", (chunk) => {
+        output = (output + chunk).slice(-KEPT_OUTPUT);
+      });
+    }
+    timer = setTimeout(() => {
+      timedOut = true;
+      group("SIGTERM");
+      setTimeout(() => group("SIGKILL"), 2000).unref();
+      // Something that outlived the group may still hold the output open.
+      grace = setTimeout(() => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+        child.unref();
+        finish(null);
+      }, STOPPED_GRACE_MS);
     }, timeoutMs);
     return undefined;
   });

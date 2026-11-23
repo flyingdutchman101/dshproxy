@@ -12,7 +12,7 @@ import { resolveSettings } from '../lib/config.js'
 import { createTools } from '../lib/tools.js'
 
 import {
-  bundleDir, realRoot, runner, SECRET, PROMPT, ALLOWED_ENV, ADDED_BY_NODE_ON_WINDOWS, temporary, host, saveSettings, spy, tools, stubRoot, settingsRows, kreaEnabled, preflight,
+  bundleDir, realRoot, runner, SECRET, PROMPT, ALLOWED_ENV, ADDED_BY_NODE_ON_WINDOWS, ADDED_BY_MACOS, temporary, host, saveSettings, spy, tools, stubRoot, settingsRows, kreaEnabled, preflight,
 } from '../testing/support.mjs'
 
 // A stand-in plugin context. Its registry hands each disposer to the caller and
@@ -140,7 +140,7 @@ test('unreadable settings are reported without the file path or its contents', a
   })
 })
 
-test('a workspace quote without a sign-in never starts one and writes nothing', { skip: process.platform !== 'win32' }, async (t) => {
+test('a workspace quote without a sign-in never starts one and writes nothing', { skip: !['win32', 'darwin'].includes(process.platform) }, async (t) => {
   const facts = await host(t)
   await saveSettings(facts.home, { 'wan-3.0': { enabled: true, route: 'krea' } })
   const kit = tools({ root: realRoot }, facts.host)
@@ -148,7 +148,7 @@ test('a workspace quote without a sign-in never starts one and writes nothing', 
   assert.deepEqual(await fs.readdir(facts.profile), [])
 })
 
-test('a workspace quote hands the prompt over standard input only and returns just the verified preflight', { skip: process.platform === "darwin" ? "macOS: the plugin install comes with stage C of 0014 (docs/work/0014-macos-port); until then test/not-yet-darwin.test.js" : false }, async (t) => {
+test('a workspace quote hands the prompt over standard input only and returns just the verified preflight', async (t) => {
   const facts = await host(t)
   const stub = await stubRoot(t, { settings: kreaEnabled, quote: { ...preflight, access_token: SECRET, job_id: 'job_1' } })
   const watch = spy()
@@ -175,11 +175,12 @@ test('a workspace quote hands the prompt over standard input only and returns ju
   assert.deepEqual(calls.map((call) => call.args), [['settings'], ['quote', 'wan-3.0'], ['quote', 'wan-3.0', 'krea', '--prompt', PROMPT]])
   for (const call of calls) {
     assert.deepEqual(call.argv, [stub.root])
-    const expected = process.platform === 'win32' ? [...ALLOWED_ENV, ...ADDED_BY_NODE_ON_WINDOWS] : ALLOWED_ENV
+    const expected = process.platform === 'win32' ? [...ALLOWED_ENV, ...ADDED_BY_NODE_ON_WINDOWS] : process.platform === 'darwin' ? [...ALLOWED_ENV, ...ADDED_BY_MACOS] : ALLOWED_ENV
     assert.deepEqual(Object.keys(call.env).filter((name) => !expected.includes(name.toUpperCase())), [])
     assert.ok(!JSON.stringify(call.env).includes(SECRET) && !JSON.stringify(call.env).includes(PROMPT))
     assert.deepEqual(call.commandEnv, { DSHPROXY_HOME: facts.home })
-    assert.equal(call.cwd, stub.root)
+    // As the system names the folder: on macOS the temporary folder is reached through a link.
+    assert.equal(await fs.realpath(call.cwd), await fs.realpath(stub.root))
     assert.ok(call.fetchBlocked && call.globalFetchBlocked)
   }
 })
@@ -392,7 +393,8 @@ test('inside the Harness runtime a real Node is looked up and the runtime itself
   const found = resolveSettings({}, { ...electron, env: { ...electron.env, PATH: bin, ProgramFiles: undefined } })
   assert.equal(found.node, path.join(bin, name))
   const empty = await temporary(t, 'empty-bin')
-  const missing = { ...electron, env: { ...electron.env, PATH: empty, ProgramFiles: empty } }
+  // No node in PATH, in Program Files (Windows) or in the Homebrew folders (macOS).
+  const missing = { ...electron, env: { ...electron.env, PATH: empty, ProgramFiles: empty }, nodeFolders: [empty] }
   assert.equal(resolveSettings({}, missing).node, null)
   const watch = spy()
   await assert.rejects(tools({ root: realRoot }, missing, watch).run('video_options', {}), /Node\.js 22 or later was not found/)
@@ -408,4 +410,23 @@ test('the package is a bundle whose patch inserts this plugin and nothing else',
   const locale = JSON.parse(await fs.readFile(path.join(bundleDir, 'locale', 'en.json'), 'utf8'))
   assert.ok(locale.meta.title && locale.meta.description && locale.meta.detail === undefined)
   for (const file of ['index.js', 'runner.cjs', 'icon.svg', 'README.md']) await fs.access(path.join(bundleDir, file))
+})
+
+// macOS (docs/work/0014-macos-port, stage C): the variables of a Mac, and node
+// where Homebrew puts it, because an application started from the Dock gets a
+// PATH without it.
+test('on macOS the runner passes the macOS variables only, and finds node in PATH or the Homebrew folders', async (t) => {
+  const facts = await host(t)
+  const mac = { ...facts.host, platform: 'darwin', env: { HOME: '/Users/someone', TMPDIR: '/var/folders/x/T/', DSHPROXY_KEYCHAIN: '/var/folders/x/T/k.keychain-db', SystemRoot: 'C:\\Windows', LOCALAPPDATA: 'C:\\x', USERPROFILE: 'C:\\x', TEMP: 'C:\\t', TMP: 'C:\\t', DSHPROXY_HOME: facts.home, PATH: '/usr/bin:/bin', VIDEOROUTER_API_KEY: SECRET, KREA_ACCESS_TOKEN: SECRET } }
+  assert.deepEqual(resolveSettings({}, mac).env, { HOME: '/Users/someone', TMPDIR: '/var/folders/x/T/', DSHPROXY_KEYCHAIN: '/var/folders/x/T/k.keychain-db', DSHPROXY_HOME: facts.home })
+  const brew = await temporary(t, 'brew-bin')
+  await fs.writeFile(path.join(brew, 'node'), '')
+  const empty = await temporary(t, 'empty-bin')
+  const electron = { ...mac, execPath: '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness', versions: { node: '24.0.0', electron: '40.0.0' } }
+  assert.equal(resolveSettings({}, { ...electron, env: { ...electron.env, PATH: empty }, nodeFolders: [empty, brew] }).node, path.join(brew, 'node'))
+  assert.equal(resolveSettings({}, { ...electron, env: { ...electron.env, PATH: empty }, nodeFolders: [empty] }).node, null)
+  // PATH comes first.
+  const first = await temporary(t, 'path-bin')
+  await fs.writeFile(path.join(first, 'node'), '')
+  assert.equal(resolveSettings({}, { ...electron, env: { ...electron.env, PATH: first }, nodeFolders: [brew] }).node, path.join(first, 'node'))
 })
