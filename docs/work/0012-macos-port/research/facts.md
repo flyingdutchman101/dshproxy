@@ -65,3 +65,34 @@ Also published: `checksums.txt`, Linux and FreeBSD archives. Not known: the name
 - Whether `security` takes a secret on standard input from a process with no terminal, and whether the CI Mac's login Keychain is unlocked.
 - Whether `os.homedir()` is right in a child that is not given `HOME` (not relied on: `HOME` is passed).
 - What the C# app calls beyond the control API routes in `src/daemon.js:302-467`.
+
+## 5. Proof on two GitHub Macs, 23 Nov
+
+`spike/proof.js`, runs 45221540307 (commit `5682a61`) and 45221963088 (commit `d472bff`). Machines: `macos-latest` (arm64, macOS 26.7.2, Node 22.23.5) and `macos-15-intel` (x64, macOS 15.7.9, Node 22.23.2). Same results on both unless said.
+
+**Keychain through `/usr/bin/security`**
+- Default keychain `~/Library/Keychains/login.keychain-db`; search list is that and the System keychain.
+- Absent item: exit 44 in about 25 ms. A keychain file that does not exist: also 44.
+- Write with `security -i`, the command on standard input: exit 0, nothing printed. Read with `find-generic-password -w`: the value and a line break on standard output.
+- Second write: exit 45 ("already exists"), also through `-i`, where the exit code is that of the command. The first value stays.
+- `ps` shows `/usr/bin/security -i` while the command is in progress; the value sent is in neither the arguments nor the environment.
+- A read works with an empty environment.
+- Four processes at once, no item: one write succeeds, three get 45, all four read the same value. 15 of 15 rounds.
+- A keychain path with a space works in the command on standard input when put in double quotes.
+- The default keychain, no keychain named: written, read and removed with no prompt.
+- **Locked keychain:** a read of the value does not end; ended after 10 s. A write does not end either. `show-keychain-info` does not end (ended after 5 s). Afterwards a `SecurityAgent` process is running, which was not there before: a dialog was put up. Reading the item's attributes without the value works at once (exit 0). `unlock-keychain` with no password and an empty standard input: exit 51 at once. After unlocking, the value is what it was.
+
+**Backend 8.0.72**
+- Both archives match the SHA-256 of the GitHub API and of `checksums.txt`.
+- `/usr/bin/tar -xzf` unpacks: `LICENSE`, `README.md`, `README_CN.md`, `cli-proxy-api` (mode 755), `config.example.yaml`.
+- arm64: ad-hoc signature by the linker. x64: not signed at all. No extended attributes after a download by Node.
+- `-h` exits 0. Started with `-config` and the configuration `src/backend/config.js` renders: HTTP 200 on `/v1/models` after 0.5 s.
+- `ps -o comm= -p PID` gives the full path for the backend, which was started by its full path. For the Node process, started as `node`, it gives `node`: it is the path a program was started with.
+- SIGTERM: exit code 0 after 0.1 s; the port is closed afterwards.
+
+**Files**
+- The mask at start is 022. With 077: new file 600, new folder 700, a child process has 0077 and creates 600.
+- A 644 file replaced by renaming a new file over it is 600 afterwards.
+- Renaming over a read-only (444) file succeeds. `test/profile.test.js:535-549` expects a refusal; that is Windows behaviour.
+- A file deleted and made again 60 ms later has a new creation time (for Release B).
+- `os.homedir()` is right in a child that is given no `HOME`.

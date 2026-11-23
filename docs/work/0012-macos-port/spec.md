@@ -1,6 +1,6 @@
 # 0012 — DSHProxy on macOS: gateway and command line
 
-Status: revised after spec review, not approved. Written 2026-11-23.
+Status: revised after spec review and after the proof on two GitHub Macs; not approved. Written 2026-11-23.
 
 ## Goal
 
@@ -56,14 +56,14 @@ Everything else (the gateway, lanes, failover, limits, models, the profile write
 - The Keychain is reached through `/usr/bin/security`, which is part of macOS. To write, DSHProxy starts `security -i` and sends the one command on its standard input, so the key is in no argument list and no environment. To read, `find-generic-password -w` prints it on standard output. Every call ends after 10 seconds, as the DPAPI calls do today.
 - Which Keychain: the user's login Keychain, or the keychain file named in `DSHPROXY_KEYCHAIN`. Tests use a throwaway keychain file that they create and delete. No test reads, writes or deletes anything in a login Keychain.
 - The rule "a key that cannot be read is never replaced" holds: when the Keychain cannot be read (locked, refused, timed out, `security` missing), DSHProxy says so in one sentence, writes nothing, and does not create a second key.
-- A locked Keychain: when someone is logged in at the screen, macOS itself may ask for the login password; if it is not given within the 10 seconds, the command ends with the sentence above. With nobody at the screen (SSH, CI) there is no dialog and the command ends at once.
+- A locked Keychain: macOS puts up its own dialog asking for the Keychain password and `security` waits for it. DSHProxy ends the call after 10 seconds, says that the Keychain is locked, and writes nothing. The dialog can stay on the screen afterwards; it is macOS's. Seen on both GitHub Macs. There is no way to see "locked" without waiting: the command that shows a keychain's settings waits for the same dialog. Not seen: what happens over SSH with nobody logged in at the screen.
 - Two processes that both find no key at first use end with one key: creation without overwriting fails for the second, which then reads the first's.
 
 ### 2. The backend for the Mac's processor
 
 - `backend.lock.json` gains `darwin-arm64` and `darwin-x64` beside the two Windows entries. Release 8.0.72 publishes both as `.tar.gz` (checked on GitHub on 23 Nov).
-- Unpacking uses the system's own `tar` on each system. On macOS the program is the one file in the archive named `cli-proxy-api` (the name is checked in the first proof; `research/facts.md` does not know it yet), and it is marked executable.
-- A backend left by a gateway that died is recognised by its program path, read with `ps -o comm=` on macOS, both paths resolved with `realpath` and compared exactly, and ended only if it is DSHProxy's own copy.
+- Unpacking uses the system's own `tar` on each system. On macOS the program is the file `cli-proxy-api` in the archive (seen in the proof, already marked executable there; DSHProxy sets the mark itself as well).
+- A backend left by a gateway that died is recognised by its program path, read with `ps -o comm=` on macOS, both paths resolved with `realpath` and compared exactly, and ended only if it is DSHProxy's own copy. `ps` shows the path a program was started with; DSHProxy always starts the backend by its full path, so its own is recognised and anything else is left alone.
 - **Updates.** An update needs the assets of the system it runs on, for both processors, and keeps the other system's entries when the release has them. On Windows that is exactly today's rule. A new command, `dshproxy backend update`, asks the running gateway to check for a newer release and apply it, through the control routes the Windows app already uses; it exists on both systems. `dshproxy backend rollback` works on macOS as on Windows.
 
 ### 3. Nothing DSHProxy writes on macOS is readable by other accounts
@@ -117,6 +117,12 @@ Hardest case: on a machine nobody is sitting at (the CI Mac), two processes star
 
 This is proven first, with a throwaway script on the CI Mac, before any production code depends on it. The same script checks that the pinned backend's archive unpacks, what the program in it is called, and that it starts. If the Keychain part fails, the fallback below is put to the user; it is not chosen silently.
 
+**Result, 23 Nov** (`spike/proof.js`, GitHub runs 45221540307 and 45221963088, Apple Silicon on macOS 26.7 and Intel on macOS 15.7; details in `research/facts.md` section 5):
+
+- Holds: a key sent on standard input to `security -i` is stored and read back; the argument list shows only `-i`; a second write is refused and nothing is overwritten; four processes at once ended with one key in 15 of 15 rounds on both machines; the machine's own default keychain was written and read with no prompt; "no key yet" (exit 44) is distinct from every other outcome.
+- Does not hold as first written: a read of a locked keychain does not end with an error. It waits for a dialog, on a machine with nobody at it too, and has to be ended. Design 1 and C9 say so now.
+- The backend: both archives match their SHA-256, unpack with `/usr/bin/tar`, hold `cli-proxy-api`, start with the gateway's own configuration, answer on `/v1/models` in half a second, and end on SIGTERM. Both processors.
+
 ## What the Keychain does and does not protect
 
 Stated plainly, because it bears on the choice below:
@@ -133,7 +139,7 @@ Stated plainly, because it bears on the choice below:
 - **A native helper** (Swift, or a Node add-on) for the Keychain. Rejected: a compiled part to build, sign and ship for one read and one write.
 - **Requiring all four assets for every update.** Rejected: a release without a macOS archive would stop reaching Windows users.
 - **Porting the plugin install now.** Rejected for this change: the Mac application's folder layout, program name and command launcher are only inferred from the Windows install.
-- **Risk: the pinned backend may not start on a Mac** (processor, signing). The first proof and C2 show it on the CI Mac, which is Apple Silicon. Intel is checked on a second CI machine if GitHub offers one; otherwise it stays unverified and the README says so.
+- **Risk: the pinned backend may not start on a Mac** (processor, signing). The proof showed it starting on Apple Silicon and on Intel. On a GitHub Mac nothing marks the downloaded file as coming from the internet; whether the user's Mac objects to a program that is not signed by a known developer shows at M1.
 - **Risk: a Keychain that is locked while the user is logged in** (a setting some people use) makes macOS ask for the login password whenever the gateway needs the key. Design 1 and C9 are the behaviour; the README says it.
 - **Risk: tests split by system drift apart.** Kept small: only the key wrapper, unpacking, the process lookup and the file modes differ in Release A.
 
