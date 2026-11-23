@@ -171,7 +171,7 @@ A request that needs none of these reaches CLIProxyAPI byte for byte.
 
 It leaves every other entry, route and comment alone, including VeryCuteDroidProxy's `droidproxy-*` routes. It backs each profile up before changing it. Fields you add to a model entry, and its `input` list, are kept on the next sync.
 
-It does not change the delegation lanes or `allowedModels`, nor a default model that names another provider. It sets the default model to a lane only when there is none, when it names no provider, or when it names a DSHProxy model that is gone; the gateway does the same when it updates the routes by itself. To let subagents use a DSHProxy route, add it to `allowedModels` yourself.
+It does not change the delegation lanes or `allowedModels`, nor a default model that names another provider. It sets the default model to a lane only when there is none, when it names no provider, or when it names a DSHProxy model that is gone (a lane counts as there even while none of its models can serve; `dsh verify` reports it); the gateway does the same when it updates the routes by itself. To let subagents use a DSHProxy route, add it to `allowedModels` yourself.
 
 `dsh remove` takes the four routes out again. If `dsh apply` had to add the `llm-pi-ai` entry itself, `dsh remove` takes that out too, unless you have since put other routes in it. The `DSHPROXY_API_KEY` reference stays.
 
