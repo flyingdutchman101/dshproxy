@@ -25,4 +25,56 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm ci --ignore-scripts
       - run: node scripts/check.js
+      # A checkout of main beside this one, for the test that reads each
+      # other's data folders (docs/work/0014-macos-port, C13).
+      - name: Check out main for the compatibility test
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          git worktree add ../dshproxy-main FETCH_HEAD
+          cd ../dshproxy-main && npm ci --ignore-scripts
+      - name: node --test
+        shell: bash
+        env:
+          DSHPROXY_BASE_CHECKOUT: ${{ github.workspace }}/../dshproxy-main
+        run: node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=test-results.tap
+      # Windows runs at least the 914 tests it ran before the macOS port, and
+      # all of them pass (C1).
+      - name: At least 914 tests pass, none fails
+        shell: bash
+        run: |
+          pass=$(grep -E '^# pass ' test-results.tap | awk '{print $3}')
+          fail=$(grep -E '^# fail ' test-results.tap | awk '{print $3}')
+          echo "pass $pass, fail $fail"
+          test "$fail" -eq 0 && test "$pass" -ge 914
+
+  test-macos:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Apple Silicon, and Intel while GitHub still offers it.
+        os: [macos-latest, macos-15-intel]
+        node: ["22.x", "24.x"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci --ignore-scripts
+      - run: node scripts/check.js
+      # On CI the tests that lock a throwaway keychain run as well.
       - run: node --test
+      # The tests use throwaway keychains only: the machine's own login
+      # keychain has no DSHProxy item afterwards (exit 44: not found).
+      - name: The login keychain was not touched
+        run: |
+          set +e
+          security find-generic-password -s DSHProxy -a key-wrapper > /dev/null 2>&1
+          code=$?
+          echo "security exit $code"
+          test "$code" -eq 44
+      # Downloads the pinned backend, starts it, stops it (C2).
+      - run: node scripts/start-stop-check.js
