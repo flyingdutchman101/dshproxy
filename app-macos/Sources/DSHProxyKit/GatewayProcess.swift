@@ -37,7 +37,7 @@ public final class GatewayProcess {
         if busy { return .alreadyRunning }
         defer { locked { starting = false } }
 
-        if await StatusProbe.fetch(origin: origin, timeout: 1.5) != nil { return .alreadyRunning }
+        if await StatusProbe.answers(origin: origin, timeout: 1.5) { return .alreadyRunning }
 
         var outLines = LineSplitter(), errLines = LineSplitter()
         do {

@@ -436,6 +436,11 @@ final class AppStore: ObservableObject {
         ticker?.cancel()
         idleStop?.cancel()
         lateStopUntil = nil
+        // A waiting Krea sign-in is ended before quitting, so it cannot save a sign-in afterwards (A:1576-1591).
+        if kreaSignIn != nil {
+            kreaSignIn?.cancel()
+            for _ in 0..<50 where kreaSignIn != nil { try? await Task.sleep(nanoseconds: 100_000_000) }
+        }
         if let kit { _ = await kit.gateway.stop() }
         return true
     }

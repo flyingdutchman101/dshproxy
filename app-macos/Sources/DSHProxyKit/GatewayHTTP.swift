@@ -35,6 +35,14 @@ enum LoopbackHTTP {
 /// The token-free status of a gateway, as GET {origin}/dshproxy/status returns it. nil when nothing answers
 /// with HTTP 200 and a JSON object within `timeout`.
 public enum StatusProbe {
+    /// Whether anything answers GET {origin}/dshproxy/status with HTTP 200, whatever the body: before starting
+    /// a gateway, as the Windows app asks (inventory 1.11), so nothing is started beside a program that answers.
+    public static func answers(origin: URL, timeout: TimeInterval = 1.5) async -> Bool {
+        guard let url = LoopbackHTTP.url(origin, "/dshproxy/status") else { return false }
+        guard let (status, _) = try? await LoopbackHTTP.send(URLRequest(url: url), timeout: timeout) else { return false }
+        return status == 200
+    }
+
     public static func fetch(origin: URL, timeout: TimeInterval = 2) async -> [String: Any]? {
         guard let url = LoopbackHTTP.url(origin, "/dshproxy/status") else { return nil }
         guard let (status, body) = try? await LoopbackHTTP.send(URLRequest(url: url), timeout: timeout), status == 200 else { return nil }

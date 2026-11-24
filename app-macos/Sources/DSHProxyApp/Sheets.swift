@@ -59,6 +59,8 @@ struct AddAccountSheet: View {
     @State var step: Step = .choose
     @State private var copied = false
     @State private var poll: Task<Void, Never>?
+    /// The attempt an answer belongs to; Cancel, Back and Try again start a new one.
+    @State private var attempt = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) { content }
@@ -190,10 +192,12 @@ struct AddAccountSheet: View {
 
     private func begin(_ p: LoginProvider) {
         copied = false
+        attempt += 1
+        let mine = attempt
         step = .asking(p)
         Task {
             let started = await store.loginStart(p.key)
-            guard step == .asking(p) else {
+            guard attempt == mine, step == .asking(p) else {
                 if case .success(let s) = started { store.loginCancel(s.id) }
                 return
             }
@@ -202,19 +206,22 @@ struct AddAccountSheet: View {
             case .success(let start):
                 step = .waiting(p, start)
                 store.openSignIn(start.url)
-                startPolling(p, start)
+                startPolling(p, start, attempt: mine)
             }
         }
     }
 
     /// `GET login/status` every 1.5 s (A:735-767).
-    private func startPolling(_ p: LoginProvider, _ start: LoginStart) {
+    private func startPolling(_ p: LoginProvider, _ start: LoginStart, attempt mine: Int) {
         poll?.cancel()
         poll = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 guard !Task.isCancelled, case .waiting(_, let current) = step, current.id == start.id else { return }
-                switch await store.loginStatus(start.id) {
+                let answer = await store.loginStatus(start.id)
+                // Cancelled or replaced while the answer was on its way: it is not this attempt's any more.
+                guard !Task.isCancelled, attempt == mine, case .waiting(_, let still) = step, still.id == start.id else { return }
+                switch answer {
                 case .ok(let account)?:
                     step = .success(p, account)
                     store.signedIn(account.isEmpty ? p.label : account)
@@ -230,6 +237,7 @@ struct AddAccountSheet: View {
 
     /// Closing the sheet or Cancel cancels an open session (A:571-575).
     private func cancelSession() {
+        attempt += 1
         poll?.cancel()
         poll = nil
         if case .waiting(let p, let start) = step {

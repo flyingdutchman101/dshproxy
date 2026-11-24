@@ -31,6 +31,10 @@ enum Main {
         if let i = args.firstIndex(of: "--render"), i + 1 < args.count {
             exit(Render.run(outDir: args[i + 1]))
         }
+        if let option = args.dropFirst().first(where: { $0.hasPrefix("--") && !["--hidden", "--render"].contains($0) }) {
+            FileHandle.standardError.write(Data("DSHProxy: \(option) is not available in the macOS app. Nothing was started.\n".utf8))
+            exit(2)
+        }
         if SingleInstance.handOver() { exit(0) }
 
         let app = NSApplication.shared

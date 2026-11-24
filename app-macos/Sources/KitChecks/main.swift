@@ -476,6 +476,15 @@ await check("GatewayProcess: something already answers -> .alreadyRunning, nothi
     try expect(!stopped, "stop() without an own gateway returned true")
 }
 
+await check("GatewayProcess: anything answering HTTP 200 (not JSON too) counts as running, as in the Windows app; nothing started") {
+    let standIn = try makeStandIn()
+    let server = try startServer("text")
+    let gateway = GatewayProcess(locations: standIn.locations)
+    try expectEqual(await gateway.start(origin: server.origin), .alreadyRunning, "outcome")
+    try? await Task.sleep(nanoseconds: 300_000_000)
+    try expect(!standIn.hasRecord(), "the start command ran")
+}
+
 /// Starts the stand-in gateway, checks what start does, stops it and checks what stop does.
 @MainActor func startAndStop(stubborn: Bool) async throws {
     let standIn = try makeStandIn()

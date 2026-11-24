@@ -211,7 +211,7 @@ extension AppStore {
 
     func kreaSignOut() async {
         guard await confirm("Krea", "Sign out of Krea?\n\nThe Krea sign-in stored on this computer is removed. Video on the Krea workspace route then needs a new sign-in.", yes: "Sign out"),
-              !videoBusy else { return }
+              !videoBusy, kreaSignIn == nil else { return }
         guard let result = await videoCommand(["logout"], script: .krea) else { return }
         if result.code == 0 {
             addLog("Signed out of Krea.")
