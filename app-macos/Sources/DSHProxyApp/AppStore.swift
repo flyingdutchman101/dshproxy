@@ -125,6 +125,8 @@ final class AppStore: ObservableObject {
     @Published var kreaState = "Not read yet"
     @Published var kreaTone: Tone = .muted
     @Published var kreaReadAt: Date?
+    /// The Krea sign-in in progress (inventory 2.7), nil otherwise.
+    @Published var kreaSignIn: StreamingCommand?
     @Published var harnessSetup: HarnessSetup?
     @Published var harnessReadAt: Date?
     @Published var applying = false

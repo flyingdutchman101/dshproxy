@@ -156,6 +156,59 @@ extension AppStore {
         }
     }
 
+    /// `dshproxy-krea.js login` (inventory 2.7): its first line must be an https address on a Krea host, which is
+    /// opened in the browser; at most 60 s for that line and 240 s more for the end. Cancel ends the helper.
+    func kreaSignInStart() {
+        guard let kit, kreaSignIn == nil else { return }
+        let command = StreamingCommand(runner: kit.runner)
+        kreaSignIn = command
+        kreaState = "Signing in..."
+        kreaTone = .warn
+        addLog("Krea: sign-in started.")
+        let gotAddress = SignInFlag()
+        let ending = SignInFlag()   // an outcome decided here before the helper ended
+        command.start(.krea, ["login"], timeout: 60 + 240, onLine: { [weak self] line in
+            guard gotAddress.setOnce() else { return }
+            guard let address = Krea.consentAddress(line), let url = URL(string: address) else {
+                ending.outcome = .addressRefused
+                command.cancel()
+                return
+            }
+            DispatchQueue.main.async {
+                if !NSWorkspace.shared.open(url) {
+                    ending.outcome = .browserNotOpened
+                    command.cancel()
+                } else {
+                    self?.say("Krea's consent page is open in your browser. Sign in there; this page waits.")
+                }
+            }
+        }, completion: { [weak self] result in
+            let outcome: KreaOutcome
+            if let decided = ending.outcome { outcome = decided }
+            else if result.timedOut { outcome = gotAddress.isSet ? .notFinishedInTime : .noAddressInTime }
+            else if result.code == nil && !gotAddress.isSet && !result.stderr.isEmpty { outcome = .notStarted }
+            else if result.code == nil { outcome = .cancelled }
+            else if result.code == 0 && !gotAddress.isSet { outcome = .endedWithoutAddress }
+            else { outcome = Krea.ended(exitCode: result.code, errors: result.stderr) }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.kreaSignIn = nil
+                let text = Krea.message(outcome)
+                self.addLog("Krea: " + text, outcome == .signedIn ? .plain : .warn)
+                self.say(text)
+                Task { await self.readKrea() }
+            }
+        })
+        // No address within a minute: the helper is stopped.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 60) {
+            if !gotAddress.isSet && ending.outcome == nil { ending.outcome = .noAddressInTime; command.cancel() }
+        }
+    }
+
+    func kreaSignInCancel() {
+        kreaSignIn?.cancel()
+    }
+
     func kreaSignOut() async {
         guard await confirm("Krea", "Sign out of Krea?\n\nThe Krea sign-in stored on this computer is removed. Video on the Krea workspace route then needs a new sign-in.", yes: "Sign out"),
               !videoBusy else { return }
@@ -169,5 +222,19 @@ extension AppStore {
             await inform("Krea", "The Krea sign-in was not removed.\n\n" + why, style: .critical)
         }
         await readKrea()
+    }
+}
+
+/// A flag and an outcome shared between the sign-in's callbacks, which arrive on other threads.
+final class SignInFlag {
+    private let lock = NSLock()
+    private var set = false
+    private var decided: KreaOutcome?
+    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return set }
+    /// True only for the first caller.
+    func setOnce() -> Bool { lock.lock(); defer { lock.unlock() }; if set { return false }; set = true; return true }
+    var outcome: KreaOutcome? {
+        get { lock.lock(); defer { lock.unlock() }; return decided }
+        set { lock.lock(); if decided == nil { decided = newValue }; lock.unlock() }
     }
 }

@@ -58,10 +58,12 @@ struct VideoAccountsPage: View {
         VStack(alignment: .leading, spacing: 12) {
             PageHeader(title: "Video accounts",
                        note: "Video has one signed-in service, a Krea workspace. Sign in to Krea opens Krea's consent page in your browser; DSHProxy's Krea helper keeps the sign-in, and this window sees only whether one is present and until when. The chat accounts are not used for video.") {
-                Button("Sign in to Krea\u{2026}") {}
+                Button("Sign in to Krea\u{2026}") { store.kreaSignInStart() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(true)
-                    .help("Comes in a later version of the macOS app.")
+                    .disabled(store.kreaSignIn != nil || store.videoBusy || store.isSample)
+                Button("Cancel") { store.kreaSignInCancel() }
+                    .disabled(store.kreaSignIn == nil)
+                    .accessibilityLabel("Cancel the Krea sign-in")
                 DangerButton("Sign out\u{2026}") { Task { await store.kreaSignOut() } }
                     .disabled(store.krea?.signedIn != true || store.videoBusy)
                     .accessibilityLabel("Sign out of Krea\u{2026}")
@@ -77,9 +79,6 @@ struct VideoAccountsPage: View {
             }
             .frame(height: tableHeight(1))
             .accessibilityLabel("Video accounts")
-            Banner(symbol: "info.circle",
-                   text: "Signing in to Krea from this app comes in a later version. Until then, run node bin/dshproxy-krea.js login in Terminal, in the DSHProxy folder; this page shows the result when it opens.",
-                   color: .blue)
             Text(store.kreaReadAt.map { "State read from the Krea helper at \(Format.clock($0)); it is read when this page opens, not kept up to date." } ?? "The state is read from the Krea helper when this page opens.")
                 .font(.callout).foregroundStyle(.secondary)
             Spacer(minLength: 0)

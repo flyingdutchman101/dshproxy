@@ -159,3 +159,18 @@ With a temporary folder as checkout whose `bin/dshproxy.js` and `bin/dshproxy-kr
 4. `ControlClient`: token from the file in the header, no `Origin`, body JSON; no token file → `.notRunning` without a request; nothing listening → `.noAnswer`; 4xx `{error}` → `.refused(error)`.
 5. `GatewayProcess`: something already answers → `.alreadyRunning`, no process started; otherwise the stand-in `start` runs with cwd = checkout, its lines reach `onOutput`; `stop()` ends it and the child it started, `onExit` is called once; `stop()` with no own gateway → false.
 6. `IdleStop`: `{"stopped":true}` exit 0 → `.stopped`; exit 2 `{"stopped":false,"inFlight":3}` → `.stillBusy(3)`; other → `.failed(first stderr line)`; `cancel()` → `.cancelled` and the command is gone.
+
+## Added by the lead, 24 Nov: `StreamingCommand` (the Krea sign-in)
+
+```swift
+public final class StreamingCommand {
+    public init(runner: CommandRunner)
+    /// `onLine`: each standard-output line as it is printed (background thread); `completion` once.
+    public func start(_ script: Script, _ args: [String], input: String? = nil, timeout: TimeInterval,
+                      onLine: @escaping (String) -> Void, completion: @escaping (CommandResult) -> Void)
+    /// Ends the command and its process group (never after it has ended); `completion` reports `code` nil.
+    public func cancel()
+}
+```
+
+Checks (6b in `KitChecks`, red first: "cannot find 'StreamingCommand'", then a run where no line arrived because the object was released): lines arrive before the end; cancel after the first line ends the command and its child; a command that does not end is ended at its timeout.
