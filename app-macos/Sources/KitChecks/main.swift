@@ -173,6 +173,12 @@ switch (args[0]) {
     else hangWithChild("inherit");
     break;
   }
+  case "login":
+    // As the Krea helper: the consent address first, then it waits for the browser.
+    console.log("https://www.krea.ai/consent?client=stand-in");
+    if (mode("login-mode") === "finish") setTimeout(() => { console.log("second line"); process.exitCode = 0; }, 300);
+    else hangWithChild("ignore");
+    break;
   default:
     console.error("stand-in: unknown command " + args[0]);
     process.exitCode = 9;
@@ -554,6 +560,52 @@ await check("IdleStop: cancel() -> .cancelled and the command (and its child) is
     try expectEqual(outcome, .cancelled, "outcome")
     try expect(Date().timeIntervalSince(started) < 4, "cancel took \(Date().timeIntervalSince(started)) s")
     try expect(await waitUntil(1) { !alive(pids.parent) && !alive(pids.child) }, "still running: command \(alive(pids.parent)), child \(alive(pids.child))")
+}
+
+// MARK: - 6b. StreamingCommand (the Krea sign-in: the first line before the end, cancel)
+
+await check("StreamingCommand: each standard-output line arrives as it is printed, before the command ends; then the result") {
+    let standIn = try makeStandIn()
+    try standIn.setMode("login-mode", "finish")
+    let lines = Box<[String]>([])
+    let firstBeforeEnd = Box(false)
+    let result: CommandResult = await withCheckedContinuation { continuation in
+        let command = StreamingCommand(runner: CommandRunner(locations: standIn.locations))
+        command.start(.krea, ["login"], timeout: 20, onLine: { line in lines.update { $0.append(line) } },
+                      completion: { result in firstBeforeEnd.update { $0 = !lines.get().isEmpty }; continuation.resume(returning: result) })
+    }
+    try expectEqual(lines.get(), ["https://www.krea.ai/consent?client=stand-in", "second line"], "lines")
+    try expect(firstBeforeEnd.get(), "no line before the end")
+    try expectEqual(result.code, Int32(0), "exit code")
+}
+
+await check("StreamingCommand: cancel() after the first line ends the command and its child; code nil") {
+    let standIn = try makeStandIn()
+    let command = StreamingCommand(runner: CommandRunner(locations: standIn.locations))
+    let gotLine = Box(false)
+    let task = Task { () -> CommandResult in
+        await withCheckedContinuation { continuation in
+            command.start(.krea, ["login"], timeout: 60, onLine: { _ in gotLine.update { $0 = true } }, completion: { continuation.resume(returning: $0) })
+        }
+    }
+    try expect(await waitUntil(5) { gotLine.get() && standIn.pids() != nil }, "no first line")
+    let pids = standIn.pids()!
+    command.cancel()
+    let result = await task.value
+    try expectEqual(result.code, nil as Int32?, "code")
+    try expectEqual(result.timedOut, false, "timedOut")
+    try expect(await waitUntil(3) { !alive(pids.parent) && !alive(pids.child) }, "still running: command \(alive(pids.parent)), child \(alive(pids.child))")
+}
+
+await check("StreamingCommand: a command that does not end is ended at its timeout") {
+    let standIn = try makeStandIn()
+    let started = Date()
+    let result: CommandResult = await withCheckedContinuation { continuation in
+        StreamingCommand(runner: CommandRunner(locations: standIn.locations))
+            .start(.krea, ["login"], timeout: 1, onLine: { _ in }, completion: { continuation.resume(returning: $0) })
+    }
+    try expect(result.timedOut, "not timed out")
+    try expect(Date().timeIntervalSince(started) < 5, "took \(Date().timeIntervalSince(started)) s")
 }
 
 // MARK: - 7. Mapping (JSON -> values the app shows)
