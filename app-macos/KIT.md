@@ -90,6 +90,65 @@ public final class IdleStop {
 
 JSON is passed as `[String: Any]` from `JSONSerialization`; the app maps it to its own types.
 
+### Added for the app (24 Nov 2026): mapping, pure functions only
+
+`Mapping.swift` (plain value types), `MappingLogic.swift` (chat side) and `VideoMapping.swift` (video, DeepSeek
+Harness setup, Krea) turn the JSON the CLI and the gateway print into what the app shows. No I/O, no UI; texts
+and rules are the Windows app's (`app/DSHProxyApp.cs`, cited per function). The existing API above is unchanged.
+
+```swift
+public enum Tone { case normal, muted, ok, warn, bad, accent }               // the app picks the colours
+public enum Format { tokens(_:) until(_:now:) reset(_:now:timeZone:) ago(_:now:timeZone:) clock(_:timeZone:) percent(_:) }
+
+// `status --json` (src/cli.js statusJson)
+public struct FullStatus { running origin home inFlight backendName backendVersion lockVersion previousVersion update
+                           accountCount modelsOffered loginProviders keyProviders lanes routing models catalogError
+                           catalogCheckedAt suggestions profiles
+                           static func parse(_ text: String) -> FullStatus?        // nil: not a JSON object
+                           var detailLine; func updateText(timeZone:) -> String?; func catalogNote(now:timeZone:) }
+public struct LoginProvider { key label; static let defaults; var details }      // sign-in tiles
+public struct KeyProvider { key label regions state savedRegion; stateText stateTone regionLabel }
+public struct Lane { name rungs; title } ; public struct Rung { model available coolingUntil; state; why(now:) }
+public struct Routing { activeName activeLabel presets; note }
+public struct ChatModel { …; statusText serviceLabel contextText outputText reasoningText tooltip tone highlighted
+                          static func visible(_:showHidden:) }
+public struct Suggestion { from to lanes; text } ; public struct HarnessProfile { …; pointing good }
+
+// GET /dshproxy/status (fast check) and requests in flight
+public struct FastStatus { inFlight print; static func read(_ object: [String: Any]) -> FastStatus }
+public enum InFlight { count(_:) cutQuestion(count:unanswered:quitting:) restartQuestion(count:unanswered:)
+                       restartOffer(output:inFlight:) stillBusy(_:) }
+
+// GET limits, GET resets, login/start, login/status
+public struct LimitsReport { fetchedAt accounts; static func parse(_:) ; var lowest: LowestLimit? }
+public struct AccountLimits { file provider label account plan disabled supported error primary siblings resetsAvailable
+                              windows; planText showsPrimaryChip primaryAction note who }
+public struct LimitWindow { title reported leftPercent resetsAt; level; line(now:timeZone:) }
+public enum LimitLevel { ok, low, critical; init(left:) }                       // below 30 / below 10
+public struct ResetCredits { available credits; static func parse(_:); count } ; ResetCredit.line(timeZone:)
+public struct LoginStart { id url device userCode; static func parse(_:) -> LoginStart? }
+public enum LoginProgress { wait, ok(account:), error(String); static func parse(_:) }
+public enum Links { static func signInURL(_:) -> URL? }                          // https only
+
+// video settings / video key / dsh bundle / Krea helper (code, stdout, stderr of a CommandResult)
+public enum VideoSettings { noRoute readArguments isName parse(_:) read(code:stdout:stderr:)
+                            setArguments(model:route:enabled:) failure(code:stderr:) routeLabel routeName units company }
+public struct VideoModel { id enabled route routes; hasRoute routeCell routeTone billedIn }
+public enum VideoKeys { listArguments setArguments(_:) removeArguments(_:) parse read refusal(_:)
+                        saved(code:stdout:provider:) removed(code:stdout:provider:) without(_:key:) }
+public struct VideoKeyProvider { …; stateText stateTone units }
+public struct HarnessSetup { state … ; static parse(_:) read(code:stdout:stderr:) unread(_:) statusArguments installArguments
+                             planned willInstall rowText rowTone pageLine confirmLines summary(applied:outcome:install:folder:) }
+public struct HarnessInstall { ok message log; static func read(code:stdout:stderr:) }
+public enum Krea { parseStatus(_:now:) describe(_:timeZone:) consentAddress(_:) ended(exitCode:errors:) message(_:) }
+```
+
+KitChecks section 7 checks them with sample JSON shaped as the sources print it (10 checks).
+
+Not in the Kit yet: a command whose first output line is read while it keeps running, and that can be cancelled
+(`dshproxy-krea.js login` prints the consent address, then waits up to 4 minutes). `CommandRunner.run` returns only
+at the end, so the app does not offer Krea sign-in yet.
+
 ## What `KitChecks` shows (red before green)
 
 With a temporary folder as checkout whose `bin/dshproxy.js` and `bin/dshproxy-krea.js` are stand-ins (Node scripts that record their arguments, environment and standard input, and behave as a test asks), and a stand-in gateway (a Node HTTP server on a free loopback port that serves `/dshproxy/status` and the control routes and records each request's headers):
