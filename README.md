@@ -29,7 +29,14 @@ The first `start` downloads the macOS release of CLIProxyAPI for your processor 
 
 **Video on macOS** works as on Windows: the `video` commands, the paid entries in the DeepSeek Harness model picker, and the Krea sign-in (`node bin/dshproxy-krea.js login`), which is kept in `~/Library/Application Support/DSHProxy/KreaOAuth/`, readable by your account only and encrypted with the same Keychain-held key. `dshproxy dsh bundle install` finds DeepSeek Harness in `/Applications` or `~/Applications` (or `DSHPROXY_HARNESS_DIR`) and runs its own `dsh plugin` command; quit DeepSeek Harness first.
 
-**Not there yet on macOS.** The app: there is no window and no menu-bar icon, and nothing starts at login.
+**The Mac app.** `DSHProxy.app` is the counterpart of the Windows app: an icon in the menu bar (no Dock icon), a window with the same pages (Chat: Accounts, API keys, Lanes, Models, DeepSeek Harness, Log; Video: Accounts, API keys, Lanes, Models, DeepSeek Harness), the gateway kept running while the window is closed, Quit in the menu, and **Start at login**. It does everything through the gateway's control API and the command line, as the Windows app does. Build it once (Swift and the Command Line Tools; Xcode is not needed):
+
+```sh
+app-macos/build.sh             # makes DSHProxy.app in this folder
+open DSHProxy.app
+```
+
+`DSHProxy.app` must be built in this folder; it remembers where it was built, so it can be moved to `/Applications` afterwards. It finds Node.js on the `PATH` or in `/opt/homebrew/bin` and `/usr/local/bin`. Start at login adds `~/Library/LaunchAgents/com.dshproxy.app.plist`, which opens the app in the menu bar without its window. It starts a gateway only when none answers; one it did not start, it shows but does not stop. Differences from the Windows app: Start is in the menu only, menu items are greyed out when they do not apply, confirmations default to Cancel, and the app uses the system's light or dark look. The Windows app's `--preview` options are not in the Mac app.
 
 **What protects which secret.** The key that encrypts your saved API keys (`master.key`) is wrapped with a key DSHProxy keeps in your login Keychain (an item named `DSHProxy`, account `key-wrapper`), as Windows wraps it with DPAPI. Every file and folder DSHProxy writes is readable by your account only. `backend-config.yaml` and `auth/` hold API keys and sign-ins in plain text, as on Windows, because CLIProxyAPI reads them from there. If your login Keychain is locked, macOS asks for its password; DSHProxy waits 10 seconds, then says that the Keychain is locked and saves nothing. Decision: [0009](docs/decisions/0009-keys-on-macos-are-wrapped-through-the-keychain.md).
 

@@ -1,6 +1,6 @@
 # Stage D — the app on macOS: criteria and plan
 
-Status: draft, written on the Mac on 23 Nov after decision 4 (**a native app, built like DroidProxy**; spec, decisions). Not reviewed. **Production code waits until the user has seen the native prototype** (`prototype-native/`, being built) and this document.
+Status: built 24 Nov after the user's go (D1–D7 in `app-macos/`, reviewed, CI green). Left: the user's checks DM1–DM4. The plan below is as written before building; where the build differs, `app-macos/KIT.md` and the ledger say so (start at login is a LaunchAgent, not `SMAppService`; there is no notification, as on Windows, so D0's fact 2 was not needed).
 
 Yardstick: `research/app-inventory.md` (every page, button, dialog and control route of the Windows app, with file:line). Facts: `research/facts.md` section 9.
 
