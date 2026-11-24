@@ -78,3 +78,6 @@ jobs:
           test "$code" -eq 44
       # Downloads the pinned backend, starts it, stops it (C2).
       - run: node scripts/start-stop-check.js
+      # The macOS app (stage D): its non-UI part is checked, and the app is built.
+      - run: swift run --package-path app-macos KitChecks
+      - run: app-macos/build.sh

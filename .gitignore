@@ -7,3 +7,7 @@ app/BuildInfo.cs
 # The personal icon and its notice stay on this machine only.
 app/icon/DSHProxy-personal.ico
 app/icon/NOTICE-personal.md
+
+# The macOS app (app-macos/build.sh) and its build folder.
+/DSHProxy.app/
+app-macos/.build/
