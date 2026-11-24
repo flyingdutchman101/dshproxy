@@ -125,6 +125,25 @@ final class AppStore: ObservableObject {
     @Published var kreaState = "Not read yet"
     @Published var kreaTone: Tone = .muted
     @Published var kreaReadAt: Date?
+    /// Start at login (inventory 1.7, 4.3): a LaunchAgent that opens this app with --hidden.
+    @Published var startAtLogin = false
+    var loginItem: LoginItem? {
+        guard kit != nil, let exe = Bundle.main.executableURL else { return nil }
+        return LoginItem(agentsFolder: LoginItem.userAgentsFolder(), executable: exe)
+    }
+    func readStartAtLogin() { startAtLogin = loginItem?.isOn ?? false }
+    func setStartAtLogin(_ on: Bool) {
+        guard let item = loginItem else { return }
+        do {
+            if on { try item.turnOn() } else { try item.turnOff() }
+            addLog(on ? "Start at login: on." : "Start at login: off.")
+        } catch {
+            addLog("\(error)", .warn)
+            say("\(error)")
+        }
+        readStartAtLogin()
+    }
+
     /// The Krea sign-in in progress (inventory 2.7), nil otherwise.
     @Published var kreaSignIn: StreamingCommand?
     @Published var harnessSetup: HarnessSetup?
@@ -170,6 +189,7 @@ final class AppStore: ObservableObject {
         self.kit = kit
         guard let kit else { return }
         Logos.folder = kit.locations.checkout
+        readStartAtLogin()
         kit.gateway.onOutput = { [weak self] line in
             Task { @MainActor in self?.addLog(line) }
         }
