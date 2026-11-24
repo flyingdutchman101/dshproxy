@@ -65,7 +65,7 @@ struct VideoAccountsPage: View {
                     .disabled(store.kreaSignIn == nil)
                     .accessibilityLabel("Cancel the Krea sign-in")
                 DangerButton("Sign out\u{2026}") { Task { await store.kreaSignOut() } }
-                    .disabled(store.krea?.signedIn != true || store.videoBusy)
+                    .disabled(store.krea?.signedIn != true || store.videoBusy || store.kreaSignIn != nil)
                     .accessibilityLabel("Sign out of Krea\u{2026}")
             }
             Table([KreaRow()]) {
