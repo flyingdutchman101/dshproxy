@@ -1,6 +1,6 @@
 # Stage D — the app on macOS: criteria and plan
 
-Status: built 24 Nov after the user's go (D1–D7 in `app-macos/`, reviewed, CI green). Left: the user's checks DM1–DM4. The plan below is as written before building; where the build differs, `app-macos/KIT.md` and the ledger say so (start at login is a LaunchAgent, not `SMAppService`; there is no notification, as on Windows, so D0's fact 2 was not needed).
+Status: built 24 Nov after the user's go (D1–D7 in `app-macos/`, reviewed, CI green). Left: the user's checks DM1–DM4. The plan below is as written before building; where the build differs, `app-macos/KIT.md` and the ledger say so (start at login is a LaunchAgent, not `SMAppService`; the one notification of the Windows app, "still running" after the first close, is not in the Mac app — left out with the prototype the user accepted — so D0's fact 2 was not needed).
 
 Yardstick: `research/app-inventory.md` (every page, button, dialog and control route of the Windows app, with file:line). Facts: `research/facts.md` section 9.
 
