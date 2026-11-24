@@ -174,3 +174,18 @@ public final class StreamingCommand {
 ```
 
 Checks (6b in `KitChecks`, red first: "cannot find 'StreamingCommand'", then a run where no line arrived because the object was released): lines arrive before the end; cancel after the first line ends the command and its child; a command that does not end is ended at its timeout.
+
+## Added by the lead, 24 Nov: `LoginItem` (start at login)
+
+```swift
+public struct LoginItem {
+    public static let label = "com.dshproxy.app"
+    public init(agentsFolder: URL, executable: URL)
+    public static func userAgentsFolder(home: URL = ...) -> URL     // ~/Library/LaunchAgents
+    public var isOn: Bool          // the file is there and starts this very executable
+    public func turnOn() throws    // writes com.dshproxy.app.plist: [executable, "--hidden"], RunAtLoad, no KeepAlive
+    public func turnOff() throws   // removes it; a running app is left running (as the Windows Run key)
+}
+```
+
+The macOS counterpart of the Windows Run key `"<exe>" --hidden`. A LaunchAgent rather than `SMAppService.mainApp` because it carries `--hidden` (start in the menu bar without the window) and works the same for an ad-hoc signed app wherever it is; this Mac already runs one (the gateway agent of 23 Nov). Check 6c, red first ("cannot find 'LoginItem'").

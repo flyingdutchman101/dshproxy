@@ -84,8 +84,7 @@ func menuEntries(_ store: AppStore) -> [MenuEntry] {
         .item("Start gateway", enabled: g == .stopped, checked: false, key: "", tooltip: nil, action: .start),
         .item("Stop gateway", enabled: g != .stopped, checked: false, key: "", tooltip: nil, action: .stop),
         .separator,
-        // Not implemented in this version: it needs the user's OK first (stage-d.md, fact 1).
-        .item("Start at login", enabled: false, checked: false, key: "", tooltip: "Comes in a later version.", action: .loginItem),
+        .item("Start at login", enabled: !store.isSample, checked: store.startAtLogin, key: "", tooltip: nil, action: .loginItem),
         .separator,
         .item("Quit DSHProxy", enabled: true, checked: false, key: "q", tooltip: nil, action: .quit),
     ]

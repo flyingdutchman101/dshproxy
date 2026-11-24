@@ -213,11 +213,10 @@ struct FooterView: View {
                 .help(store.footer)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            // Not implemented in this version: it needs the user's OK first.
-            Toggle("Start at login", isOn: .constant(false))
+            Toggle("Start at login", isOn: Binding(get: { store.startAtLogin }, set: { store.setStartAtLogin($0) }))
                 .toggleStyle(.checkbox)
-                .disabled(true)
-                .help("Comes in a later version.")
+                .disabled(store.isSample)
+                .help("Starts DSHProxy in the menu bar, with its gateway, when you log in.")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 8)

@@ -617,6 +617,29 @@ await check("StreamingCommand: a command that does not end is ended at its timeo
     try expect(Date().timeIntervalSince(started) < 5, "took \(Date().timeIntervalSince(started)) s")
 }
 
+// MARK: - 6c. Start at login (a LaunchAgent that opens the app hidden, as the Windows Run key does)
+
+await check("LoginItem: on writes a LaunchAgent that starts this app with --hidden at login; off removes it") {
+    let folder = try temporaryFolder("agents").appendingPathComponent("LaunchAgents", isDirectory: true)
+    let exe = URL(fileURLWithPath: "/Applications/Some Place/DSHProxy.app/Contents/MacOS/DSHProxy")
+    let item = LoginItem(agentsFolder: folder, executable: exe)
+    try expect(!item.isOn, "on before anything was written")
+    try item.turnOn()
+    let file = folder.appendingPathComponent("com.dshproxy.app.plist")
+    let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: file), format: nil) as? [String: Any]
+    try expectEqual(plist?["Label"] as? String, "com.dshproxy.app", "label")
+    try expectEqual(plist?["ProgramArguments"] as? [String], [exe.path, "--hidden"], "program arguments")
+    try expectEqual(plist?["RunAtLoad"] as? Bool, true, "run at load")
+    try expect(plist?["KeepAlive"] == nil, "keep alive set: Quit must stay quit")
+    try expect(item.isOn, "not on after turnOn")
+    // Another copy of the app (another path) does not count as on.
+    try expect(!LoginItem(agentsFolder: folder, executable: URL(fileURLWithPath: "/elsewhere/DSHProxy.app/Contents/MacOS/DSHProxy")).isOn, "another copy counts as on")
+    try item.turnOff()
+    try expect(!fm.fileExists(atPath: file.path), "file still there")
+    try expect(!item.isOn, "still on")
+    try item.turnOff()   // nothing there: no error
+}
+
 // MARK: - 7. Mapping (JSON -> values the app shows)
 //
 // Sample JSON shaped exactly as the CLI and the gateway print it (src/cli.js statusJson, src/daemon.js,

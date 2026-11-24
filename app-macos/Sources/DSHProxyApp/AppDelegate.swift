@@ -75,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        store.readStartAtLogin()
         menu.removeAllItems()
         for e in menuEntries(store) { menu.addItem(makeItem(e)) }
     }
@@ -105,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         case .addAccount: store.addAccount()
         case .start: Task { await store.startGateway() }
         case .stop: store.stopRequested()
-        case .loginItem: break
+        case .loginItem: store.setStartAtLogin(!store.startAtLogin)
         case .quit: NSApp.terminate(nil)
         }
     }
@@ -115,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     // MARK: Window
 
     func openWindow() {
+        store.readStartAtLogin()
         if window == nil {
             let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
             let vis = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
