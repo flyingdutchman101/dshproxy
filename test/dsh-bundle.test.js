@@ -1,3 +1,4 @@
+require("./support/keychain"); // on macOS: a throwaway keychain for this file and its children, never a login Keychain
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("crypto");
@@ -51,19 +52,44 @@ else if (mode === "fail") {
   process.exitCode = 1;
 } else if (mode === "noop") console.log("Already up to date");
 else if (mode === "hang") setInterval(() => {}, 1000);
+else if (mode === "stubborn") {
+  // A descendant that ignores SIGTERM and holds none of the command's output.
+  const { spawn } = require("child_process");
+  const late = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  fs.writeFileSync(path.join(__dirname, "stubborn.pid"), String(late.pid));
+  setInterval(() => {}, 1000);
+}
 else if (mode === "ok-then-hang") {
   install();
   setInterval(() => {}, 1000);
 }
 `;
 
-const commandDir = (harness) => path.join(harness, "resources", "runtime", "cli", "bin");
+// On macOS the Harness is an application folder and its command is a `sh`
+// script inside it (docs/work/0014-macos-port, stage C); on Windows a folder
+// with a batch file.
+const MAC = process.platform === "darwin";
+const commandDir = (harness) => (MAC ? path.join(harness, "Contents", "Resources", "runtime", "cli", "bin") : path.join(harness, "resources", "runtime", "cli", "bin"));
+// The arguments as the stand-in's first line records them: cmd.exe hands the
+// folder over in quotes; sh's "$*" joins them with spaces.
+const rawLine = (folder) => (MAC ? `plugin --profile desktop add ${folder}` : `plugin --profile desktop add "${folder}"`);
+// A Harness process as the process list gives it.
+const harnessProcess = (harness) => (MAC ? { name: "DeepSeek Harness", path: path.join(harness, "Contents", "MacOS", "DeepSeek Harness") } : { name: "DeepSeek Harness.exe", path: path.join(harness, "DeepSeek Harness.exe") });
 
 function writeStandIn(harness, mode = "ok") {
   const dir = commandDir(harness);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "standin.js"), STAND_IN_SCRIPT);
   fs.writeFileSync(path.join(dir, "mode.txt"), mode);
+  if (MAC) {
+    // The application's program, which the real command runs.
+    fs.mkdirSync(path.join(harness, "Contents", "MacOS"), { recursive: true });
+    fs.writeFileSync(path.join(harness, "Contents", "MacOS", "DeepSeek Harness"), "", { mode: 0o755 });
+    // The first line records the arguments as sh was given them; the program
+    // runs as a child of sh, as the real command's program does of its launcher.
+    fs.writeFileSync(path.join(dir, "dsh"), ["#!/bin/sh", "here=$(dirname \"$0\")", "printf '%s\\n' \"$*\" >> \"$here/raw.log\"", `"${process.execPath}" "$here/standin.js" "$@"`, "exit $?", ""].join("\n"), { mode: 0o755 });
+    return;
+  }
   // The first line records the arguments exactly as cmd.exe handed them over.
   fs.writeFileSync(path.join(dir, "dsh.cmd"), ["@echo off", "setlocal DisableDelayedExpansion", ">>\"%~dp0raw.log\" echo(%*", `"${process.execPath}" "%~dp0standin.js" %*`, "exit /b %errorlevel%", ""].join("\r\n"));
 }
@@ -83,7 +109,7 @@ function rawCalls(harness) {
 function sandbox(t, { rootName = "DSH Proxy root", standIn = "ok" } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "dshproxy-bundle-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const box = { base, home: path.join(base, "home"), harness: path.join(base, "harness"), root: path.join(base, rootName), logFile: path.join(base, "data", "dsh-bundle-install.log") };
+  const box = { base, home: path.join(base, "home"), harness: path.join(base, MAC ? "DeepSeek Harness.app" : "harness"), root: path.join(base, rootName), logFile: path.join(base, "data", "dsh-bundle-install.log") };
   box.folder = path.join(box.root, "integrations", "dsh-video");
   fs.mkdirSync(box.home, { recursive: true });
   fs.mkdirSync(box.folder, { recursive: true });
@@ -319,7 +345,7 @@ test("Harness is not found when its command is not in the program folder", async
   assert.equal(asked, 0, "there is no folder to match processes against");
 });
 
-test("Harness is running when a DeepSeek Harness.exe from its folder exists", async (t) => {
+test("Harness is running when a DeepSeek Harness.exe from its folder exists", { skip: MAC ? "Windows process names and paths; macOS has its own test below" : false }, async (t) => {
   const box = sandbox(t);
   writeProfile(box);
   const exe = path.join(box.harness, "DeepSeek Harness.exe");
@@ -469,7 +495,7 @@ test("the way the command is run refuses every character cmd.exe acts on", async
 
 // ---------------------------------------------------------------- where Harness is
 
-test("Harness is looked for in DSHPROXY_HARNESS_DIR, then the usual folder, then the dsh: link's program", (t) => {
+test("Harness is looked for in DSHPROXY_HARNESS_DIR, then the usual folder, then the dsh: link's program", { skip: MAC ? "the Windows places; macOS has its own test below" : false }, (t) => {
   const box = sandbox(t);
   const local = path.join(box.base, "local");
   const usual = path.join(local, "Programs", "DeepSeek Harness");
@@ -508,7 +534,7 @@ test("install runs Harness's command once, with exactly its arguments and a clea
   const seen = calls(box.harness);
   assert.equal(seen.length, 1);
   assert.deepEqual(seen[0].argv, ["plugin", "--profile", "desktop", "add", box.folder]);
-  assert.deepEqual(rawCalls(box.harness), [`plugin --profile desktop add "${box.folder}"`]);
+  assert.deepEqual(rawCalls(box.harness), [rawLine(box.folder)]);
 
   const childEnv = seen[0].env;
   const dshNames = Object.keys(childEnv).filter((name) => /^DSH_/i.test(name));
@@ -542,7 +568,7 @@ test("install when the plugin is already installed runs nothing", async (t) => {
 
 test("install runs nothing when it cannot install, and gives the reason", async (t) => {
   const cases = [
-    { name: "Harness is running", profile: {}, extra: (box) => ({ processes: async () => [{ name: "DeepSeek Harness.exe", path: path.join(box.harness, "DeepSeek Harness.exe") }] }), reason: /DeepSeek Harness is running/ },
+    { name: "Harness is running", profile: {}, extra: (box) => ({ processes: async () => [harnessProcess(box.harness)] }), reason: /DeepSeek Harness is running/ },
     { name: "the process list cannot be read", profile: {}, extra: () => ({ processes: async () => { throw new Error("denied"); } }), reason: /could not check whether DeepSeek Harness is running/ },
     { name: "Harness was never opened", profile: null, extra: () => ({}), reason: /has not been opened/ },
     { name: "Harness is not found", profile: {}, standIn: null, extra: () => ({}), reason: /was not found/ },
@@ -623,8 +649,8 @@ test("a command that hangs is ended with its children after the time limit, afte
   assert.match(result.message, /Plugins > Add plugin/);
   const seen = calls(box.harness);
   assert.equal(seen.length, 1);
-  // The program the batch file started is gone too, not only cmd.exe.
-  assert.equal(await untilGone(seen[0].pid), true, "the child of cmd.exe is still running");
+  // The program the batch file (or sh script) started is gone too, not only cmd.exe (or sh).
+  assert.equal(await untilGone(seen[0].pid), true, "the child of the command is still running");
   assert.match(fs.readFileSync(result.log, "utf8"), /stopped after/);
 });
 
@@ -795,4 +821,137 @@ test("the help names both bundle commands, and an unknown one is refused", (t) =
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /Usage: dshproxy dsh bundle status\|install \[--json\]/);
   assert.deepEqual(calls(box.harness), []);
+});
+
+// ---------------------------------------------------------------- macOS (0014, stage C)
+
+const macOnly = MAC ? {} : { skip: "macOS only; Windows has the tests above" };
+
+test("on macOS, Harness is running when its application's program runs, and not for another copy or another program", macOnly, async (t) => {
+  const box = sandbox(t);
+  writeProfile(box);
+  const running = await bundle.state(deps(box, { processes: async () => [harnessProcess(box.harness)] }));
+  assert.equal(running.harnessRunning, true);
+  assert.equal(running.canInstallAfterQuit, true);
+  assert.match(running.reason, /DeepSeek Harness is running\. Quit it/);
+  // Its helper processes count as well: they belong to the application.
+  const helper = { name: "DeepSeek Harness Helper (Renderer)", path: path.join(box.harness, "Contents", "Frameworks", "DeepSeek Harness Helper (Renderer).app", "Contents", "MacOS", "DeepSeek Harness Helper (Renderer)") };
+  assert.equal((await bundle.state(deps(box, { processes: async () => [helper] }))).harnessRunning, true);
+  // A copy elsewhere, a folder whose name only begins like it, another program: not it.
+  const elsewhere = await bundle.state(deps(box, { processes: async () => [harnessProcess(path.join(box.base, "Other", "DeepSeek Harness.app")), harnessProcess(`${box.harness}-old`), { name: "node", path: "/opt/homebrew/bin/node" }] }));
+  assert.equal(elsewhere.harnessRunning, false);
+  assert.equal(elsewhere.canInstall, true);
+  // A Harness process whose path is not given counts as running.
+  assert.equal((await bundle.state(deps(box, { processes: async () => [{ name: "DeepSeek Harness", path: null }] }))).harnessRunning, true);
+});
+
+test("on macOS, the real process list finds a running program by its full path", macOnly, async (t) => {
+  const box = sandbox(t);
+  writeProfile(box);
+  // A real process started from inside the stand-in application.
+  const program = path.join(box.harness, "Contents", "MacOS", "DeepSeek Harness");
+  fs.copyFileSync("/bin/sleep", program);
+  require("child_process").execFileSync("/usr/bin/codesign", ["-f", "-s", "-", program], { stdio: "ignore" });
+  const child = require("child_process").spawn(program, ["30"], { stdio: "ignore" });
+  t.after(() => child.kill("SIGKILL"));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const { processes, ...rest } = deps(box);
+  const found = await bundle.state(rest);
+  assert.equal(found.harnessRunning, true, found.reason);
+  child.kill("SIGKILL");
+  await untilGone(child.pid);
+  assert.equal((await bundle.state(rest)).harnessRunning, false);
+});
+
+test("on macOS, Harness is looked for in DSHPROXY_HARNESS_DIR, then /Applications, then ~/Applications", macOnly, (t) => {
+  const box = sandbox(t);
+  const system = path.join(box.base, "system-apps");
+  const own = path.join(box.base, "home-folder");
+  const inSystem = path.join(system, "DeepSeek Harness.app");
+  const inOwn = path.join(own, "Applications", "DeepSeek Harness.app");
+  writeStandIn(inSystem);
+  writeStandIn(inOwn);
+  const look = (env, applications) => bundle.locateHarness({ env, applications });
+  // The variable wins, and when it is set nothing else is tried.
+  assert.equal(look({ DSHPROXY_HARNESS_DIR: box.harness, HOME: own }, [system]), box.harness);
+  assert.equal(look({ DSHPROXY_HARNESS_DIR: path.join(box.base, "nothing here"), HOME: own }, [system]), null);
+  assert.equal(look({ HOME: own }, [system, path.join(own, "Applications")]), inSystem);
+  assert.equal(look({ HOME: own }, [path.join(box.base, "empty"), path.join(own, "Applications")]), inOwn);
+  // The default places are /Applications and the home folder's Applications (named, not looked in, here).
+  assert.deepEqual(bundle.macApplicationFolders({ HOME: own }), ["/Applications", path.join(own, "Applications")]);
+  assert.deepEqual(bundle.macApplicationFolders({}), ["/Applications"]);
+  // An application folder without its program, or without the command, is not it.
+  fs.rmSync(path.join(inOwn, "Contents", "MacOS", "DeepSeek Harness"));
+  assert.equal(look({ HOME: own }, [path.join(own, "Applications")]), null);
+  writeStandIn(inOwn);
+  fs.rmSync(path.join(commandDir(inOwn), "dsh"));
+  assert.equal(look({ HOME: own }, [path.join(own, "Applications")]), null);
+});
+
+test("on macOS, the command is started directly, its arguments as a list: a folder name with shell characters reaches it unchanged", macOnly, async (t) => {
+  const box = sandbox(t);
+  const command = path.join(commandDir(box.harness), "dsh");
+  const cwd = path.join(box.base, "cwd");
+  fs.mkdirSync(cwd);
+  // Characters a shell acts on but cmd.exe does not, so not refused on either system.
+  const odd = path.join(box.base, "a $(touch INJECTED) `x` 'q' ;b * ~");
+  const result = await bundle.runCommand({ command, args: ["plugin", "--profile", "desktop", "add", odd], env: process.env, cwd, timeoutMs: 20000 });
+  assert.equal(result.error, null);
+  assert.deepEqual(calls(box.harness).map((call) => call.argv), [["plugin", "--profile", "desktop", "add", odd]]);
+  assert.deepEqual(fs.readdirSync(cwd), []);
+  assert.equal(fs.existsSync(path.join(box.base, "INJECTED")), false);
+  // A line break or a NUL is refused before anything is started.
+  for (const bad of ["a\nb", "a\rb", "a\u0000b"]) {
+    const refused = await bundle.runCommand({ command, args: ["plugin", bad], env: process.env, cwd, timeoutMs: 20000 });
+    assert.match(refused.error, /not started/);
+  }
+  assert.equal(calls(box.harness).length, 1);
+});
+
+test("on macOS, the command's output on standard error is kept in the log and its last line is told", macOnly, async (t) => {
+  const box = sandbox(t, { standIn: "fail" });
+  writeProfile(box);
+  const result = await bundle.install(deps(box));
+  assert.equal(result.ok, false);
+  assert.ok(result.message.includes("dsh: plugin command failed"), result.message);
+  const log = fs.readFileSync(result.log, "utf8");
+  assert.match(log, /an earlier line that must not be shown/);
+  assert.match(log, /dsh: plugin command failed/);
+});
+
+test("on macOS, a command that ends after the time limit is not signalled again afterwards", macOnly, async (t) => {
+  const box = sandbox(t, { standIn: "hang" });
+  const command = path.join(commandDir(box.harness), "dsh");
+  const signals = [];
+  const realKill = process.kill;
+  process.kill = (pid, signal) => { signals.push([pid, signal]); return realKill.call(process, pid, signal); };
+  t.after(() => { process.kill = realKill; });
+  const result = await bundle.runCommand({ command, args: ["plugin"], env: process.env, cwd: box.base, timeoutMs: 1000 });
+  assert.equal(result.timedOut, true);
+  const after = signals.length;
+  // Longer than the pause before the last resort; nothing more is sent.
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  assert.equal(signals.length, after, JSON.stringify(signals));
+  assert.ok(signals.every(([pid]) => pid < 0), "only the command's own group is signalled");
+  // The group ended on SIGTERM, so the last resort was never needed.
+  assert.equal(signals.some(([, signal]) => signal === "SIGKILL"), false, JSON.stringify(signals));
+});
+
+test("on macOS, a descendant that ignores SIGTERM and holds no output is ended too", macOnly, async (t) => {
+  const box = sandbox(t, { standIn: "stubborn" });
+  const command = path.join(commandDir(box.harness), "dsh");
+  const pidFile = path.join(commandDir(box.harness), "stubborn.pid");
+  t.after(() => { try { process.kill(Number(fs.readFileSync(pidFile, "utf8")), "SIGKILL"); } catch { /* gone */ } });
+  const result = await bundle.runCommand({ command, args: ["plugin"], env: process.env, cwd: box.base, timeoutMs: 1500 });
+  assert.equal(result.timedOut, true);
+  const late = Number(fs.readFileSync(pidFile, "utf8"));
+  assert.equal(await untilGone(late, 2000), true, "the descendant outlived the command");
+});
+
+test("on macOS, a Harness program named in another case on this file system is the same program", macOnly, async (t) => {
+  const box = sandbox(t);
+  writeProfile(box);
+  const shouted = { name: "DEEPSEEK HARNESS", path: path.join(box.harness, "Contents", "MacOS", "DeepSeek Harness").toUpperCase() };
+  const insensitive = fs.existsSync(shouted.path);
+  assert.equal((await bundle.state(deps(box, { processes: async () => [shouted] }))).harnessRunning, insensitive);
 });

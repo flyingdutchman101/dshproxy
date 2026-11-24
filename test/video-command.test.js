@@ -1,3 +1,4 @@
+require("./support/keychain"); // on macOS: a throwaway keychain for this file and its children, never a login Keychain
 const test = require('node:test');
 const assert = require('node:assert/strict');
 // A command that is given no data folder uses the default one. For this file
@@ -72,7 +73,7 @@ test('real workspace helper with an empty temporary profile never starts login o
   const {execFile}=require('node:child_process');const runChild=require('node:util').promisify(execFile);
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'dshproxy-empty-workspace-'));
   try {
-    await assert.rejects(runChild(process.execPath,[path.resolve(__dirname,'../bin/dshproxy.js'),'video','quote','wan-3.0','krea','--prompt','Rain'],{env:{SystemRoot:process.env.SystemRoot,LOCALAPPDATA:dir,HOME:dir,USERPROFILE:dir,TEMP:dir,TMP:dir,NODE_PATH:process.env.NODE_PATH},timeout:10000}),e=>{assert.match(e.stderr,process.platform==='win32'?/sign-in required/i:/refused/i);assert.equal(e.stdout,'');return true;});
+    await assert.rejects(runChild(process.execPath,[path.resolve(__dirname,'../bin/dshproxy.js'),'video','quote','wan-3.0','krea','--prompt','Rain'],{env:{SystemRoot:process.env.SystemRoot,LOCALAPPDATA:dir,HOME:dir,USERPROFILE:dir,TEMP:dir,TMP:dir,NODE_PATH:process.env.NODE_PATH,...(process.env.DSHPROXY_KEYCHAIN?{DSHPROXY_KEYCHAIN:process.env.DSHPROXY_KEYCHAIN}:{})},timeout:10000}),e=>{assert.match(e.stderr,/sign-in required/i);assert.equal(e.stdout,'');return true;});
     assert.deepEqual(await fs.readdir(dir),[]);
   } finally {await fs.rmdir(dir);}
 });

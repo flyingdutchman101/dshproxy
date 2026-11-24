@@ -67,7 +67,7 @@ test("the release's checksum file is read into a name-to-hash map", () => {
 });
 
 test("a release becomes a lock with both Windows downloads and their checksums", () => {
-  const lock = lockFromRelease(RELEASE, parseChecksums(CHECKSUMS));
+  const lock = lockFromRelease(RELEASE, parseChecksums(CHECKSUMS), { platform: "win32" });
   assert.deepEqual(lock, {
     name: "CLIProxyAPI",
     version: "8.0.75",
@@ -82,17 +82,17 @@ test("a release becomes a lock with both Windows downloads and their checksums",
 
 test("a release without a checksum for a Windows download is refused", () => {
   const sums = parseChecksums(CHECKSUMS.split("\n").filter((line) => !line.includes("windows_amd64")).join("\n"));
-  assert.throws(() => lockFromRelease(RELEASE, sums), /no checksum for CLIProxyAPI_8.0.75_windows_amd64.zip/);
+  assert.throws(() => lockFromRelease(RELEASE, sums, { platform: "win32" }), /no checksum for CLIProxyAPI_8.0.75_windows_amd64.zip/);
 });
 
 test("a download address outside the official release is refused", () => {
   const forged = { ...RELEASE, assets: RELEASE.assets.map((asset) => (asset.name.endsWith("windows_amd64.zip") ? { ...asset, browser_download_url: "https://evil.example/CLIProxyAPI_8.0.75_windows_amd64.zip" } : asset)) };
-  assert.throws(() => lockFromRelease(forged, parseChecksums(CHECKSUMS)), /not an official CLIProxyAPI download/);
+  assert.throws(() => lockFromRelease(forged, parseChecksums(CHECKSUMS), { platform: "win32" }), /not an official CLIProxyAPI download/);
 });
 
 test("a newer release is reported with its lock; the same or an older one is not", async () => {
   const fetchImpl = fakeFetch({ [LATEST]: RELEASE, [SUMS]: CHECKSUMS });
-  const update = await checkForUpdate(CURRENT, { fetchImpl });
+  const update = await checkForUpdate(CURRENT, { fetchImpl, platform: "win32" });
   assert.equal(update.available, true);
   assert.equal(update.lock.version, "8.0.75");
   assert.equal(update.current, "8.0.72");
@@ -131,7 +131,7 @@ function makeUpdater(t, { trial = async () => ({ ok: true, checks: ["claude-haik
   return { updater, lockFile, events, readLock: () => JSON.parse(fs.readFileSync(lockFile, "utf8")) };
 }
 
-const NEXT = { ...lockFromRelease(RELEASE, parseChecksums(CHECKSUMS)) };
+const NEXT = { ...lockFromRelease(RELEASE, parseChecksums(CHECKSUMS), { platform: "win32" }) };
 
 test("an update installs, passes its trial, switches, and keeps the old version for rollback", async (t) => {
   const { updater, events, readLock } = makeUpdater(t);
@@ -222,7 +222,7 @@ test("without a way to restart, nothing is downloaded or switched", async (t) =>
 });
 
 test("a release whose version is not plain numbers is refused", () => {
-  assert.throws(() => lockFromRelease({ ...RELEASE, tag_name: "v8.0.75/../../x" }, parseChecksums(CHECKSUMS)), /not a release version/);
+  assert.throws(() => lockFromRelease({ ...RELEASE, tag_name: "v8.0.75/../../x" }, parseChecksums(CHECKSUMS), { platform: "win32" }), /not a release version/);
 });
 
 test("only one update runs at a time", async (t) => {
@@ -233,4 +233,56 @@ test("only one update runs at a time", async (t) => {
   await assert.rejects(updater.apply(NEXT), /already running/);
   release();
   await first;
+});
+
+// ------------------------------- both systems (spec 0014, C4) -------------------------------
+// The same release with the two macOS archives as well, as v8.0.72 and later
+// publish them. Their checksums are made up for the test.
+const MAC_ASSETS = ["darwin_aarch64", "darwin_amd64"].map((suffix) => ({ name: `CLIProxyAPI_8.0.75_${suffix}.tar.gz`, browser_download_url: `https://github.com/router-for-me/CLIProxyAPI/releases/download/v8.0.75/CLIProxyAPI_8.0.75_${suffix}.tar.gz` }));
+const RELEASE_ALL = { ...RELEASE, assets: [...RELEASE.assets, ...MAC_ASSETS] };
+const CHECKSUMS_ALL = `${CHECKSUMS}${"b".repeat(64)}  CLIProxyAPI_8.0.75_darwin_aarch64.tar.gz\n${"c".repeat(64)}  CLIProxyAPI_8.0.75_darwin_amd64.tar.gz\n`;
+const RELEASE_MAC_ONLY = { ...RELEASE_ALL, assets: RELEASE_ALL.assets.filter((asset) => !asset.name.includes("windows")) };
+const url = (name) => `https://github.com/router-for-me/CLIProxyAPI/releases/download/v8.0.75/${name}`;
+const FOUR = {
+  "win32-x64": { url: url("CLIProxyAPI_8.0.75_windows_amd64.zip"), sha256: "e83abd952ee2053414f20bb0b01268d98fc7cb4a4b04a645cbbbc72e66b7bd05" },
+  "win32-arm64": { url: url("CLIProxyAPI_8.0.75_windows_aarch64.zip"), sha256: "6961226bddb3dbe54bcc8f247b0a7a97ed92053ee69c2de1448181e89d586532" },
+  "darwin-arm64": { url: url("CLIProxyAPI_8.0.75_darwin_aarch64.tar.gz"), sha256: "b".repeat(64) },
+  "darwin-x64": { url: url("CLIProxyAPI_8.0.75_darwin_amd64.tar.gz"), sha256: "c".repeat(64) }
+};
+const pick = (...keys) => Object.fromEntries(keys.map((key) => [key, FOUR[key]]));
+
+test("on macOS, a release with all four archives becomes a four-asset lock", () => {
+  assert.deepEqual(lockFromRelease(RELEASE_ALL, parseChecksums(CHECKSUMS_ALL), { platform: "darwin" }).assets, FOUR);
+});
+
+test("on macOS, a release without Windows archives becomes a lock with the two macOS ones", () => {
+  assert.deepEqual(lockFromRelease(RELEASE_MAC_ONLY, parseChecksums(CHECKSUMS_ALL), { platform: "darwin" }).assets, pick("darwin-arm64", "darwin-x64"));
+  // One Windows archive missing counts as none: the Windows entries come as a pair or not at all.
+  const oneWindows = { ...RELEASE_ALL, assets: RELEASE_ALL.assets.filter((asset) => !asset.name.includes("windows_aarch64")) };
+  assert.deepEqual(lockFromRelease(oneWindows, parseChecksums(CHECKSUMS_ALL), { platform: "darwin" }).assets, pick("darwin-arm64", "darwin-x64"));
+});
+
+test("on macOS, a release without a macOS archive, or without its checksum, is refused", () => {
+  assert.throws(() => lockFromRelease(RELEASE, parseChecksums(CHECKSUMS), { platform: "darwin" }), /has no CLIProxyAPI_8\.0\.75_darwin_(aarch64|amd64)\.tar\.gz/);
+  const sums = parseChecksums(CHECKSUMS_ALL.split("\n").filter((line) => !line.includes("darwin_amd64")).join("\n"));
+  assert.throws(() => lockFromRelease(RELEASE_ALL, sums, { platform: "darwin" }), /no checksum for CLIProxyAPI_8\.0\.75_darwin_amd64\.tar\.gz/);
+});
+
+test("on Windows, a release with all four archives keeps the macOS ones, and one without them is what it is today", () => {
+  assert.deepEqual(lockFromRelease(RELEASE_ALL, parseChecksums(CHECKSUMS_ALL), { platform: "win32" }).assets, FOUR);
+  assert.deepEqual(lockFromRelease(RELEASE, parseChecksums(CHECKSUMS), { platform: "win32" }).assets, pick("win32-x64", "win32-arm64"));
+  // The macOS archives are kept only when both are complete; they never stop a Windows update.
+  const noMacSum = parseChecksums(CHECKSUMS_ALL.split("\n").filter((line) => !line.includes("darwin_amd64")).join("\n"));
+  assert.deepEqual(lockFromRelease(RELEASE_ALL, noMacSum, { platform: "win32" }).assets, pick("win32-x64", "win32-arm64"));
+  const forged = { ...RELEASE_ALL, assets: RELEASE_ALL.assets.map((asset) => (asset.name.includes("darwin_aarch64") ? { ...asset, browser_download_url: "https://evil.example/x.tar.gz" } : asset)) };
+  assert.deepEqual(lockFromRelease(forged, parseChecksums(CHECKSUMS_ALL), { platform: "win32" }).assets, pick("win32-x64", "win32-arm64"));
+  // And a release without a Windows archive is still refused on Windows.
+  assert.throws(() => lockFromRelease(RELEASE_MAC_ONLY, parseChecksums(CHECKSUMS_ALL), { platform: "win32" }), /has no CLIProxyAPI_8\.0\.75_windows_amd64\.zip/);
+});
+
+test("the check for an update makes the lock for the system it runs on", async () => {
+  const fetchImpl = fakeFetch({ [LATEST]: RELEASE_MAC_ONLY, [SUMS]: CHECKSUMS_ALL });
+  const update = await checkForUpdate(CURRENT, { fetchImpl, platform: "darwin" });
+  assert.deepEqual(update.lock.assets, pick("darwin-arm64", "darwin-x64"));
+  await assert.rejects(checkForUpdate(CURRENT, { fetchImpl: fakeFetch({ [LATEST]: RELEASE_MAC_ONLY, [SUMS]: CHECKSUMS_ALL }), platform: "win32" }), /windows_amd64/);
 });

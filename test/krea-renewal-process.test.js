@@ -1,8 +1,9 @@
 'use strict';
-// The Krea sign-in store as it really is on Windows (a file encrypted for the
-// current user, and the lock beside it), used by separate processes at the
-// same moment. Each test has its own throwaway LOCALAPPDATA. The network is
-// fake and every token is invented.
+// The Krea sign-in store as it really is (a file encrypted for the current
+// user, and the lock beside it), used by separate processes at the same
+// moment: the Windows store on Windows, the macOS store on a Mac. Each test
+// has its own throwaway folder (LOCALAPPDATA on Windows, the home folder on a
+// Mac). The network is fake and every token is invented.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -20,25 +21,33 @@ const NOW = 1000000;
 const protect = async (mode, bytes) => Buffer.from(bytes).map((byte) => byte ^ 0x5a);
 const ended = { resource, accessToken: 'invented-old-access', refreshToken: 'invented-old-refresh', clientId: 'invented-client', tokenEndpoint: 'https://api.krea.ai/token', expiresAt: NOW - 1000 };
 
+// The store of this system in the throwaway folder `dir`.
+const storeIn = (dir, options = {}) => {
+  const oauth = require(modulePath);
+  return process.platform === 'darwin' ? oauth.macStore({ home: dir, protect, ...options }) : oauth.windowsStore({ protect, ...options });
+};
+const folderIn = (dir) => (process.platform === 'darwin' ? path.join(dir, 'Library', 'Application Support', 'DSHProxy', 'KreaOAuth') : path.join(dir, 'DSHProxy', 'KreaOAuth'));
+
 if (process.argv[2] === 'worker') {
   // A helper in its own process. It says what it does and waits to be told to go on.
-  const { access, login, windowsStore } = require(modulePath);
+  const { access, login } = require(modulePath);
+  const ownStore = () => storeIn(process.env.LOCALAPPDATA);
   const told = () => new Promise((resolve) => process.once('message', resolve));
   const jobs = {
     // Renews; the fake token endpoint answers when the test says so.
-    renew: () => access(windowsStore({ protect }), () => NOW, { fetchImpl: async (url, options) => {
+    renew: () => access(ownStore(), () => NOW, { fetchImpl: async (url, options) => {
       process.send(`fetch ${new URLSearchParams(options.body).get('refresh_token')}`);
       await told();
       return Response.json({ access_token: 'invented-new-access', refresh_token: 'invented-new-refresh', token_type: 'Bearer', expires_in: 3600 });
     } }).then((token) => process.send(`token ${token}`)),
-    logout: () => windowsStore({ protect }).clear(),
+    logout: () => ownStore().clear(),
     // A sign-in that waits at the consent page until the test says so.
     login: () => {
       const issuer = 'https://api.krea.ai';
       const redirect = 'http://127.0.0.1:12345/callback';
       const replies = [{ resource, authorization_servers: [issuer] }, { issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`, registration_endpoint: `${issuer}/register`, code_challenge_methods_supported: ['S256'], response_types_supported: ['code'] }, { client_id: 'invented-client', token_endpoint_auth_method: 'none', redirect_uris: [redirect] }, { access_token: 'invented-login-access', token_type: 'Bearer', expires_in: 3600 }];
       let count = 0;
-      return login({ store: windowsStore({ protect }), now: () => NOW, fetchImpl: async () => Response.json(replies[count++]), showUrl: () => {}, openCallback: async (state) => ({ redirectUri: redirect, wait: async () => { process.send('consent'); await told(); return { state, code: 'invented-code' }; }, close() {} }) });
+      return login({ store: ownStore(), now: () => NOW, fetchImpl: async () => Response.json(replies[count++]), showUrl: () => {}, openCallback: async (state) => ({ redirectUri: redirect, wait: async () => { process.send('consent'); await told(); return { state, code: 'invented-code' }; }, close() {} }) });
     }
   };
   process.send('started');
@@ -77,7 +86,7 @@ if (process.argv[2] === 'worker') {
       child.on('message', look);
       look();
     });
-    return { dir, oauth, store: oauth.windowsStore({ protect }), start, heard, folder: path.join(dir, 'DSHProxy', 'KreaOAuth') };
+    return { dir, oauth, store: storeIn(dir), start, heard, folder: folderIn(dir) };
   }
 
   test('the real store renews a sign-in whose hour has ended, and what it stored can be read back', async (t) => {
@@ -139,7 +148,7 @@ if (process.argv[2] === 'worker') {
     await w.store.save(ended);
     const lock = path.join(w.folder, 'session.v1.lock');
     const held = (age) => fs.writeFile(lock, `${JSON.stringify({ id: 'a'.repeat(24), pid: process.pid, at: Date.now() - age })}\n`);
-    const impatient = w.oauth.windowsStore({ lockWaitMs: 300, protect });
+    const impatient = storeIn(w.dir, { lockWaitMs: 300 });
     let asked = 0;
     const fetchImpl = async () => { asked += 1; return Response.json({ access_token: 'invented-new-access', refresh_token: 'invented-new-refresh', token_type: 'Bearer', expires_in: 3600 }); };
 

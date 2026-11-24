@@ -8,7 +8,8 @@ const { execFile } = require("child_process");
 const { pipeline } = require("stream/promises");
 const { Readable } = require("stream");
 
-const BINARY = "cli-proxy-api.exe";
+// The program in the release archive: a .zip on Windows, a .tar.gz on macOS.
+const BINARY = process.platform === "win32" ? "cli-proxy-api.exe" : "cli-proxy-api";
 
 function assetFor(lock, platform = process.platform, arch = process.arch) {
   const asset = lock.assets?.[`${platform}-${arch}`];
@@ -33,8 +34,9 @@ async function downloadTo(url, file) {
   await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(file));
 }
 
+// Each system's own tar: Windows ships one in System32, macOS in /usr/bin.
 function extract(zip, dir) {
-  const tar = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
+  const tar = process.platform === "win32" ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe") : "/usr/bin/tar";
   return new Promise((resolve, reject) => {
     execFile(tar, ["-xf", zip, "-C", dir], { windowsHide: true }, (error, _stdout, stderr) => {
       if (error) reject(new Error(`Could not unpack ${path.basename(zip)}: ${String(stderr).trim() || error.message}`));
@@ -63,7 +65,7 @@ async function install(lock, binDir, { download = downloadTo, log = () => {} } =
   const asset = assetFor(lock);
   const dir = path.dirname(target);
   const staging = `${dir}.staging`;
-  const zip = path.join(binDir, `${lock.version}.zip.part`);
+  const zip = path.join(binDir, `${lock.version}${process.platform === "win32" ? ".zip" : ".tar.gz"}.part`);
   fs.rmSync(staging, { recursive: true, force: true });
   fs.mkdirSync(staging, { recursive: true });
   try {
@@ -77,6 +79,8 @@ async function install(lock, binDir, { download = downloadTo, log = () => {} } =
     const found = findBinary(staging);
     if (!found) throw new Error(`${BINARY} was not found in the ${lock.name} ${lock.version} download.`);
     if (found !== path.join(staging, BINARY)) fs.renameSync(found, path.join(staging, BINARY));
+    // On macOS the program is made runnable, by this account only.
+    if (process.platform !== "win32") fs.chmodSync(path.join(staging, BINARY), 0o700);
     fs.rmSync(dir, { recursive: true, force: true });
     fs.renameSync(staging, dir);
     return { path: target, installed: true };

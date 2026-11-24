@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 'use strict';
+// On macOS what this helper creates is private to this account (spec 0014).
+if(process.platform==='darwin')process.umask(0o077);
 // Dedicated process: DSHProxy does not import this module or gain access to tokens.
-const {access,login,status,windowsStore}=require('../src/krea-helper/oauth');
+const {access,login,status,windowsStore,macStore}=require('../src/krea-helper/oauth');
+// The sign-in store of this system: DPAPI on Windows, the Keychain on macOS.
+const ownStore=process.platform==='darwin'?macStore:windowsStore;
 const codes=new Set(['KREA_LOGIN_REQUIRED','KREA_UNCERTAIN','KREA_REFUSED']);
 function refuse(){throw Error('KREA_REFUSED');}
 async function readRequest(stream) {
@@ -9,7 +13,7 @@ async function readRequest(stream) {
   const text=Buffer.concat(chunks).toString('utf8').trimEnd();if(text.includes('\n')||text.includes('\r'))refuse();
   const request=JSON.parse(text);if(!request || !['quote','submit','status','balance'].includes(request.action))refuse();return request;
 }
-async function main({args=process.argv.slice(2),input=process.stdin,output=s=>process.stdout.write(s+'\n'),makeStore=windowsStore,run=(r,t)=>require('../src/krea-helper/mcp').run(r,t)}={}) {
+async function main({args=process.argv.slice(2),input=process.stdin,output=s=>process.stdout.write(s+'\n'),makeStore=ownStore,run=(r,t)=>require('../src/krea-helper/mcp').run(r,t)}={}) {
   if(args[0]==='login' && (args.length===1 || (args.length===3 && args[1]==='--client-id'))) {
     await login({clientId:args[2],store:makeStore(),showUrl:output});return;
   }

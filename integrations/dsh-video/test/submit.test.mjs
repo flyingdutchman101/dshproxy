@@ -13,14 +13,15 @@ import { BridgeError, createBridge } from '../lib/bridge.js'
 import { resolveSettings } from '../lib/config.js'
 import { createSubmitTools } from '../lib/submit.js'
 import {
-  PROMPT, SECRET, host, kreaEnabled, preflight, realRoot, runner, saveSettings, settingsRows, spy, stubRoot, temporary, tools,
+  PROMPT, SECRET, host, kreaEnabled, preflight, realRoot, runner, saveSettings, settingsRows, spy, stubRoot, systemEnv, temporary, tools,
 } from '../testing/support.mjs'
 
 const AGENT = { id: 'agent-1', session: { header: { origin: 'user' } } }
 const ARGS = { model: 'wan-3.0', route: 'krea', prompt: PROMPT }
 const JOB = { model: 'wan-3.0', route: 'krea', id: 'job_abc-123', status: 'queued' }
 const NOT_SENT = /Nothing was submitted and nothing was charged\./
-const windowsOnly = { skip: process.platform !== 'win32' }
+// Windows and macOS: the systems DSHProxy runs on.
+const windowsOnly = { skip: !['win32', 'darwin'].includes(process.platform) }
 
 // Answers the way an interface does: with one of the labels the question offers.
 const pick = (which) => (request) => {
@@ -534,7 +535,7 @@ test('with the real DSHProxy code and no sign-in, a job stops before any request
   assert.equal(asked.length, 0)
 
   // The child's own submit and status commands, in the form the real command accepts.
-  const env = { SystemRoot: process.env.SystemRoot, LOCALAPPDATA: facts.profile, USERPROFILE: facts.profile, TEMP: facts.profile, TMP: facts.profile, DSHPROXY_HOME: facts.home }
+  const env = { ...systemEnv(facts.profile), DSHPROXY_HOME: facts.home }
   const paid = { v: 1, op: 'submit', model: 'wan-3.0', route: 'krea', prompt: PROMPT, cap: '3.5' }
   assert.deepEqual(await send(realRoot, env, paid), { v: 1, ok: false, code: 'SIGN_IN_REQUIRED' })
   assert.deepEqual(await send(realRoot, env, { v: 1, op: 'status', model: 'wan-3.0', route: 'krea', jobId: 'job_abc-123' }), { v: 1, ok: false, code: 'SIGN_IN_REQUIRED' })

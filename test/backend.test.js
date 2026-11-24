@@ -1,3 +1,4 @@
+require("./support/keychain"); // on macOS: a throwaway keychain for this file and its children, never a login Keychain
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("crypto");
@@ -100,10 +101,18 @@ test("an API key with YAML syntax in it survives unchanged", () => {
   assert.equal(config["api-keys"]["openai-compatibility"][0].keys[0]["api-key"], apiKey);
 });
 
+// The release archive as each system gets it: a .zip with cli-proxy-api.exe
+// on Windows, a .tar.gz with cli-proxy-api on macOS.
+const PROGRAM = process.platform === "win32" ? "cli-proxy-api.exe" : "cli-proxy-api";
 function makeZip(dir, nested) {
   const source = path.join(dir, "payload", nested || "");
   fs.mkdirSync(source, { recursive: true });
-  fs.writeFileSync(path.join(source, "cli-proxy-api.exe"), "fake backend binary");
+  fs.writeFileSync(path.join(source, PROGRAM), "fake backend binary");
+  if (process.platform !== "win32") {
+    const archive = path.join(dir, "release.tar.gz");
+    execFileSync("/usr/bin/tar", ["-czf", archive, "-C", path.join(dir, "payload"), "."]);
+    return { zip: archive, sha256: crypto.createHash("sha256").update(fs.readFileSync(archive)).digest("hex") };
+  }
   const zip = path.join(dir, "release.zip");
   execFileSync(path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe"), ["-a", "-cf", zip, "-C", path.join(dir, "payload"), "."]);
   return { zip, sha256: crypto.createHash("sha256").update(fs.readFileSync(zip)).digest("hex") };
@@ -120,6 +129,8 @@ test("a download whose checksum matches is installed", async (t) => {
   assert.equal(result.installed, true);
   assert.equal(result.path, binaryPath(lockFor(sha256), binDir));
   assert.equal(fs.readFileSync(result.path, "utf8"), "fake backend binary");
+  // On macOS the program can be run, by this account only.
+  if (process.platform === "darwin") assert.equal(fs.statSync(result.path).mode & 0o777, 0o700);
 });
 
 test("a binary inside a subfolder of the download is found", async (t) => {
@@ -171,7 +182,7 @@ test("the pinned release is the official one and has a full checksum", () => {
   }
 });
 
-test("a backend left behind by a gateway that was killed is stopped", async (t) => {
+test("a backend left behind by a gateway that was killed is stopped", { skip: process.platform === "darwin" ? "Windows compares paths without case; macOS compares real paths exactly, tested with a real process below" : false }, async (t) => {
   const dir = tempDir(t);
   const pidFile = path.join(dir, "backend.pid");
   const binary = path.join(dir, "bin", "8.0.72", "cli-proxy-api.exe");
@@ -333,4 +344,73 @@ test("a custom endpoint and a catalog provider can both be present", () => {
     custom: [{ name: "oneapi", baseUrl: "http://127.0.0.1:3000/v1", apiKey: "sk-fake", models: ["m1"] }]
   }));
   assert.deepEqual(config["api-keys"]["openai-compatibility"].map((group) => group.name), ["deepseek", "oneapi"]);
+});
+
+// ------------------------------- macOS: a leftover backend -------------------------------
+// A real program, started by its full path from a long folder name under the
+// temporary folder (which is reached through a link: /var -> /private/var).
+
+const onMacOnly = process.platform === "darwin" ? {} : { skip: "macOS process lookup; Windows has the tests above" };
+
+function startProgram(t, dir) {
+  const program = path.join(dir, "a-folder-name-long-enough-that-the-whole-path-is-over-a-hundred-characters", "8.0.72", "cli-proxy-api");
+  fs.mkdirSync(path.dirname(program), { recursive: true });
+  // A copy of /bin/sleep stands in for the backend: a real program that keeps
+  // running. macOS runs a copy of its own program only once it is signed again.
+  fs.copyFileSync("/bin/sleep", program);
+  fs.chmodSync(program, 0o700);
+  execFileSync("/usr/bin/codesign", ["-f", "-s", "-", program], { stdio: "ignore" });
+  const child = require("child_process").spawn(program, ["30"], { stdio: "ignore" });
+  t.after(() => { try { child.kill("SIGKILL"); } catch { /* ended */ } });
+  return { program, child };
+}
+
+const exited = (child) => new Promise((resolve) => {
+  if (child.exitCode !== null || child.signalCode !== null) resolve(true);
+  else {
+    const timer = setTimeout(() => resolve(false), 5000);
+    child.once("exit", () => { clearTimeout(timer); resolve(true); });
+  }
+});
+
+test("on macOS, a backend left behind by a gateway that was killed is found by its program path and stopped", onMacOnly, async (t) => {
+  const dir = tempDir(t);
+  const { program, child } = startProgram(t, dir);
+  assert.ok(program.length > 100);
+  const pidFile = path.join(dir, "backend.pid");
+  fs.writeFileSync(pidFile, `${child.pid}\n`);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  // The binary as the gateway names it: through the link the temporary folder has.
+  assert.equal(await reclaimOrphan({ pidFile, binary: program }), true);
+  assert.equal(await exited(child), true);
+});
+
+test("on macOS, a process that is not this gateway's backend is never stopped", onMacOnly, async (t) => {
+  const dir = tempDir(t);
+  const pidFile = path.join(dir, "backend.pid");
+  const ours = path.join(dir, "bin", "8.0.72", "cli-proxy-api");
+  fs.mkdirSync(path.dirname(ours), { recursive: true });
+  fs.writeFileSync(ours, "");
+  // Another program holds the recorded process ID.
+  const other = require("child_process").spawn("/bin/sleep", ["30"], { stdio: "ignore" });
+  t.after(() => other.kill("SIGKILL"));
+  fs.writeFileSync(pidFile, `${other.pid}\n`);
+  assert.equal(await reclaimOrphan({ pidFile, binary: ours }), false);
+  // Another copy of the same program in another folder.
+  const elsewhere = startProgram(t, tempDir(t));
+  fs.writeFileSync(pidFile, `${elsewhere.child.pid}\n`);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(await reclaimOrphan({ pidFile, binary: ours }), false);
+  // Our program, whose file is gone since: not recognised, not stopped.
+  const gone = startProgram(t, dir);
+  fs.writeFileSync(pidFile, `${gone.child.pid}\n`);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  fs.rmSync(gone.program);
+  assert.equal(await reclaimOrphan({ pidFile, binary: gone.program }), false);
+  // A process that has ended.
+  const ended = require("child_process").spawnSync("/usr/bin/true").pid;
+  fs.writeFileSync(pidFile, `${ended}\n`);
+  assert.equal(await reclaimOrphan({ pidFile, binary: ours }), false);
+
+  for (const proc of [other, elsewhere.child, gone.child]) assert.equal(proc.exitCode, null, "a process was stopped");
 });

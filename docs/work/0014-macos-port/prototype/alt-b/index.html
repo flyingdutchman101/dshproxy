@@ -1,0 +1,1606 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>DeepSeekProxy (prototype)</title>
+<!-- Prototype of option (a): the DSHProxy window as a local web page served on 127.0.0.1.
+     Self-contained: inline CSS and JS, no external requests (see the CSP above), synthetic in-memory data only.
+     Logos are read from logos/ (LobeHub Icons, MIT; notice in logos/SOURCE.md); a lettered badge replaces any that is missing. -->
+<style>
+:root{
+  --page:#02101A; --card:#0A2230; --input:#061824; --log:#04121C;
+  --text:#F5FCFB; --muted:#B4CCD4; --faint:#86A0AA;
+  --accent:#E4B26A; --accent-hover:#F3CB8B; --accent-deep:#B8873F; --ink:#1E1403; --dim:#15303E;
+  --teal:#57D9C9; --ok:#5BDCA8; --warn:#F2C14E; --bad:#F27C6C; --bad-dim:#3A1A18; --bad-fill:#B9473A;
+  --glass:rgba(4,22,29,.62);
+  --sheen:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,0) 80px);
+  color-scheme:dark;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","Segoe UI",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:linear-gradient(180deg,#061A24,#020B11) fixed;color:var(--text);font-size:13.5px;line-height:1.42;overflow:hidden;display:flex;flex-direction:column}
+#stars{position:fixed;inset:0;z-index:0;pointer-events:none}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+.sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary:focus-visible,.seg button[aria-checked=true]:focus-visible,.btn[aria-pressed=true]:focus-visible{outline-color:var(--text)}
+button{font:inherit}
+
+/* ---------- prototype controls (not part of the design) ---------- */
+.proto-bar{position:relative;z-index:3;display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;padding:4px 12px;background:repeating-linear-gradient(135deg,#1b1506 0 10px,#221a08 10px 20px);border-bottom:1px dashed #8a6a2f;font-size:12px;color:#F0DCB4;min-height:32px}
+.proto-tag{font-weight:700;color:var(--accent)}
+.proto-bar select,.proto-bar button{font:inherit;font-size:12px;color:#F0DCB4;background:#2a210c;border:1px dashed #a07c3c;border-radius:6px;padding:2px 8px;min-height:24px}
+.proto-bar button{cursor:pointer}
+.proto-bar label{display:inline-flex;align-items:center;gap:5px}
+.proto-bar input[type=checkbox]{accent-color:var(--accent)}
+.btn.proto{border:1px dashed #C89A4A;background:rgba(228,178,106,.08);color:#F0DCB4;font-size:12.5px}
+.proto-box{margin-top:14px;padding:8px 10px;border:1px dashed #8a6a2f;border-radius:10px;font-size:12px;color:#F0DCB4;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+
+/* ---------- window ---------- */
+.app{position:relative;z-index:1;flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;width:100%;max-width:1240px;margin:0 auto;padding:12px 16px 8px}
+.glass{position:relative;background:var(--sheen),var(--glass);-webkit-backdrop-filter:blur(16px) saturate(115%);backdrop-filter:blur(16px) saturate(115%);border-radius:20px}
+.glass::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(180deg,rgba(255,255,255,.46),rgba(255,255,255,.09));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+
+/* header */
+.hdr{display:flex;align-items:center;gap:16px;padding:16px 20px;min-height:104px;flex-wrap:wrap}
+.mark{width:60px;height:60px;flex:none;border-radius:15px;box-shadow:0 0 0 3px rgba(228,178,106,.22),0 0 18px rgba(228,178,106,.18)}
+.mark svg{display:block;width:100%;height:100%}
+.hdr-main{flex:1 1 300px;min-width:0}
+.hdr-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h1{font-weight:300;font-size:24px;margin:0;letter-spacing:.2px}
+.detail{color:var(--muted);margin-top:3px;overflow-wrap:anywhere}
+.lowest{font-size:12.5px;margin-top:1px}
+.hdr-actions{display:flex;gap:8px;flex:none;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:5px;padding:1px 10px;border-radius:999px;font-size:12px;font-weight:600;line-height:18px;color:var(--c,var(--accent));background:color-mix(in srgb,var(--c,var(--accent)) 15%,transparent);border:1px solid color-mix(in srgb,var(--c,var(--accent)) 45%,transparent);white-space:nowrap}
+.chip.plain{font-weight:500}
+
+/* buttons */
+.btn{appearance:none;font-size:13px;min-height:34px;padding:0 16px;border-radius:999px;border:1px solid rgba(255,255,255,.2);border-top-color:rgba(255,255,255,.42);background:rgba(255,255,255,.12);color:var(--text);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:background .12s}
+.btn:hover{background:rgba(255,255,255,.2)}
+.btn:active{background:rgba(255,255,255,.08)}
+.btn.primary,.btn[aria-pressed=true]{background:linear-gradient(180deg,#F0C482,var(--accent) 60%);color:var(--ink);font-weight:650;border-color:rgba(255,255,255,.4);box-shadow:0 0 0 3px rgba(228,178,106,.15)}
+.btn.primary:hover{background:linear-gradient(180deg,var(--accent-hover),#EBBD78)}
+.btn.primary:active{background:linear-gradient(180deg,var(--accent),var(--accent-deep))}
+.btn.danger{color:var(--bad)}
+.btn.danger:hover{background:rgba(242,124,108,.18)}
+.btn.danger-strong{background:var(--bad-fill);color:#fff;font-weight:650;border-color:rgba(255,255,255,.32)}
+.btn.danger-strong:hover{background:#C9503F}
+.btn.outline{border-color:var(--accent);color:var(--accent);background:rgba(255,255,255,.05)}
+.btn.outline:hover{background:rgba(228,178,106,.14)}
+.btn.big{min-width:104px;min-height:40px}
+.btn.small{min-height:29px;padding:0 12px;font-size:12.5px}
+.btn:disabled,.btn:disabled:hover{background:rgba(255,255,255,.04);color:#6F8791;border-color:rgba(255,255,255,.1);box-shadow:none;cursor:default;font-weight:500}
+
+/* update bar */
+.update{display:flex;align-items:center;gap:8px 14px;padding:9px 12px 9px 18px;border-radius:16px;flex-wrap:wrap}
+.update p{margin:0;flex:1 1 320px;min-width:0}
+.update .btns{display:flex;gap:8px;margin-left:auto}
+
+/* workspace switch + section strip */
+.navrow{display:flex;align-items:center;gap:8px 18px;flex-wrap:wrap}
+.ws{display:flex;align-items:center;gap:10px;min-width:0}
+.ws-label{font-weight:700}
+.seg{display:inline-flex;padding:4px;gap:2px;border-radius:999px}
+.seg button{min-width:88px;height:32px;border-radius:999px;border:0;background:transparent;color:var(--muted);cursor:pointer;padding:0 14px}
+.seg button:hover{background:rgba(255,255,255,.09);color:var(--text)}
+.seg button[aria-checked=true]{background:linear-gradient(180deg,var(--accent-hover),var(--accent));color:var(--ink);font-weight:700}
+.hint{color:var(--muted);font-size:12.5px;min-width:0}
+.strip{display:inline-flex;padding:5px;gap:2px;border-radius:999px;margin-left:auto;flex-wrap:nowrap}
+.tab{height:32px;padding:0 16px;border-radius:999px;border:0;background:transparent;color:var(--muted);cursor:pointer;white-space:nowrap}
+.tab:hover{background:rgba(255,255,255,.07);color:var(--text)}
+.tab[aria-selected=true]{background:linear-gradient(180deg,rgba(255,255,255,.27),rgba(255,255,255,.13));color:var(--text);font-weight:700;box-shadow:inset 0 1px 0 rgba(255,255,255,.45),inset 0 0 0 1px rgba(255,255,255,.16)}
+
+/* page */
+.page{flex:1;min-height:0;display:flex;flex-direction:column}
+.page-head{padding:15px 22px 6px}
+.page-head h2{margin:0;font-size:17px;font-weight:600}
+.note{color:var(--muted);margin:3px 0 0;max-width:120ch;font-size:13px}
+.page-body{flex:1;min-height:0;overflow:auto;padding:8px 22px 14px}
+.page-body.fill{display:flex;flex-direction:column}
+.page-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 22px 13px;border-top:1px solid rgba(255,255,255,.08)}
+.page-actions .spacer{flex:1}
+.status-line{color:var(--muted);font-size:12.5px}
+.field{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px}
+select.input,input.input{font:inherit;font-size:13px;color:var(--text);background:var(--input);border:1px solid rgba(255,255,255,.2);border-radius:9px;min-height:32px;padding:0 10px}
+input.input{width:100%;padding:6px 10px}
+input.input[aria-invalid=true]{border-color:var(--bad)}
+select.input:disabled{color:#6F8791}
+.banner{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:10px 14px;border-radius:12px;margin-bottom:12px;background:color-mix(in srgb,var(--c) 11%,transparent);border:1px solid color-mix(in srgb,var(--c) 42%,transparent)}
+.banner p{margin:0;flex:1 1 280px}
+.empty{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:26px 24px;border-radius:16px;border:1px dashed rgba(255,255,255,.22);background:rgba(255,255,255,.03);max-width:720px}
+.empty p{margin:0;font-size:14px}
+.empty.state{border-style:solid;border-color:color-mix(in srgb,var(--c) 42%,transparent);background:color-mix(in srgb,var(--c) 8%,transparent)}
+.check{display:inline-flex;align-items:center;gap:7px;cursor:pointer;color:var(--text)}
+.check input{accent-color:var(--accent);width:16px;height:16px;margin:0}
+
+/* accounts */
+.cards{display:flex;flex-direction:column;gap:12px}
+.card{border-radius:16px;padding:13px 16px 14px;background:var(--sheen),rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.12);border-top-color:rgba(255,255,255,.26)}
+.card.paused{background:rgba(255,255,255,.02)}
+.card-top{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
+.card-id{display:flex;align-items:center;gap:6px 9px;flex-wrap:wrap;flex:1 1 320px;min-width:0}
+.logo{flex:none;border-radius:6px;object-fit:contain}
+.badge{flex:none;display:inline-grid;place-items:center;border-radius:6px;background:var(--dim);color:var(--accent);font-weight:700;border:1px solid rgba(228,178,106,.4)}
+.acct-label{font-weight:700;font-size:14.5px}
+.email{color:var(--muted)}
+.card-btns{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.wins{margin-top:6px}
+.win{display:grid;grid-template-columns:minmax(110px,200px) minmax(100px,1fr) minmax(290px,340px);gap:14px;align-items:center;padding-top:7px}
+.win-title.muted{color:var(--faint)}
+.meter{height:8px;border-radius:8px;background:rgba(255,255,255,.1);overflow:hidden}
+.meter>i{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,color-mix(in srgb,var(--c) 65%,#ffffff 0%),var(--c));box-shadow:0 0 8px color-mix(in srgb,var(--c) 45%,transparent)}
+.win-text{font-size:12.5px;color:var(--muted)}
+.win-text b{color:var(--c);font-weight:700}
+.card-note{margin:9px 0 0;color:var(--muted);font-size:12.5px}
+.card-note.bad{color:var(--bad)}
+.reset-strip{margin-top:12px;display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:8px 10px 8px 12px;border-radius:12px;background:rgba(242,124,108,.11);border:1px solid rgba(242,124,108,.45)}
+.reset-strip p{margin:0;flex:1 1 220px;font-size:12.5px}
+
+/* lists */
+table.list{width:100%;border-collapse:separate;border-spacing:0}
+.list th{text-align:left;font-size:12px;font-weight:600;color:var(--muted);padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.14);white-space:nowrap;position:sticky;top:-8px;background:#071a24;z-index:1}
+.list td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:middle}
+.list tbody tr:hover td{background:rgba(255,255,255,.035)}
+.list tr.sel td{background:rgba(228,178,106,.11)}
+.list tr.sel:hover td{background:rgba(228,178,106,.15)}
+.cell{display:flex;align-items:center;gap:9px}
+.pick{display:flex;align-items:center;gap:9px;cursor:pointer}
+.pick input{accent-color:var(--accent);margin:0;width:15px;height:15px}
+.c-ok{color:var(--ok)} .c-warn{color:var(--warn)} .c-bad{color:var(--bad)} .c-muted{color:var(--faint)} .c-brass{color:var(--accent);font-weight:700}
+.num{font-variant-numeric:tabular-nums}
+
+/* lanes */
+.presets{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.presets .lbl{font-weight:700;margin-right:2px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:12.5px;margin:10px 0 6px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.ladder{display:flex;flex-wrap:wrap;align-items:center;gap:6px 4px}
+.rung{display:inline-flex;align-items:center;gap:6px;padding:2px 10px 2px 4px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.17);font-size:12.5px;white-space:nowrap}
+.dot{width:17px;height:17px;border-radius:50%;display:inline-grid;place-items:center;font-size:10px;font-weight:800;color:#04121C;background:var(--c);flex:none}
+.rung.off .nm{color:var(--faint)}
+.arrow{color:var(--faint);padding:0 1px}
+.lane-name{font-weight:600;white-space:nowrap}
+
+/* switches */
+.switch{appearance:none;-webkit-appearance:none;width:34px;height:20px;border-radius:999px;background:rgba(255,255,255,.16);position:relative;cursor:pointer;margin:0;border:1px solid rgba(255,255,255,.3);transition:background .15s;flex:none;vertical-align:middle}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#DFE9EC;transition:transform .15s}
+.switch:checked{background:var(--ok);border-color:rgba(255,255,255,.35)}
+.switch:checked::after{transform:translateX(14px);background:#04121C}
+.suggest{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;padding:9px 12px;border-radius:12px;margin-bottom:10px;background:rgba(228,178,106,.1);border:1px solid rgba(228,178,106,.45)}
+.suggest p{margin:0;flex:1 1 300px}
+
+/* log */
+pre.log{margin:0;flex:1;min-height:120px;font:12px/1.55 ui-monospace,"SF Mono",Menlo,monospace;background:var(--log);border-radius:12px;padding:10px 12px;white-space:pre;overflow:auto;border:1px solid rgba(255,255,255,.08);color:#D6E6EA}
+.live{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px}
+.live i{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 6px var(--ok);animation:pulse 1.6s ease-in-out infinite}
+.live.off i{background:var(--faint);box-shadow:none;animation:none}
+@keyframes pulse{50%{opacity:.35}}
+
+/* footer */
+.foot{display:flex;align-items:center;gap:6px 18px;color:var(--muted);font-size:12px;padding:0 6px;flex-wrap:wrap}
+.foot .paths{flex:1 1 400px;min-width:0;overflow-wrap:anywhere}
+.foot .check{color:var(--text);font-size:12.5px}
+
+/* dialogs */
+dialog.dlg{border:0;padding:0;border-radius:18px;color:var(--text);background:var(--sheen),#0A2230;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.16),inset 0 1px 0 rgba(255,255,255,.3);width:min(520px,calc(100vw - 32px));max-height:calc(100vh - 24px);overflow:auto}
+dialog.dlg.wide{width:min(560px,calc(100vw - 32px))}
+dialog.dlg.danger{box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px rgba(242,124,108,.55),inset 0 1px 0 rgba(255,255,255,.25)}
+dialog.dlg::backdrop{background:rgba(1,8,12,.62);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.dlg-body{padding:20px 22px 6px}
+.dlg h2{margin:0 0 8px;font-size:17px;font-weight:600}
+.dlg p{margin:0 0 9px}
+.dlg-btns{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:12px 22px 18px;flex-wrap:wrap}
+.dlg-btns .left{margin-right:auto}
+.msg{display:flex;gap:14px;align-items:flex-start}
+.msg-text{min-width:0;white-space:pre-line}
+.glyph{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:17px;border:2px solid var(--c);color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent)}
+.out{font:12px/1.55 ui-monospace,"SF Mono",Menlo,monospace;background:var(--log);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 12px;white-space:pre-wrap;margin:6px 0 10px;max-height:260px;overflow:auto}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0 4px}
+.tile{display:flex;align-items:center;gap:12px;text-align:left;padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.18);border-top-color:rgba(255,255,255,.36);background:rgba(255,255,255,.07);color:var(--text);cursor:pointer;min-height:72px}
+.tile:hover{background:rgba(255,255,255,.13)}
+.tile b{display:block;font-size:14px}
+.tile span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.marquee{height:6px;border-radius:6px;background:rgba(255,255,255,.08);overflow:hidden;position:relative;margin:14px 0}
+.marquee::after{content:"";position:absolute;top:0;bottom:0;width:35%;border-radius:6px;background:linear-gradient(90deg,transparent,var(--teal),transparent);animation:mq 1.6s linear infinite}
+@keyframes mq{from{left:-35%}to{left:100%}}
+.code{font:600 28px/1.2 ui-monospace,"SF Mono",Menlo,monospace;letter-spacing:3px;color:var(--accent);margin:6px 0 10px}
+.ok-head{color:var(--ok)} .bad-head{color:var(--bad)}
+.danger-banner{background:rgba(242,124,108,.14);border:1px solid rgba(242,124,108,.6);border-radius:12px;padding:10px 14px;margin-bottom:12px}
+.danger-banner b{color:var(--bad);letter-spacing:.5px}
+.danger-banner p{margin:4px 0 0}
+fieldset{border:0;padding:0;margin:8px 0}
+legend{padding:0;margin-bottom:6px;font-weight:600}
+.radio{display:flex;gap:9px;align-items:flex-start;padding:6px 8px;border-radius:10px;cursor:pointer}
+.radio:hover{background:rgba(255,255,255,.05)}
+.radio input{accent-color:var(--bad);margin:3px 0 0}
+.radio small{display:block;color:var(--muted)}
+.lbl-block{display:block;font-weight:600;margin:10px 0 5px}
+.err{color:var(--bad);font-size:12.5px;margin-top:5px;min-height:1em}
+.hintline{color:var(--muted);font-size:12.5px;margin-top:5px}
+.setup{list-style:none;margin:10px 0 4px;padding:0;display:flex;flex-direction:column;gap:10px}
+.setup li{display:flex;gap:11px;align-items:flex-start}
+.setup .dot{width:20px;height:20px;font-size:11px;margin-top:1px}
+.setup small{display:block;color:var(--muted);white-space:pre-line}
+
+/* menu-bar mock */
+dialog.mb{position:fixed;inset:0;width:100vw;height:100vh;max-width:none;max-height:none;margin:0;padding:0;border:0;background:transparent;color:#EDEDED;overflow:hidden}
+dialog.mb::backdrop{background:rgba(0,0,0,.42)}
+.mb-bar{height:26px;display:flex;align-items:center;gap:4px;padding:0 10px;background:rgba(28,30,34,.86);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);font-size:13px;box-shadow:0 1px 0 rgba(255,255,255,.08)}
+.mb-left{margin-right:auto;display:flex;gap:18px;align-items:center;color:#EDEDED}
+.mb-left b{font-weight:700}
+.mb-glyph{display:inline-flex;align-items:center;height:22px;padding:0 6px;color:#DADADA}
+.mb-icon{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 7px;border-radius:5px;border:0;background:transparent;color:#EDEDED;cursor:pointer}
+.mb-icon[aria-expanded=true]{background:rgba(255,255,255,.24)}
+.mb-icon svg{width:16px;height:16px}
+.mb-menu{position:absolute;top:30px;min-width:250px;padding:5px;border-radius:10px;background:rgba(42,44,48,.94);-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px);box-shadow:0 12px 40px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.14);font-size:13px}
+.mb-item{display:flex;width:100%;align-items:center;gap:6px;height:24px;padding:0 10px 0 6px;border:0;background:transparent;color:#EDEDED;border-radius:5px;text-align:left;cursor:default;font-size:13px}
+.mb-item .tick{width:16px;text-align:center;flex:none}
+.mb-item .kbd{margin-left:auto;color:#9A9EA4}
+.mb-item:hover,.mb-item:focus{background:#2F6FD8;color:#fff;outline:none}
+.mb-item:hover .kbd,.mb-item:focus .kbd{color:#E6EEFF}
+.mb-item:focus-visible{box-shadow:0 0 0 2px #fff inset}
+.mb-sep{height:1px;background:rgba(255,255,255,.14);margin:5px 8px}
+.mb-status{display:flex;align-items:center;gap:6px;padding:3px 10px 3px 6px;color:#A6AAB0;font-size:12px}
+.mb-status .tick{width:16px;text-align:center}
+.mb-caption{position:absolute;left:20px;bottom:20px;max-width:min(460px,calc(100vw - 40px));padding:16px 18px;border-radius:16px;background:rgba(10,34,48,.92);border:1px dashed #a07c3c;color:#F0DCB4;font-size:13px}
+.mb-caption p{margin:0 0 10px}
+
+/* toast + quit */
+.toast{position:fixed;left:50%;bottom:4px;transform:translateX(-50%);z-index:20;padding:9px 16px;border-radius:12px;background:rgba(10,34,48,.95);border:1px solid rgba(255,255,255,.2);box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:min(620px,calc(100vw - 40px));font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+.quit{margin:auto;max-width:520px;text-align:center;padding:28px}
+.quit p{color:var(--muted)}
+
+/* short window (height < 760), as in the Windows app */
+@media (max-height:760px){
+  .app{gap:8px;padding:8px 14px 6px}
+  .hdr{min-height:0;padding:9px 16px;gap:12px}
+  .mark{width:44px;height:44px;border-radius:11px}
+  h1{font-size:18px}
+  .detail{margin-top:1px;font-size:12.5px}
+  .btn.big{min-height:36px;min-width:92px}
+  .hint{display:none}
+  .seg button{height:30px;min-width:74px}
+  .tab{height:30px;padding:0 12px}
+  .page-head{padding:10px 18px 4px}
+  .page-head h2{font-size:15.5px}
+  .note{font-size:12.5px}
+  .page-body{padding:6px 18px 10px}
+  .page-actions{padding:8px 18px 10px}
+  .update{padding:6px 10px 6px 16px}
+  .legend{display:none}
+  .proto-bar{min-height:28px;padding:2px 10px}
+}
+@media (max-width:1060px){ .col-service{display:none} }
+@media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+</style>
+</head>
+<body>
+<canvas id="stars" aria-hidden="true"></canvas>
+
+<div class="proto-bar" role="region" aria-label="Prototype controls">
+  <span class="proto-tag">Prototype</span>
+  <button type="button" id="mbOpen" aria-haspopup="dialog">Menu bar (mock)</button>
+  <label for="scenario" class="sr">Scenario</label>
+  <select id="scenario">
+    <option value="sample">Sample data (synthetic)</option>
+    <option value="empty">Empty: no accounts or keys</option>
+    <option value="stopped">Gateway stopped</option>
+    <option value="notanswering">Gateway not answering</option>
+    <option value="starting">Gateway starting</option>
+  </select>
+  <label><input type="checkbox" id="pUpdate" checked> Update available</label>
+  <label><input type="checkbox" id="pInflight" checked> 2 requests in flight</label>
+</div>
+
+<div class="app" id="app"></div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<noscript><p style="padding:20px">This prototype needs JavaScript.</p></noscript>
+
+<script>
+'use strict';
+/* =====================================================================
+   DSHProxy macOS prototype, option (a): the window as a local web page.
+   Everything below is synthetic and in memory. No request leaves the page.
+   ===================================================================== */
+
+const LOGO_DIR = 'logos/';
+const ORIGIN = 'http://127.0.0.1:8417';
+const HOME = '~/.dshproxy';
+const PROGRAM = '~/DSHProxy';
+const BUILD = '2026-11-23 20:12 c721af1';
+const H = 36e5, MIN = 6e4, DAY = 864e5;
+const SECTIONS = ['Accounts', 'API keys', 'Lanes', 'Models', 'DeepSeek Harness', 'Log'];
+const LOGOS = ['claude','codex','antigravity','kimi','deepseek','moonshot','zai','qwen','minimax','mistral','openrouter','krea','alibaba','bytedance'];
+const SERVICE = { claude: 'Claude', codex: 'ChatGPT (Codex)', antigravity: 'Gemini (Antigravity)', kimi: 'Kimi' };
+const LOGIN = [
+  { id: 'claude', label: 'Claude', title: 'Claude', desc: 'Claude Pro or Max. Opens claude.ai.' },
+  { id: 'codex', label: 'ChatGPT', title: 'ChatGPT (Codex)', desc: 'ChatGPT Plus or Pro. Opens chatgpt.com.' },
+  { id: 'antigravity', label: 'Gemini', title: 'Gemini (Antigravity)', desc: 'Google AI Pro or Ultra. Opens accounts.google.com.' },
+  { id: 'kimi', label: 'Kimi', title: 'Kimi', desc: 'Kimi Code. You type a short code on kimi.com.' },
+];
+const KEY_PROVIDERS = [
+  { id: 'deepseek', name: 'DeepSeek', regions: [] },
+  { id: 'moonshot', name: 'Moonshot (Kimi API)', regions: [['global', 'Global'], ['cn', 'China']] },
+  { id: 'zai', name: 'Z.ai', regions: [['global', 'Global'], ['cn', 'China (bigmodel.cn)']] },
+  { id: 'qwen', name: 'Qwen (Alibaba Cloud)', regions: [['intl', 'International (Singapore)'], ['cn', 'China (Beijing)']] },
+  { id: 'minimax', name: 'MiniMax', regions: [['global', 'Global'], ['cn', 'China']] },
+  { id: 'mistral', name: 'Mistral', regions: [] },
+  { id: 'openrouter', name: 'OpenRouter', regions: [] },
+];
+const PRESETS = {
+  max: { label: 'Max performance', summary: 'The strongest model each lane can reach, whatever it costs. Slowest and most quota-hungry.' },
+  balanced: { label: 'Balanced', summary: 'Strong models first with cheaper ones as failover. The working default.' },
+  cheap: { label: 'Cheap production', summary: 'Subscription quota first, then the cheapest paid models. Leaves GPT and Opus out.' },
+};
+const BALANCED = {
+  'lane-main': ['gpt-6-astra', 'claude-fable-5-2', 'claude-opus-5-5', 'gemini-4-carbon-high', 'deepseek/deepseek-v4-pro'],
+  'lane-scout': ['claude-haiku-5-5', 'gemini-3.8-flash-high', 'gpt-6-luna', 'deepseek/deepseek-flash', 'qwen/qwen3.8-flash'],
+  'lane-builder': ['gpt-6-astra', 'claude-sonnet-5-5', 'deepseek/deepseek-v4-pro', 'gemini-4-argon-high'],
+  'lane-architect': ['claude-fable-5-2', 'gpt-6.1-terra', 'claude-opus-5-5', 'deepseek/deepseek-v4-pro', 'gemini-4-argon-high'],
+  'lane-reviewer': ['gemini-4-carbon-high', 'deepseek/deepseek-v4-pro', 'claude-opus-5-5'],
+  'lane-google': ['gemini-3.8-flash-high', 'gemini-4-carbon-high', 'gemini-4-hydrogen-xhigh', 'gemini-3.8-flash-tiered'],
+};
+const ROUTE_LABEL = { krea: 'Krea workspace', videorouter: 'VideoRouter', 'videorouter-replicate': 'VideoRouter (Replicate)', kovapi: 'KovAPI', callirra: 'Callirra' };
+const UNITS = { krea: 'workspace compute units', callirra: 'plan credits', videorouter: 'US dollars', 'videorouter-replicate': 'US dollars', kovapi: 'US dollars' };
+
+/* ---------- tiny helpers ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  if (props) for (const [k, v] of Object.entries(props)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
+    else if (['value', 'checked', 'disabled', 'selected', 'hidden'].includes(k)) el[k] = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat(Infinity)) {
+    if (c === null || c === undefined || c === false) continue;
+    el.append(c instanceof Node ? c : String(c));
+  }
+  return el;
+}
+const pad = n => String(n).padStart(2, '0');
+const hm = d => pad(d.getHours()) + ':' + pad(d.getMinutes());
+const hms = d => hm(d) + ':' + pad(d.getSeconds());
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function dayWord(ms) {
+  const d = new Date(ms), n = new Date();
+  const diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / DAY);
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'tomorrow';
+  return `${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`;
+}
+function resetText(ms) {
+  if (!ms) return 'reset time not reported';
+  const mins = Math.max(1, Math.round((ms - Date.now()) / MIN));
+  const s = mins < 60 ? `${mins} min` : mins < 1440 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${Math.floor(mins / 1440)} d ${Math.floor(mins % 1440 / 60)} h`;
+  return `resets in ${s} (${dayWord(ms)} ${hm(new Date(ms))})`;
+}
+const leftColor = left => left <= 10 ? 'var(--bad)' : left <= 30 ? 'var(--warn)' : 'var(--ok)';
+const fmtTokens = n => n >= 1e6 ? (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + 'M' : Math.round(n / 1e3) + 'K';
+const planText = p => { const s = (p || '').replace(/_/g, ' '); return s.length > 16 ? s.slice(0, 15) + '…' : s; };
+const plural = (n, one, many) => n === 1 ? one : many;
+function logo(name, size, fallback) {
+  if (!LOGOS.includes(name)) return badge(fallback || name, size);
+  const img = h('img', { src: `${LOGO_DIR}${name}.png`, alt: '', width: size, height: size, class: 'logo' });
+  img.addEventListener('error', () => img.replaceWith(badge(fallback || name, size)));
+  return img;
+}
+function badge(text, size) {
+  return h('span', { class: 'badge', 'aria-hidden': 'true', style: `width:${size}px;height:${size}px;font-size:${Math.round(size * .5)}px` }, (text || '?').charAt(0).toUpperCase());
+}
+let toastTimer;
+function toast(text) {
+  const t = $('#toast'); t.textContent = text; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/* ---------- synthetic data ---------- */
+function sampleAccounts() {
+  const n = Date.now();
+  return [
+    { file: 'claude-a.json', provider: 'claude', label: 'Claude', account: 'a@example.com', plan: 'max_20x', primary: true, supported: true, resets: 0, windows: [
+      { title: '5-hour', left: 72, resetsAt: n + 2 * H + 14 * MIN }, { title: 'Weekly', left: 41, resetsAt: n + 3 * DAY + 5 * H }, { title: 'Weekly (Fable)', left: 24, resetsAt: n + 3 * DAY + 5 * H }] },
+    { file: 'claude-b.json', provider: 'claude', label: 'Claude', account: 'b@example.com', plan: 'pro', primary: false, supported: true, resets: 0, windows: [
+      { title: '5-hour', left: 8, resetsAt: n + 47 * MIN }, { title: 'Weekly', left: 55, resetsAt: n + 5 * DAY + 2 * H }] },
+    { file: 'codex-c.json', provider: 'codex', label: 'ChatGPT', account: 'c@example.com', plan: 'plus', supported: true, resets: 2,
+      credits: [{ id: 'r1', title: 'Limit reset', description: 'Included with the plan', expiresAt: n + 12 * DAY }, { id: 'r2', title: 'Limit reset', description: 'Promotional reset', expiresAt: n + 33 * DAY }],
+      windows: [{ title: '5-hour', left: 18, resetsAt: n + H + 20 * MIN }, { title: 'Weekly', left: 64, resetsAt: n + 4 * DAY + 7 * H }, { title: 'Weekly (GPT-6.1 Terra)', reported: false }] },
+    { file: 'antigravity-d.json', provider: 'antigravity', label: 'Gemini', account: 'd@example.com', plan: 'google_ai_pro', supported: true, resets: 0, windows: [
+      { title: '5-hour · Gemini', left: 90, resetsAt: n + 3 * H + 2 * MIN }, { title: 'Weekly · Gemini', left: 77, resetsAt: n + 6 * DAY }, { title: '5-hour · Claude and GPT', left: 35, resetsAt: n + 4 * H + 10 * MIN }] },
+    { file: 'kimi-e.json', provider: 'kimi', label: 'Kimi', account: 'e@example.com', plan: 'kimi_code_allegretto_annual', disabled: true, supported: false, resets: 0, windows: [] },
+  ];
+}
+function sampleModels() {
+  const m = (id, svc, ctx, out, eff, extra) => Object.assign({ id, svc, ctx, out, eff, offered: true, reason: 'offered' }, extra);
+  return [
+    m('gpt-6-astra', 'codex', 400e3, 128e3, 'low, medium, high, xhigh'),
+    m('gpt-6.1-terra', 'codex', 400e3, 128e3, 'low, medium, high, xhigh', { isNew: true }),
+    m('gpt-6-luna', 'codex', 400e3, 128e3, 'minimal, low, medium, high'),
+    m('gpt-image-2', 'codex', 32e3, 8e3, 'none', { offered: false, reason: 'not a chat model' }),
+    m('claude-fable-5-3', 'claude', 1e6, 128e3, 'low, medium, high, max', { isNew: true }),
+    m('claude-fable-5-2', 'claude', 1e6, 128e3, 'low, medium, high, max'),
+    m('claude-opus-5-5', 'claude', 1e6, 128e3, 'low, medium, high, max'),
+    m('claude-sonnet-5-5', 'claude', 1e6, 64e3, 'low, medium, high'),
+    m('claude-haiku-5-5', 'claude', 200e3, 64e3, 'low, medium, high'),
+    m('claude-sonnet-4-9', 'claude', 200e3, 64e3, 'low, medium, high', { reason: 'switched on' }),
+    m('gemini-4-carbon-high', 'antigravity', 1.5e6, 64e3, 'high'),
+    m('gemini-4-argon-high', 'antigravity', 1e6, 64e3, 'high'),
+    m('gemini-4-hydrogen-xhigh', 'antigravity', 1e6, 64e3, 'xhigh'),
+    m('gemini-3.8-flash-high', 'antigravity', 1e6, 64e3, 'high'),
+    m('gemini-3.5-pro', 'antigravity', 1e6, 64e3, 'low, high', { offered: false, reason: 'older generation' }),
+    m('kimi-k3', 'kimi', 256e3, 32e3, 'none', { offered: false, reason: 'switched off' }),
+    m('kimi-k3-vision-beta', 'kimi', 128e3, 16e3, 'none', { offered: false, reason: 'no details known' }),
+  ];
+}
+let S = null;
+function initialState(scn) {
+  const empty = scn === 'empty';
+  const n = Date.now();
+  return {
+    scenario: scn,
+    gateway: scn === 'stopped' ? 'stopped' : scn === 'notanswering' ? 'notanswering' : scn === 'starting' ? 'starting' : 'running',
+    workspace: S ? S.workspace : 'chat', section: S ? S.section : 0,
+    inflight: $('#pInflight').checked ? 2 : 0,
+    backend: { current: '6.6.80', latest: '6.7.2', released: new Date(n - 2 * DAY).setHours(14, 5, 0, 0), previous: null, available: $('#pUpdate').checked, busy: false },
+    accounts: empty ? [] : sampleAccounts(),
+    limitsAt: n, limitsBusy: false,
+    keys: empty ? {} : { deepseek: { state: 'saved' }, qwen: { state: 'unreadable', region: 'intl' }, openrouter: { state: 'saved' } },
+    keySel: 'deepseek', keyRegion: {},
+    preset: 'balanced', ladders: JSON.parse(JSON.stringify(BALANCED)), replaced: false,
+    cooling: empty ? {} : { 'gemini-4-carbon-high': n + 25 * MIN },
+    models: empty ? [] : sampleModels(), showHidden: false, modelsChecked: empty ? null : n - 12 * MIN, modelsBusy: false,
+    suggestion: empty ? null : { from: 'claude-fable-5-2', to: 'claude-fable-5-3', lanes: ['lane-main', 'lane-architect'] },
+    profiles: [{ name: 'desktop', routes: 4, models: 46, points: 'yes' }, { name: 'work', routes: 4, models: 44, points: 'stale' }, { name: 'lab', routes: 0, models: 0, points: 'none' }],
+    tools: 'notinstalled', toolsVersion: '', applyBusy: false, harnessCheckedAt: n,
+    krea: { state: empty ? 'signedout' : 'signedin', until: n + 11 * DAY + 3 * H, readAt: n, line: '' },
+    vkeys: [
+      { provider: 'videorouter', label: 'VideoRouter', variable: 'VIDEOROUTER_API_KEY', routes: ['videorouter', 'videorouter-replicate'], saved: !empty, readable: !empty, inEnvironment: false },
+      { provider: 'kovapi', label: 'KovAPI', variable: 'KOVAPI_API_KEY', routes: ['kovapi'], saved: !empty, readable: false, inEnvironment: !empty },
+      { provider: 'callirra', label: 'Callirra', variable: 'CALLIRRA_API_KEY', routes: ['callirra'], saved: false, readable: false, inEnvironment: false },
+    ],
+    vkeySel: 'videorouter', vkeyLine: '',
+    vmodels: [
+      { model: 'wan-3.0', enabled: true, route: 'krea', routes: ['videorouter', 'videorouter-replicate', 'kovapi', 'krea'] },
+      { model: 'minimax-h3', enabled: true, route: 'callirra', routes: ['kovapi', 'callirra', 'krea'] },
+      { model: 'seedance-2.0', enabled: true, route: null, routes: ['videorouter', 'kovapi', 'krea'] },
+      { model: 'seedance-2.5', enabled: false, route: null, routes: ['videorouter', 'kovapi', 'krea'] },
+    ],
+    vSel: 'wan-3.0', vReadAt: n, vLine: '',
+    startAtLogin: true, quit: false,
+    log: [],
+  };
+}
+
+/* ---------- log ---------- */
+function logLine(text) {
+  const line = `${hms(new Date())}  ${text}`;
+  S.log.push(line);
+  if (S.log.length > 400) S.log.splice(0, S.log.length - 300);
+  const pre = $('#logText');
+  if (pre) {
+    const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
+    pre.append(line + '\n');
+    if (atEnd) pre.scrollTop = pre.scrollHeight;
+  }
+}
+const LIVE = [
+  () => `[lane] lane-main → gpt-6-astra · 200 · ${(1 + Math.random() * 4).toFixed(1)} s`,
+  () => `[lane] lane-scout → claude-haiku-5-5 · 200 · ${(0.4 + Math.random()).toFixed(1)} s`,
+  () => '[lane] lane-reviewer: gemini-4-carbon-high is sitting out, next rung deepseek/deepseek-v4-pro · 200',
+  () => `[lane] lane-builder → claude-sonnet-5-5 · 200 · ${(2 + Math.random() * 6).toFixed(1)} s · stream`,
+  () => `[model] claude-opus-5-5 · 200 · ${(3 + Math.random() * 5).toFixed(1)} s`,
+  () => `[status] ${S.inflight} ${plural(S.inflight, 'request', 'requests')} in flight`,
+];
+function seedLog() {
+  const t0 = Date.now() - 9 * MIN;
+  const lines = [
+    'Starting the gateway...',
+    `[gateway] DSHProxy listening on ${ORIGIN}`,
+    `[backend] CLIProxyAPI ${S.backend.current} started on 127.0.0.1:8418 (loopback only)`,
+    `[discovery] ${offeredCount()} models offered; catalog read from models.router-for.me`,
+    `[limits] read ${S.accounts.length} ${plural(S.accounts.length, 'account', 'accounts')}`,
+    '[lane] lane-main → gpt-6-astra · 200 · 2.7 s',
+    '[lane] lane-reviewer: gemini-4-carbon-high answered 429, sitting out for 25 min',
+    '[lane] lane-reviewer → deepseek/deepseek-v4-pro · 200 · 4.1 s',
+  ];
+  S.log = lines.map((l, i) => `${hms(new Date(t0 + i * 41e3))}  ${l}`);
+}
+
+/* ---------- derived ---------- */
+const offeredCount = () => S.models.filter(m => m.offered).length;
+const siblingsOf = a => S.accounts.filter(b => b.provider === a.provider).length;
+function lowestLimit() {
+  let best = null;
+  for (const a of S.accounts) {
+    if (a.disabled) continue;
+    for (const w of a.windows) if (w.reported !== false && (!best || w.left < best.left)) best = { label: a.label, title: w.title, left: w.left };
+  }
+  return best;
+}
+function serviceOf(model) {
+  if (model.startsWith('deepseek/')) return { key: 'deepseek' };
+  if (model.startsWith('qwen/')) return { key: 'qwen' };
+  if (model.startsWith('claude-')) return { acct: 'claude' };
+  if (model.startsWith('gpt-')) return { acct: 'codex' };
+  if (model.startsWith('gemini-')) return { acct: 'antigravity' };
+  return { acct: 'kimi' };
+}
+function rungState(model) {
+  if (S.cooling[model] && S.cooling[model] > Date.now()) return 'cool';
+  const svc = serviceOf(model);
+  if (svc.key) return S.keys[svc.key] && S.keys[svc.key].state === 'saved' ? 'ok' : 'off';
+  if (model === 'gemini-3.8-flash-tiered') return 'off';
+  return S.accounts.some(a => a.provider === svc.acct && !a.disabled) ? 'ok' : 'off';
+}
+const running = () => S.gateway === 'running';
+
+/* ---------- dialogs: native <dialog> + showModal (rest of page inert), Tab trapped, Escape = cancel ---------- */
+let dlgSeq = 0;
+function focusables(root) {
+  return [...root.querySelectorAll('button,input,select,textarea,a[href],[tabindex]')].filter(el => {
+    if (el.disabled || el.getAttribute('tabindex') === '-1' || el.closest('[hidden]')) return false;
+    if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') return false;
+    if (el.type === 'radio' && !el.checked && root.querySelector(`input[type=radio][name="${el.name}"]:checked`)) return false;
+    return true;
+  });
+}
+function trapTab(e, root) {
+  const f = focusables(root); if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && (document.activeElement === first || !root.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (document.activeElement === last || !root.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+}
+function openDialog(opts) {
+  const id = 'dlg' + (++dlgSeq);
+  const d = h('dialog', { class: 'dlg ' + (opts.cls || ''), 'aria-labelledby': id + '-t', 'aria-describedby': opts.describe ? id + '-d' : null });
+  const opener = document.activeElement;
+  const openerKey = opener && opener.dataset ? opener.dataset.k : null;
+  const api = { d, id, value: undefined, closed: false,
+    close(v) { if (api.closed) return; api.value = v; api.closed = true; d.close(); },
+    focusFirst() { const f = d.querySelector('[data-autofocus]:not(:disabled)') || focusables(d)[0]; if (f) f.focus(); } };
+  d.addEventListener('cancel', e => { e.preventDefault(); if (opts.onCancel) opts.onCancel(api); else api.close(opts.cancelValue); });
+  d.addEventListener('keydown', e => { if (e.key === 'Tab') trapTab(e, d); });
+  d.addEventListener('close', () => {
+    api.closed = true; d.remove();
+    if (opts.onClose) opts.onClose(api.value);
+    restoreFocus(opener, openerKey);
+  });
+  document.body.append(d);
+  opts.build(api);
+  d.showModal();
+  api.focusFirst();
+  return api;
+}
+function restoreFocus(el, key) {
+  if (document.querySelector('dialog[open]')) return;
+  if (el && el.isConnected && !el.disabled && el !== document.body) { el.focus(); return; }
+  const k = key && document.querySelector(`[data-k="${CSS.escape(key)}"]`);
+  if (k && !k.disabled) { k.focus(); return; }
+  const tab = $('.tab[aria-selected=true]'); if (tab) tab.focus();
+}
+const GLYPH = { info: ['i', 'var(--teal)'], question: ['?', 'var(--accent)'], warn: ['!', 'var(--warn)'], error: ['×', 'var(--bad)'], ok: ['✓', 'var(--ok)'] };
+function glyph(kind) { const [g, c] = GLYPH[kind] || GLYPH.info; return h('div', { class: 'glyph', style: `--c:${c}`, 'aria-hidden': 'true' }, g); }
+function msgBox(title, text, { kind = 'info', buttons, cancel = false, out = null } = {}) {
+  buttons = buttons || [{ label: 'OK', value: true, cls: 'primary', auto: true }];
+  return new Promise(res => openDialog({ cancelValue: cancel, describe: true, onClose: v => res(v === undefined ? cancel : v), build(api) {
+    api.d.append(
+      h('div', { class: 'dlg-body' }, h('div', { class: 'msg' }, glyph(kind), h('div', { class: 'msg-text' },
+        h('h2', { id: api.id + '-t' }, title),
+        h('div', { id: api.id + '-d' }, String(text).split('\n\n').map(p => h('p', {}, p))),
+        out ? h('div', { class: 'out', tabindex: '0', role: 'region', 'aria-label': 'Command output' }, out) : null))),
+      h('div', { class: 'dlg-btns' }, buttons.map(b => h('button', { type: 'button', class: 'btn ' + (b.cls || ''), 'data-autofocus': b.auto || null, onclick: () => api.close(b.value) }, b.label))));
+  } }));
+}
+// Yes/No with the safe answer lit and focused, as in the Windows app (Escape = the safe answer).
+function ask(title, text, { yes = 'Yes', no = 'No', kind = 'question', danger = false, safeIsYes = false } = {}) {
+  return msgBox(title, text, { kind, cancel: false, buttons: safeIsYes
+    ? [{ label: no, value: false }, { label: yes, value: true, cls: 'primary', auto: true }]
+    : [{ label: yes, value: true, cls: danger ? 'danger' : '' }, { label: no, value: false, cls: 'primary', auto: true }] });
+}
+function needRunning(title) {
+  if (running()) return true;
+  msgBox(title, 'Start the gateway first.', { kind: 'info' });
+  return false;
+}
+
+/* ---------- gateway actions ---------- */
+let startTimer = null;
+function startGateway() {
+  if (S.quit) return;
+  if (S.gateway === 'running') { logLine(`A gateway is already running on ${ORIGIN}; showing its status.`); toast('The gateway is already running.'); return; }
+  if (S.gateway === 'starting' || S.gateway === 'notanswering') return;
+  S.gateway = 'starting'; logLine('Starting the gateway...'); renderAll();
+  clearTimeout(startTimer);
+  startTimer = setTimeout(() => {
+    if (S.gateway !== 'starting') return;
+    S.gateway = 'running';
+    logLine(`[gateway] DSHProxy listening on ${ORIGIN}`);
+    logLine(`[backend] CLIProxyAPI ${S.backend.current} started on 127.0.0.1:8418 (loopback only)`);
+    S.limitsAt = Date.now(); renderAll();
+  }, 1600);
+}
+async function confirmCut(quitting) {
+  const title = quitting ? 'Quit DeepSeekProxy' : 'Stop gateway';
+  const tail = quitting ? 'Quit anyway?' : 'Stop anyway?';
+  const cuts = quitting ? 'Quitting stops the gateway now and cuts' : 'Stopping the gateway now cuts';
+  if (S.gateway === 'notanswering') {
+    return ask(title, `The gateway did not answer when it was last checked, so requests may be in flight.${S.inflight ? ` ${S.inflight} model requests were in flight when it last answered.` : ''} ${cuts} any that are.\n\n${tail}`, { kind: 'warn', danger: true });
+  }
+  if (S.gateway === 'running' && S.inflight > 0) {
+    const n = S.inflight;
+    return ask(title, `${n} model ${plural(n, 'request was', 'requests were')} in flight when the gateway was last checked, a few seconds ago at most. ${cuts} ${plural(n, 'it', 'them')}.\n\n${tail}`, { kind: 'warn', danger: true });
+  }
+  return true;
+}
+let stopAsking = false;
+async function stopGateway() {
+  if (S.gateway === 'stopped' || stopAsking) return;
+  stopAsking = true;
+  const ok = await confirmCut(false);
+  stopAsking = false;
+  if (!ok) return;
+  clearTimeout(startTimer);
+  S.gateway = 'stopped'; logLine('Gateway stopped.'); renderAll();
+}
+async function quitApp() {
+  if (stopAsking) return;
+  stopAsking = true;
+  const ok = S.gateway === 'stopped' ? true : await confirmCut(true);
+  stopAsking = false;
+  if (!ok) return;
+  clearTimeout(startTimer);
+  S.gateway = 'stopped'; S.quit = true; logLine('Quit: gateway stopped.'); renderAll();
+}
+function restartGateway(why) {
+  S.gateway = 'starting'; logLine(why); renderAll();
+  clearTimeout(startTimer);
+  startTimer = setTimeout(() => { S.gateway = 'running'; logLine(`[gateway] DSHProxy listening on ${ORIGIN}`); renderAll(); }, 1500);
+}
+// After a key change: ask, then restart now or at an idle moment.
+async function offerRestart(output) {
+  if (!running()) { await msgBox('API key', output + '\n\nThe change is used when the gateway starts.', { kind: 'info' }); return; }
+  const n = S.inflight;
+  const yes = await ask('API key', `${output}\n\nRestart the gateway now so it uses the change?${n ? `\n\n${n} ${plural(n, 'request is', 'requests are')} in flight: the restart waits for a moment with none, at most 5 minutes, and cuts nothing.` : ''}`, { kind: 'info', safeIsYes: true });
+  if (!yes) return;
+  if (!n) { restartGateway('Restart: nothing in flight. Stopping and starting the gateway.'); return; }
+  restartWaitDialog();
+}
+function restartWaitDialog() {
+  let left = S.inflight, timer = null, cancelling = false;
+  const text = h('p', { 'aria-live': 'polite' });
+  const cancelBtn = h('button', { type: 'button', class: 'btn', 'data-autofocus': true }, 'Cancel');
+  const update = () => { text.textContent = left > 0 ? `Waiting for ${left} ${plural(left, 'request', 'requests')} to finish before restarting` : 'Nothing is in flight now. Waiting for the gateway to stop before restarting.'; };
+  const api = openDialog({ onCancel: () => doCancel(), build(api) {
+    update();
+    api.d.append(h('div', { class: 'dlg-body' }, h('h2', { id: api.id + '-t' }, 'Restart gateway'), text, h('div', { class: 'marquee', role: 'progressbar', 'aria-label': 'Waiting for an idle moment' }),
+      h('p', { class: 'status-line' }, 'The gateway keeps serving until a moment with nothing in flight, for at most 5 minutes. Cancel leaves it running; the key change is then used after the next restart.')),
+      h('div', { class: 'dlg-btns' }, cancelBtn));
+  } });
+  cancelBtn.addEventListener('click', () => doCancel());
+  function doCancel() {
+    if (cancelling) return; cancelling = true; clearInterval(timer);
+    text.textContent = 'Cancelling the restart...'; cancelBtn.disabled = true;
+    setTimeout(() => { api.close(); logLine('Restart cancelled: the gateway keeps running. The key change is used after the next restart.'); }, 700);
+  }
+  timer = setInterval(() => {
+    if (cancelling) return;
+    left = Math.max(0, left - 1); update();
+    if (left === 0) {
+      clearInterval(timer);
+      setTimeout(() => { if (cancelling) return; api.close(); S.inflight = 0; $('#pInflight').checked = false; restartGateway('Restart: the gateway stopped at a moment with nothing in flight. Starting it again.'); }, 1100);
+    }
+  }, 1400);
+}
+
+/* ---------- backend update ---------- */
+async function updateBackend() {
+  const b = S.backend, v = b.latest;
+  const yes = await ask('Update CLIProxyAPI', `Update the backend to CLIProxyAPI ${v}?\n\n1. Download it and check it against the release's published checksum.\n2. Start it on a spare port and send one short request through each signed-in account (uses a tiny bit of quota).\n3. Only if that passes: restart DSHProxy on ${v}, about 5 seconds offline.\n\nIf anything fails, DSHProxy stays on the version you have.`);
+  if (!yes) return;
+  b.busy = true; renderAll();
+  await wait(2400);
+  const checks = S.accounts.filter(a => !a.disabled).map(a => `• ${a.label} (${a.account}): ${a.provider === 'antigravity' ? 'out of quota, does not count against it' : 'answered'}`);
+  b.busy = false; b.previous = b.current; b.current = v; b.available = false;
+  logLine(`CLIProxyAPI ${v} passed the trial run; DSHProxy is restarting on it.`);
+  restartGateway(`[update] restarting on CLIProxyAPI ${v}`);
+  await msgBox('Update CLIProxyAPI', `CLIProxyAPI ${v} passed the trial run.\n\nTrial run:\n${checks.length ? checks.join('\n') : '• No signed-in account: only the start was tried.'}\n\nDSHProxy is restarting on the new version.`, { kind: 'info' });
+}
+async function rollbackBackend() {
+  const b = S.backend;
+  const yes = await ask('Roll back', `Go back to CLIProxyAPI ${b.previous}?\n\nDSHProxy restarts, about 5 seconds offline.`);
+  if (!yes) return;
+  const was = b.current; b.current = b.previous; b.previous = null;
+  b.available = $('#pUpdate').checked; b.latest = was;
+  restartGateway(`Rolled back to CLIProxyAPI ${b.current}; DSHProxy is restarting.`);
+}
+
+/* =====================================================================
+   Rendering
+   ===================================================================== */
+function renderAll() {
+  const ae = document.activeElement;
+  const k = ae && $('#app').contains(ae) && ae.dataset ? ae.dataset.k : null;
+  if (S.quit) { renderQuit(); return; }
+  if (!$('#hdr')) rebuildShell();
+  renderHeader(); renderUpdate(); renderNav(); renderPage(); renderFoot();
+  if (k) { const el = document.querySelector(`#app [data-k="${CSS.escape(k)}"]`); if (el && !el.disabled) el.focus(); else { const t = $('.tab[aria-selected=true]'); if (t) t.focus(); } }
+}
+function rebuildShell() {
+  $('#app').replaceChildren(
+    h('header', { class: 'hdr glass', id: 'hdr' }), h('div', { id: 'updateSlot' }),
+    h('nav', { class: 'navrow', id: 'nav', 'aria-label': 'Workspace and sections' }),
+    h('main', { class: 'page glass', id: 'page', role: 'tabpanel' }), h('footer', { class: 'foot', id: 'foot' }));
+}
+const MARK_SVG = `<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="mk-sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E3A4E"/><stop offset="1" stop-color="#03131C"/></linearGradient><linearGradient id="mk-brass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F6D49A"/><stop offset="1" stop-color="#B8873F"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#mk-sea)"/><path d="M0 47c10-4 19 3 32-1s21-4 32 0v18H0z" fill="#062430"/><path d="M0 52c10-3 19 2 32-1s21-3 32 0" fill="none" stroke="#57D9C9" stroke-opacity=".25"/><circle cx="32" cy="29" r="18" fill="none" stroke="#E4B26A" stroke-opacity=".5" stroke-width="1.6"/><path d="M32 8l6 21h-6z" fill="url(#mk-brass)"/><path d="M32 8l-6 21h6z" fill="#C99A52"/><path d="M32 50l6-21H26z" fill="#5D7480"/><circle cx="32" cy="29" r="2.6" fill="#1E1403" stroke="#F3CB8B" stroke-width=".8"/></svg>`;
+const STATES = {
+  running: ['● Running', 'var(--ok)'], starting: ['● Starting', 'var(--warn)'],
+  notanswering: ['● Not answering', 'var(--warn)'], stopped: ['● Stopped', 'var(--bad)'],
+};
+function detailText() {
+  switch (S.gateway) {
+    case 'running': return `${ORIGIN}  ·  CLIProxyAPI ${S.backend.current}  ·  ${S.accounts.length} ${plural(S.accounts.length, 'account', 'accounts')}  ·  ${offeredCount()} models offered`;
+    case 'starting': return 'The gateway is starting.';
+    case 'notanswering': return 'The gateway process is running but does not answer. Stop asks before it cuts anything.';
+    default: return 'The gateway is not running. Press Start.';
+  }
+}
+function renderHeader() {
+  const [chipText, chipColor] = STATES[S.gateway];
+  const low = running() ? lowestLimit() : null;
+  const mark = h('div', { class: 'mark' }); mark.innerHTML = MARK_SVG;
+  $('#hdr').replaceChildren(
+    mark,
+    h('div', { class: 'hdr-main' },
+      h('div', { class: 'hdr-title' }, h('h1', {}, 'DeepSeekProxy'), h('span', { class: 'chip', style: `--c:${chipColor}` }, chipText)),
+      h('div', { class: 'detail' }, detailText()),
+      low ? h('div', { class: 'lowest', style: `color:${leftColor(low.left)}` }, `Lowest limit: ${low.label} ${low.title}, ${low.left}% left`) : null),
+    h('div', { class: 'hdr-actions' },
+      h('button', { type: 'button', class: 'btn primary big', 'data-k': 'apply', disabled: S.applyBusy, title: 'Writes the DSHProxy routes into every DeepSeek Harness profile and installs the video tools.', onclick: applyFlow }, S.applyBusy ? 'Applying…' : 'Apply to DeepSeek Harness'),
+      h('button', { type: 'button', class: 'btn primary big', 'data-k': 'start', disabled: S.gateway !== 'stopped', onclick: startGateway }, 'Start'),
+      h('button', { type: 'button', class: 'btn danger big', 'data-k': 'stop', disabled: S.gateway === 'stopped', onclick: stopGateway }, 'Stop')));
+}
+function renderUpdate() {
+  const b = S.backend, slot = $('#updateSlot');
+  const avail = b.available && b.latest !== b.current;
+  if (!running() || !(avail || b.previous || b.busy)) { slot.replaceChildren(); return; }
+  const rel = new Date(b.released);
+  const text = b.busy ? `Downloading and trying CLIProxyAPI ${b.latest}... this takes up to a minute.`
+    : avail ? `CLIProxyAPI ${b.latest} is available (you run ${b.current}), released ${rel.getDate()} ${MON[rel.getMonth()]} ${hm(rel)}. Updating tries it first and keeps ${b.current} for rollback.`
+    : `Running CLIProxyAPI ${b.current}. The previous version ${b.previous} is kept.`;
+  slot.replaceChildren(h('section', { class: 'update glass', 'aria-label': 'Backend update' },
+    h('p', { 'aria-live': 'polite' }, text),
+    h('div', { class: 'btns' },
+      avail ? h('button', { type: 'button', class: 'btn primary small', 'data-k': 'update', disabled: b.busy, onclick: updateBackend }, 'Update…') : null,
+      b.previous ? h('button', { type: 'button', class: 'btn small', 'data-k': 'rollback', disabled: b.busy, onclick: rollbackBackend }, 'Roll back…') : null)));
+}
+function renderNav() {
+  const segBtns = ['chat', 'video'].map(w => h('button', { type: 'button', role: 'radio', 'aria-checked': String(S.workspace === w), tabindex: S.workspace === w ? '0' : '-1', 'data-k': 'ws-' + w,
+    'aria-label': w === 'chat' ? 'Chat workspace' : 'Video workspace', onclick: () => setWorkspace(w), onkeydown: e => {
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); setWorkspace(S.workspace === 'chat' ? 'video' : 'chat'); $(`[data-k="ws-${S.workspace}"]`).focus(); }
+    } }, w === 'chat' ? 'Chat' : 'Video'));
+  const hint = S.section === 5 ? 'The log is shared by the Chat and Video workspaces.' : S.workspace === 'chat' ? 'Chat accounts, keys, lanes and models.' : 'Video routing setup. Nothing is generated or charged from this window.';
+  const tabs = SECTIONS.map((name, i) => h('button', { type: 'button', role: 'tab', class: 'tab', id: 'tab-' + i, 'aria-selected': String(S.section === i), 'aria-controls': 'page', tabindex: S.section === i ? '0' : '-1', 'data-k': 'tab-' + i,
+    onclick: () => setSection(i, true), onkeydown: e => {
+      let j = null;
+      if (e.key === 'ArrowRight') j = (S.section + 1) % 6; else if (e.key === 'ArrowLeft') j = (S.section + 5) % 6; else if (e.key === 'Home') j = 0; else if (e.key === 'End') j = 5;
+      if (j !== null) { e.preventDefault(); setSection(j, true); }
+    } }, name));
+  $('#nav').replaceChildren(
+    h('div', { class: 'ws' }, h('span', { class: 'ws-label', id: 'ws-label' }, 'Workspace'),
+      h('div', { class: 'seg glass', role: 'radiogroup', 'aria-labelledby': 'ws-label' }, segBtns), h('span', { class: 'hint' }, hint)),
+    h('div', { class: 'strip glass', role: 'tablist', 'aria-label': 'Sections' }, tabs));
+}
+function setWorkspace(w) {
+  if (S.workspace === w) return;
+  S.workspace = w;
+  if (w === 'video') { S.vReadAt = Date.now(); S.krea.readAt = Date.now(); S.harnessCheckedAt = Date.now(); }
+  renderAll();
+}
+function setSection(i, focusTab) {
+  S.section = i;
+  if (S.workspace === 'video') { S.vReadAt = Date.now(); if (i === 0) S.krea.readAt = Date.now(); if (i === 4) S.harnessCheckedAt = Date.now(); }
+  renderAll();
+  if (focusTab) $('#tab-' + i).focus();
+}
+function renderFoot() {
+  $('#foot').replaceChildren(
+    h('span', { class: 'paths' }, `Data: ${HOME}\u00a0\u00a0\u00a0 Program: ${PROGRAM}\u00a0\u00a0\u00a0 Build: ${BUILD}`),
+    h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: S.startAtLogin, 'data-k': 'login', onchange: e => setLogin(e.target.checked) }), 'Start at login'));
+}
+function setLogin(on) {
+  S.startAtLogin = on;
+  toast(on ? 'Start at login is on: a login item starts DSHProxy in the menu bar (mocked).' : 'Start at login is off: the login item is removed (mocked).');
+  if ($('#foot')) renderFoot();
+}
+function renderQuit() {
+  const mark = h('div', { class: 'mark', style: 'margin:0 auto 14px' }); mark.innerHTML = MARK_SVG.replace(/mk-/g, 'mq-');
+  $('#app').replaceChildren(h('main', { class: 'quit glass' }, mark,
+    h('h1', {}, 'DeepSeekProxy has quit'),
+    h('p', {}, 'The gateway is stopped and the menu-bar item is gone. In the real app this browser window would show that the page can no longer be reached.'),
+    h('button', { type: 'button', class: 'btn proto', onclick: () => { S.quit = false; rebuildShell(); renderAll(); startGateway(); } }, 'Prototype: launch DSHProxy again')));
+}
+
+/* ---------- page frame ---------- */
+function renderPage() {
+  const key = S.section === 5 ? 'log' : (S.workspace === 'chat' ? 'c' : 'v') + S.section;
+  const P = PAGES[key]();
+  const page = $('#page');
+  page.setAttribute('aria-labelledby', 'tab-' + S.section);
+  const body = h('div', { class: 'page-body' + (P.fill ? ' fill' : ''), id: 'pageBody' });
+  if (P.banner) body.append(P.banner);
+  body.append(...[].concat(P.body || []).filter(Boolean));
+  page.replaceChildren(
+    h('div', { class: 'page-head' }, h('h2', { id: 'pageTitle' }, P.title), P.note ? h('p', { class: 'note' }, P.note) : null),
+    body,
+    P.actions && P.actions.length ? h('div', { class: 'page-actions' }, P.actions) : null);
+  if (P.after) P.after();
+}
+function notRunningBanner(consequence) {
+  if (running()) return null;
+  const txt = S.gateway === 'starting' ? 'The gateway is starting.' : S.gateway === 'notanswering' ? 'The gateway is not answering.' : 'The gateway is not running.';
+  return h('div', { class: 'banner', role: 'status', style: `--c:${S.gateway === 'stopped' ? 'var(--bad)' : 'var(--warn)'}` },
+    h('p', {}, h('b', {}, txt + ' '), consequence),
+    S.gateway === 'stopped' ? h('button', { type: 'button', class: 'btn primary small', 'data-k': 'banner-start', onclick: startGateway }, 'Start') : null);
+}
+
+/* ---------- Chat › Accounts ---------- */
+function pageAccounts() {
+  const P = { title: 'Accounts', note: 'Subscription accounts and how much of each limit is left. Bars turn amber below 30% and red below 10%.' };
+  const limitsNote = S.limitsBusy ? 'Reading limits...' : running() ? `Limits updated ${Date.now() - S.limitsAt < MIN ? 'just now' : Math.round((Date.now() - S.limitsAt) / MIN) + ' min ago'}. They refresh every minute.` : '';
+  P.actions = [
+    h('button', { type: 'button', class: 'btn primary', 'data-k': 'add', onclick: addAccountFlow }, '+ Add account'),
+    h('button', { type: 'button', class: 'btn', 'data-k': 'refresh', disabled: S.limitsBusy, onclick: refreshLimits }, 'Refresh limits'),
+    h('button', { type: 'button', class: 'btn', 'data-k': 'credfolder', onclick: () => toast(`Would open ${HOME}/auth in Finder (mocked).`) }, 'Open credentials folder'),
+    h('span', { class: 'spacer' }), h('span', { class: 'status-line', 'aria-live': 'polite' }, limitsNote)];
+  if (!running()) {
+    const msg = { starting: 'The gateway is starting. Accounts and limits are shown when it answers.', notanswering: 'The gateway is not answering. Accounts and limits are shown again when it does.', stopped: 'The gateway is not running. Press Start to see accounts and limits.' }[S.gateway];
+    P.body = h('div', { class: 'empty state', role: 'status', style: `--c:${S.gateway === 'stopped' ? 'var(--bad)' : 'var(--warn)'}` }, h('p', {}, msg),
+      S.gateway === 'stopped' ? h('button', { type: 'button', class: 'btn primary', 'data-k': 'empty-start', onclick: startGateway }, 'Start') : null);
+    return P;
+  }
+  if (!S.accounts.length) {
+    P.body = h('div', { class: 'empty' }, h('p', {}, 'No accounts yet. Press "+ Add account" to sign in to Claude, ChatGPT, Gemini or Kimi.'),
+      h('button', { type: 'button', class: 'btn primary', 'data-k': 'empty-add', onclick: addAccountFlow }, '+ Add account'));
+    return P;
+  }
+  P.body = h('div', { class: 'cards' }, S.accounts.map(accountCard));
+  return P;
+}
+function accountCard(a) {
+  const sib = siblingsOf(a);
+  const who = `${a.label} (${a.account})`;
+  const btns = [h('button', { type: 'button', class: 'btn danger small', 'data-k': 'out-' + a.file, 'aria-label': `Sign out of ${who}…`, onclick: () => signOut(a) }, 'Sign out…'),
+    h('button', { type: 'button', class: 'btn small', 'data-k': 'pause-' + a.file, 'aria-label': `${a.disabled ? 'Resume' : 'Pause'} ${who}`, onclick: () => togglePause(a) }, a.disabled ? 'Resume' : 'Pause')];
+  if (sib > 1 && !a.primary && !a.disabled) btns.push(h('button', { type: 'button', class: 'btn small', 'data-k': 'prim-' + a.file, 'aria-label': `Make ${who} primary`, onclick: () => setPrimary(a, true) }, 'Make primary'));
+  if (sib > 1 && a.primary) btns.push(h('button', { type: 'button', class: 'btn small', 'data-k': 'prim-' + a.file, 'aria-label': `Not primary: ${who}`, onclick: () => setPrimary(a, false) }, 'Not primary'));
+  const wins = a.windows.map(w => {
+    const rep = w.reported !== false;
+    const c = rep ? leftColor(w.left) : 'var(--faint)';
+    return h('div', { class: 'win', style: `--c:${c}` },
+      h('span', { class: 'win-title' + (rep ? '' : ' muted') }, w.title),
+      h('div', { class: 'meter', role: 'img', 'aria-label': rep ? `${w.title}: ${w.left}% left` : `${w.title}: not reported` }, rep ? h('i', { style: `width:${Math.max(1, w.left)}%` }) : null),
+      h('span', { class: 'win-text' }, rep ? [h('b', {}, `${w.left}% left`), ` · ${resetText(w.resetsAt)}`] : 'Not reported for this plan'));
+  });
+  const notes = [];
+  if (a.disabled) notes.push(h('p', { class: 'card-note' }, 'Paused: DSHProxy does not use this account until you resume it.'));
+  if (!a.supported) notes.push(h('p', { class: 'card-note' }, `${a.label} does not report its limits.`));
+  return h('article', { class: 'card' + (a.disabled ? ' paused' : ''), 'aria-label': who },
+    h('div', { class: 'card-top' },
+      h('div', { class: 'card-id' }, logo(a.provider, 24, a.label), h('span', { class: 'acct-label' }, a.label), h('span', { class: 'email' }, a.account),
+        h('span', { class: 'chip plain', style: '--c:var(--teal)', title: a.plan.replace(/_/g, ' ') }, planText(a.plan)),
+        a.primary && sib > 1 ? h('span', { class: 'chip', style: '--c:var(--ok)' }, 'Primary') : null,
+        h('span', { class: 'chip plain', style: `--c:${a.disabled ? 'var(--muted)' : 'var(--ok)'}` }, a.disabled ? '● Paused' : '● Active')),
+      h('div', { class: 'card-btns' }, btns)),
+    wins.length ? h('div', { class: 'wins' }, wins) : null,
+    a.resets > 0 && !a.disabled ? h('div', { class: 'reset-strip' },
+      h('span', { class: 'chip', style: '--c:var(--bad)' }, `⚠ ${a.resets} limit ${plural(a.resets, 'reset', 'resets')}`),
+      h('p', {}, 'Danger zone: spending one cannot be undone.'),
+      h('button', { type: 'button', class: 'btn danger-strong small', 'data-k': 'reset-' + a.file, 'aria-label': `Use a reset on ${who}…`, onclick: () => resetDialog(a) }, 'Use a reset…')) : null,
+    notes);
+}
+async function refreshLimits() {
+  if (!needRunning('Refresh limits')) return;
+  S.limitsBusy = true; renderAll(); await wait(900);
+  S.limitsBusy = false; S.limitsAt = Date.now(); logLine(`[limits] read ${S.accounts.length} ${plural(S.accounts.length, 'account', 'accounts')}`); renderAll();
+}
+async function signOut(a) {
+  const yes = await ask('Sign out', `Sign out of ${a.label} (${a.account})?\n\nDSHProxy stops using this account and deletes its saved sign-in. Lanes move to their other models. You can sign in again at any time.`, { kind: 'warn', danger: true });
+  if (!yes) return;
+  S.accounts = S.accounts.filter(x => x !== a);
+  if (S.accounts.filter(x => x.provider === a.provider).length === 1) S.accounts.forEach(x => { if (x.provider === a.provider) x.primary = false; });
+  logLine(`Signed out of ${a.label} (${a.account}).`); renderAll();
+}
+function togglePause(a) {
+  a.disabled = !a.disabled;
+  if (a.disabled && a.primary) a.primary = false;
+  logLine(`${a.disabled ? 'Paused' : 'Resumed'} ${a.label} (${a.account}).`); renderAll();
+}
+function setPrimary(a, on) {
+  S.accounts.forEach(x => { if (x.provider === a.provider) x.primary = false; });
+  if (on) { a.primary = true; logLine(`${a.label} (${a.account}) is now the primary account: it is used until it runs out, then the other one takes over.`); }
+  else logLine(`${a.label} has no primary account now: its accounts take turns.`);
+  renderAll();
+}
+
+/* ---------- Add account (sign-in) ---------- */
+const NEW_EMAILS = ['f@example.com', 'g@example.com', 'h@example.com', 'j@example.com', 'k@example.com'];
+function addAccountFlow() {
+  if (!running()) { msgBox('Add account', 'Start the gateway first. Sign-in runs through it.', { kind: 'info' }); return; }
+  let root, pending = null, current = null;
+  const api = openDialog({ cls: 'wide', onClose: () => { clearTimeout(pending); if (current === 'waiting') logLine('Sign-in cancelled.'); }, build(a) {
+    root = h('div'); a.d.append(root);
+  } });
+  const show = nodes => { root.replaceChildren(...nodes); api.focusFirst(); };
+  function choose() {
+    current = 'choose';
+    show([h('div', { class: 'dlg-body' },
+      h('h2', { id: api.id + '-t' }, 'Add an account'),
+      h('p', { class: 'note' }, "Pick the subscription to sign in to. Your browser opens to the provider's own sign-in page; DSHProxy never sees your password."),
+      h('div', { class: 'tiles' }, LOGIN.map((p, i) => h('button', { type: 'button', class: 'tile', 'data-autofocus': i === 0 || null, onclick: () => starting(p) },
+        logo(p.id, 30, p.label), h('span', {}, h('b', {}, p.title), h('span', {}, p.desc)))))),
+      h('div', { class: 'dlg-btns' }, h('button', { type: 'button', class: 'btn', onclick: () => api.close() }, 'Cancel'))]);
+  }
+  function starting(p) {
+    current = 'starting';
+    show([h('div', { class: 'dlg-body' }, h('h2', { id: api.id + '-t' }, `Signing in to ${p.label}`),
+      h('p', { role: 'status' }, 'Asking the provider for a sign-in link...'), h('div', { class: 'marquee', role: 'progressbar', 'aria-label': 'Asking for a sign-in link' })),
+      h('div', { class: 'dlg-btns' }, h('button', { type: 'button', class: 'btn', onclick: () => choose() }, 'Cancel'))]);
+    pending = setTimeout(() => { if (!api.closed) waiting(p); }, 800);
+  }
+  function waiting(p) {
+    current = 'waiting';
+    const device = p.id === 'kimi';
+    toast(`Your browser opened the ${p.label} sign-in page (mocked: nothing was opened).`);
+    show([h('div', { class: 'dlg-body' },
+      h('div', { class: 'cell', style: 'margin-bottom:8px' }, logo(p.id, 44, p.label), h('h2', { id: api.id + '-t', style: 'margin:0' }, `Signing in to ${p.label}`)),
+      device ? [h('p', {}, `Enter this code on the ${p.label} page that opened:`), h('div', { class: 'code' }, 'K7QF-9MZD'),
+        h('button', { type: 'button', class: 'btn small', onclick: e => { e.currentTarget.textContent = 'Code copied'; } }, 'Copy code')]
+        : h('p', {}, `Sign in on the ${p.label} page that opened and approve access. When it says you are signed in, come back here.`),
+      h('div', { class: 'marquee', role: 'progressbar', 'aria-label': 'Waiting for the browser sign-in' }),
+      h('p', { class: 'status-line' }, 'Waiting for you to finish in your browser. This window updates by itself; the sign-in expires after 5 minutes.'),
+      h('div', { class: 'proto-box' }, 'Prototype only:',
+        h('button', { type: 'button', class: 'btn proto small', onclick: () => success(p) }, 'Simulate: signed in'),
+        h('button', { type: 'button', class: 'btn proto small', onclick: () => failure(p) }, 'Simulate: sign-in failed'))),
+      h('div', { class: 'dlg-btns' },
+        h('button', { type: 'button', class: 'btn left', onclick: () => { logLine('Sign-in cancelled.'); choose(); } }, 'Cancel'),
+        h('button', { type: 'button', class: 'btn', onclick: e => { e.currentTarget.textContent = 'Link copied'; } }, 'Copy link'),
+        h('button', { type: 'button', class: 'btn primary', 'data-autofocus': true, onclick: () => toast(`Opened the ${p.label} sign-in page again (mocked).`) }, 'Open page again'))]);
+  }
+  function success(p) {
+    current = 'success';
+    const email = NEW_EMAILS.find(e => !S.accounts.some(a => a.account === e)) || 'z@example.com';
+    const n = Date.now();
+    S.accounts.push({ file: `${p.id}-${email}.json`, provider: p.id, label: p.label, account: email, plan: p.id === 'kimi' ? 'kimi_code' : 'pro', supported: p.id !== 'kimi', resets: 0,
+      windows: p.id === 'kimi' ? [] : [{ title: '5-hour', left: 100, resetsAt: n + 5 * H }, { title: 'Weekly', left: 100, resetsAt: n + 7 * DAY }] });
+    logLine(`Signed in: ${email}`);
+    S.workspace = 'chat'; S.section = 0; S.limitsAt = Date.now(); renderAll();
+    show([h('div', { class: 'dlg-body' }, h('h2', { id: api.id + '-t', class: 'ok-head' }, `✓  Signed in to ${p.label}`),
+      h('p', {}, h('b', {}, email)), h('p', {}, 'DSHProxy can now use this subscription. Its limits appear on the Accounts tab within a minute.')),
+      h('div', { class: 'dlg-btns' }, h('button', { type: 'button', class: 'btn', onclick: choose }, 'Add another'),
+        h('button', { type: 'button', class: 'btn primary', 'data-autofocus': true, onclick: () => api.close() }, 'Done'))]);
+  }
+  function failure(p) {
+    current = 'failure';
+    show([h('div', { class: 'dlg-body' }, h('h2', { id: api.id + '-t', class: 'bad-head' }, `Sign-in to ${p.label} did not finish`),
+      h('p', {}, 'The provider refused the sign-in: access was not approved. (Synthetic message.)')),
+      h('div', { class: 'dlg-btns' }, h('button', { type: 'button', class: 'btn left', onclick: () => api.close() }, 'Close'),
+        h('button', { type: 'button', class: 'btn', onclick: choose }, 'Back'),
+        h('button', { type: 'button', class: 'btn primary', 'data-autofocus': true, onclick: () => starting(p) }, 'Try again'))]);
+  }
+  choose();
+}
+
+/* ---------- Limit reset (danger zone) ---------- */
+function resetDialog(a) {
+  const n = a.resets;
+  const input = h('input', { class: 'input mono', id: 'reset-confirm', autocomplete: 'off', spellcheck: 'false', 'aria-describedby': 'reset-hint' });
+  const go = h('button', { type: 'button', class: 'btn danger-strong', disabled: true }, 'Use this reset');
+  input.addEventListener('input', () => { go.disabled = input.value.trim() !== 'RESET'; });
+  const api = openDialog({ cls: 'wide danger', build(api) {
+    api.d.append(h('div', { class: 'dlg-body' },
+      h('h2', { id: api.id + '-t' }, 'Danger zone: use a limit reset'),
+      h('div', { class: 'danger-banner', role: 'note' }, h('b', {}, '⚠  DANGER ZONE'),
+        h('p', {}, 'Using a reset spends it for good. There is no undo, and it cannot be moved to another account.'),
+        h('p', {}, `${n} ${plural(n, 'reset', 'resets')} left on this account.`)),
+      h('p', {}, h('b', {}, `${a.label} · ${a.account}`)),
+      h('p', { class: 'note' }, 'A reset makes your used-up limits full again straight away. ChatGPT keeps it only if you have nothing used up.'),
+      a.windows.filter(w => w.reported !== false).map(w => h('p', { class: 'status-line', style: 'margin:0 0 3px' }, `Now: ${w.title} ${w.left}% left · ${resetText(w.resetsAt)}`)),
+      h('fieldset', {}, h('legend', {}, 'Resets you have:'),
+        (a.credits || []).map((c, i) => { const e = new Date(c.expiresAt); return h('label', { class: 'radio' }, h('input', { type: 'radio', name: 'credit', value: c.id, checked: i === 0 }),
+          h('span', {}, c.title, h('small', {}, `${c.description} · expires ${e.getDate()} ${MON[e.getMonth()]} ${e.getFullYear()}`))); })),
+      h('label', { class: 'lbl-block', for: 'reset-confirm' }, 'Type RESET to confirm:'), input,
+      h('div', { class: 'hintline', id: 'reset-hint' }, 'Use this reset stays switched off until the box says RESET, in capitals.')),
+      h('div', { class: 'dlg-btns' }, h('button', { type: 'button', class: 'btn primary', 'data-autofocus': true, onclick: () => api.close() }, 'Cancel'), go));
+  } });
+  go.addEventListener('click', async () => {
+    api.close();
+    a.resets -= 1; if (a.credits) a.credits.shift();
+    a.windows.forEach(w => { if (w.reported !== false) w.left = 100; });
+    const msg = 'The reset was used: your ChatGPT limits are full again. (Synthetic answer.)';
+    logLine(msg); S.limitsAt = Date.now(); renderAll();
+    await msgBox('Limit reset', msg, { kind: 'info' });
+  });
+}
+
+/* ---------- Chat › API keys ---------- */
+function keyState(id) {
+  const k = S.keys[id];
+  if (!k || k.state === 'notset') return ['Not set', 'c-muted'];
+  if (k.state === 'unreadable') return ['Saved, cannot be read: add it again', 'c-bad'];
+  return ['Saved', 'c-ok'];
+}
+function pageKeys() {
+  const sel = KEY_PROVIDERS.find(p => p.id === S.keySel);
+  const regions = sel.regions;
+  const region = S.keyRegion[sel.id] || (S.keys[sel.id] && S.keys[sel.id].region) || (regions[0] && regions[0][0]) || '';
+  const anySaved = Object.values(S.keys).some(k => k.state !== 'notset');
+  return {
+    title: 'API keys',
+    note: 'Pay-per-use API keys. Keys are stored encrypted, with a key kept in your login Keychain. Restart the gateway after a change.',
+    banner: notRunningBanner('Keys can still be saved; the gateway uses them when it starts.'),
+    body: [
+      anySaved ? null : h('div', { class: 'banner', style: '--c:var(--teal)' }, h('p', {}, h('b', {}, 'No API keys saved yet. '), 'Pick a provider below and press Add or replace key. Subscriptions are added on Accounts.')),
+      h('table', { class: 'list', 'aria-label': 'API keys' },
+        h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Provider'), h('th', { scope: 'col' }, 'Region'), h('th', { scope: 'col' }, 'State'))),
+        h('tbody', {}, KEY_PROVIDERS.map(p => {
+          const [st, cls] = keyState(p.id);
+          const k = S.keys[p.id];
+          const reg = k && k.region ? (p.regions.find(r => r[0] === k.region) || ['', ''])[1] : p.regions.length ? '' : '—';
+          return h('tr', { class: S.keySel === p.id ? 'sel' : '', onclick: e => { if (e.target.tagName !== 'INPUT') { S.keySel = p.id; renderAll(); } } },
+            h('td', {}, h('label', { class: 'pick' }, h('input', { type: 'radio', name: 'keysel', value: p.id, checked: S.keySel === p.id, 'data-k': 'key-' + p.id, onchange: () => { S.keySel = p.id; renderAll(); } }), logo(p.id, 22, p.name), p.name)),
+            h('td', { class: 'c-muted' }, reg),
+            h('td', { class: cls }, st));
+        })))],
+    actions: [
+      h('label', { class: 'field', for: 'region' }, 'Region'),
+      h('select', { class: 'input', id: 'region', 'data-k': 'region', disabled: !regions.length, onchange: e => { S.keyRegion[sel.id] = e.target.value; } },
+        regions.length ? regions.map(r => h('option', { value: r[0], selected: r[0] === region }, r[1])) : h('option', {}, 'No regions')),
+      h('button', { type: 'button', class: 'btn primary', 'data-k': 'key-add', onclick: () => keyDialog(sel, region) }, 'Add or replace key'),
+      h('button', { type: 'button', class: 'btn danger', 'data-k': 'key-remove', disabled: !S.keys[sel.id] || S.keys[sel.id].state === 'notset', onclick: () => removeKey(sel) }, 'Remove selected'),
+      h('span', { class: 'spacer' }), h('span', { class: 'status-line' }, `Selected: ${sel.name}`)],
+  };
+}
+// The key field is a password field; the typed value is never kept.
+function keyDialog(p, region, { title = 'API key', label = `API key for ${p.name}:`, validate = null, onSave } = {}) {
+  const input = h('input', { class: 'input mono', type: 'password', id: 'key-input', autocomplete: 'off', spellcheck: 'false', 'aria-describedby': 'key-err key-hint' });
+  const err = h('div', { class: 'err', id: 'key-err', role: 'alert' });
+  const api = openDialog({ build(api) {
+    api.d.append(h('form', { onsubmit: e => { e.preventDefault(); save(); } },
+      h('div', { class: 'dlg-body' }, h('h2', { id: api.id + '-t' }, title),
+        h('label', { class: 'lbl-block', for: 'key-input' }, label), input, err,
+        h('div', { class: 'hintline', id: 'key-hint' }, 'The key is passed to DSHProxy on standard input and is never shown again. In this prototype it is thrown away.')),
+      h('div', { class: 'dlg-btns' }, h('button', { type: 'button', class: 'btn', onclick: () => api.close() }, 'Cancel'),
+        h('button', { type: 'submit', class: 'btn primary' }, 'Save'))));
+  } });
+  function save() {
+    const v = input.value;
+    const problem = !v.trim() ? 'Enter the key.' : validate ? validate(v) : null;
+    if (problem) { err.textContent = problem; input.setAttribute('aria-invalid', 'true'); input.focus(); return; }
+    input.value = '';
+    api.close();
+    if (onSave) onSave(); else saveKey(p, region);
+  }
+}
+async function saveKey(p, region) {
+  S.keys[p.id] = { state: 'saved', region: p.regions.length ? region : undefined };
+  logLine(`key set ${p.id}${p.regions.length ? ' ' + region : ''}: saved (encrypted).`);
+  renderAll();
+  await offerRestart(`Saved the ${p.name} key.`);
+}
+async function removeKey(p) {
+  const yes = await ask('API key', `Remove the saved ${p.name} key?`, { kind: 'warn', danger: true });
+  if (!yes) return;
+  S.keys[p.id] = { state: 'notset' };
+  logLine(`key remove ${p.id}: removed.`); renderAll();
+  await offerRestart(`Removed the ${p.name} key.`);
+}
+
+/* ---------- Chat › Lanes ---------- */
+function pageLanes() {
+  const active = S.preset;
+  const presetBtn = id => h('button', { type: 'button', class: 'btn small', 'aria-pressed': String(active === id), 'data-k': 'preset-' + id, title: PRESETS[id].summary, onclick: () => choosePreset(id) }, PRESETS[id].label);
+  const rung = m => {
+    const st = rungState(m);
+    const [mark, c, word] = st === 'ok' ? ['✓', 'var(--ok)', 'can serve'] : st === 'cool' ? ['⏸', 'var(--warn)', `sitting out until ${hm(new Date(S.cooling[m]))} after running out of quota`] : ['✗', 'var(--bad)', 'no account or key'];
+    return h('span', { class: 'rung' + (st === 'off' ? ' off' : ''), title: `${m}: ${word}` }, h('span', { class: 'dot', style: `--c:${c}`, 'aria-hidden': 'true' }, mark), h('span', { class: 'nm' }, m), h('span', { class: 'sr' }, `, ${word}`));
+  };
+  return {
+    title: 'Lanes',
+    note: 'A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key.',
+    banner: notRunningBanner('These are the saved ladders. Choosing a preset needs the gateway running.'),
+    body: [
+      h('div', { class: 'presets', role: 'group', 'aria-label': 'Routing preset' }, h('span', { class: 'lbl' }, 'Routing:'), presetBtn('max'), presetBtn('balanced'), presetBtn('cheap'),
+        h('button', { type: 'button', class: 'btn small', 'aria-pressed': String(active === 'custom'), 'data-k': 'preset-custom', title: 'Ladders edited by hand in settings.json', onclick: customLanes }, 'Custom')),
+      h('p', { class: 'status-line', style: 'margin:4px 0 0' }, active === 'custom' ? 'Custom ladders, edited in settings.json. Pick a preset to replace them.' : `Active: ${PRESETS[active].label}. ${PRESETS[active].summary}`),
+      h('div', { class: 'legend', 'aria-hidden': 'true' },
+        h('span', {}, h('span', { class: 'dot', style: '--c:var(--ok)' }, '✓'), 'can serve'),
+        h('span', {}, h('span', { class: 'dot', style: '--c:var(--warn)' }, '⏸'), 'sitting out'),
+        h('span', {}, h('span', { class: 'dot', style: '--c:var(--bad)' }, '✗'), 'no account or key')),
+      h('table', { class: 'list', 'aria-label': 'Lanes' },
+        h('thead', {}, h('tr', {}, h('th', { scope: 'col', style: 'width:130px' }, 'Lane'), h('th', { scope: 'col' }, 'Ladder (first to last)'))),
+        h('tbody', {}, Object.entries(S.ladders).map(([lane, list]) => h('tr', {},
+          h('td', { class: 'lane-name mono' }, lane),
+          h('td', {}, h('div', { class: 'ladder' }, list.map((m, i) => [i ? h('span', { class: 'arrow', 'aria-hidden': 'true' }, '›') : null, rung(m)])))))))],
+    actions: [h('button', { type: 'button', class: 'btn', 'data-k': 'edit-lanes', onclick: editSettings }, 'Edit lanes (settings.json)')],
+  };
+}
+async function choosePreset(id) {
+  if (!needRunning('Routing preset')) return;
+  if (S.preset === id) { toast(`${PRESETS[id].label} is already the active preset.`); return; }
+  const yes = await ask('Routing preset', `Use the ${PRESETS[id].label} routing preset?\n\nThis replaces the ladders of every lane. You can switch back or edit them at any time.`);
+  if (!yes) return;
+  const L = JSON.parse(JSON.stringify(BALANCED));
+  if (id === 'cheap') for (const k in L) L[k] = L[k].filter(m => !/^gpt-|claude-opus/.test(m));
+  if (id === 'max') for (const k of ['lane-main', 'lane-builder', 'lane-architect']) L[k] = ['claude-opus-5-5', ...L[k].filter(m => m !== 'claude-opus-5-5')];
+  if (S.replaced) for (const k in L) L[k] = L[k].map(m => m === 'claude-fable-5-2' ? 'claude-fable-5-3' : m);
+  S.ladders = L; S.preset = id;
+  logLine(`Routing preset: ${PRESETS[id].label}.`); logLine('DeepSeek Harness routes updated. Restart DeepSeek Harness to see them.');
+  renderAll();
+}
+async function customLanes() {
+  const yes = await ask('Lanes', 'Custom ladders are edited by hand in settings.json. The Lanes tab shows Custom until a preset is chosen again.\n\nOpen settings.json now?', { kind: 'info', yes: 'Open settings.json', no: 'Cancel' });
+  if (yes) { editSettings(); S.preset = 'custom'; logLine('Ladders marked Custom (prototype: as if settings.json had been edited).'); renderAll(); }
+}
+function editSettings() { toast(`Would open ${HOME}/settings.json in your text editor (mocked).`); }
+
+/* ---------- Chat › Models ---------- */
+function modelStatus(m) {
+  if (m.isNew && m.offered) return ['NEW · found automatically', 'c-brass'];
+  if (m.offered) return [m.reason === 'switched on' ? 'Offered (you switched it on)' : 'Offered', ''];
+  const map = { 'switched off': 'Off (you switched it off)', 'older generation': 'Hidden: older generation', 'not a chat model': 'Hidden: not a chat model', 'no details known': 'Hidden: no details known' };
+  return [map[m.reason] || m.reason, 'c-muted'];
+}
+function pageModels() {
+  const svcOrder = ['claude', 'codex', 'antigravity', 'kimi'];
+  const rows = S.models.filter(m => m.offered || S.showHidden || m.reason === 'switched off')
+    .sort((a, b) => ((b.isNew && b.offered) - (a.isNew && a.offered)) || svcOrder.indexOf(a.svc) - svcOrder.indexOf(b.svc) || a.id.localeCompare(b.id));
+  const sg = S.suggestion;
+  const checked = S.modelsBusy ? 'Checking for new models...' : S.modelsChecked ? `Last checked ${Date.now() - S.modelsChecked < MIN ? 'just now' : Math.round((Date.now() - S.modelsChecked) / MIN) + ' min ago'}.` : 'Not checked yet.';
+  return {
+    title: 'Models',
+    note: 'Switched-on models are offered to DeepSeek Harness. New models are found automatically every 3 hours; when the list changes, the DSHProxy routes in DeepSeek Harness are updated (restart DeepSeek Harness to see them).',
+    banner: notRunningBanner('This is the last list read. Switching a model on or off needs the gateway running.'),
+    body: [
+      sg ? h('div', { class: 'suggest', role: 'status' }, h('p', {}, h('b', {}, 'Newer model: '), `${sg.to} could replace ${sg.from} on lane ${sg.lanes.map(l => l.replace('lane-', '')).join(', ')}.`),
+        h('button', { type: 'button', class: 'btn primary small', 'data-k': 'use-suggest', onclick: useSuggestion }, `Use ${sg.to}`)) : null,
+      rows.length ? h('table', { class: 'list', 'aria-label': 'Models' },
+        h('thead', {}, h('tr', {}, h('th', { scope: 'col', style: 'width:54px' }, 'On'), h('th', { scope: 'col' }, 'Model'), h('th', { scope: 'col', class: 'col-service' }, 'Service'),
+          h('th', { scope: 'col' }, 'Context'), h('th', { scope: 'col' }, 'Output'), h('th', { scope: 'col' }, 'Reasoning'), h('th', { scope: 'col' }, 'Status'))),
+        h('tbody', {}, rows.map(m => {
+          const [st, cls] = modelStatus(m);
+          return h('tr', { title: `${m.id}  ·  Service: ${SERVICE[m.svc]}` },
+            h('td', {}, h('input', { type: 'checkbox', role: 'switch', class: 'switch', checked: m.offered, 'aria-label': `Offer ${m.id}`, 'data-k': 'm-' + m.id, onchange: e => toggleModel(m, e.target) })),
+            h('td', {}, h('span', { class: 'cell' + (m.offered ? '' : ' c-muted') }, logo(m.svc, 18, SERVICE[m.svc]), h('span', { class: 'mono' + (m.isNew && m.offered ? ' c-brass' : '') }, m.id))),
+            h('td', { class: 'col-service c-muted' }, SERVICE[m.svc]),
+            h('td', { class: 'num' }, fmtTokens(m.ctx)), h('td', { class: 'num' }, fmtTokens(m.out)),
+            h('td', { class: 'c-muted' }, m.eff), h('td', { class: cls }, st));
+        })))
+        : h('div', { class: 'empty' }, h('p', {}, 'No models yet. Sign in to an account on Accounts or add an API key, then press Check for new models.'))],
+    actions: [
+      h('button', { type: 'button', class: 'btn primary', 'data-k': 'check-models', disabled: S.modelsBusy, onclick: checkModels }, 'Check for new models'),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: S.showHidden, 'data-k': 'show-hidden', onchange: e => { S.showHidden = e.target.checked; renderAll(); } }), 'Show hidden models'),
+      h('span', { class: 'spacer' }), h('span', { class: 'status-line', 'aria-live': 'polite' }, checked)],
+  };
+}
+function toggleModel(m, box) {
+  if (!running()) { box.checked = m.offered; msgBox('Models', 'Start the gateway first.', { kind: 'info' }); return; }
+  const was = m.reason;
+  m.offered = box.checked;
+  m.reason = m.offered ? (['older generation', 'not a chat model', 'no details known'].includes(was) ? 'switched on' : 'offered') : 'switched off';
+  logLine(`${m.offered ? 'Offering' : 'No longer offering'} ${m.id}; DeepSeek Harness routes updated. Restart DeepSeek Harness to see it.`);
+  renderAll();
+}
+async function useSuggestion() {
+  const sg = S.suggestion;
+  if (!needRunning('Lanes')) return;
+  const lanes = sg.lanes.map(l => l.replace('lane-', '')).join(', ');
+  const yes = await ask('Lanes', `Put ${sg.to} in place of ${sg.from} on lane ${lanes}?\n\nThe rest of each ladder stays as it is. You can change it back in settings.json.`);
+  if (!yes) return;
+  for (const l of sg.lanes) S.ladders[l] = S.ladders[l].map(m => m === sg.from ? sg.to : m);
+  S.suggestion = null; S.replaced = true;
+  logLine(`${sg.to} now replaces ${sg.from} on lane ${lanes}.`); renderAll();
+}
+async function checkModels() {
+  if (!needRunning('Models')) return;
+  S.modelsBusy = true; renderAll(); await wait(1200);
+  S.modelsBusy = false; S.modelsChecked = Date.now();
+  logLine('Checked for new models.'); renderAll();
+}
+
+/* ---------- Chat › DeepSeek Harness ---------- */
+function toolsRow() {
+  switch (S.tools) {
+    case 'installed': return [`Yes · switched on${S.toolsVersion ? ' · version ' + S.toolsVersion : ''}`, 'c-ok'];
+    case 'off': return ['Yes · switched off in DeepSeek Harness', 'c-warn'];
+    default: return ['No · Apply to DeepSeek Harness installs them', 'c-warn'];
+  }
+}
+function pageHarness() {
+  const pt = p => p.points === 'yes' ? ['Yes', 'c-ok'] : p.points === 'stale' ? ['No: apply again', 'c-warn'] : ['Not applied', 'c-muted'];
+  const [tt, tc] = toolsRow();
+  return {
+    title: 'DeepSeek Harness',
+    note: 'Apply to DeepSeek Harness, at the top of the window, writes the DSHProxy routes into every DeepSeek Harness profile and keeps everything else. Preview shows what it would change. Verify checks the profiles back: routes, models, default model and credential. Restart DeepSeek Harness after a change.',
+    banner: notRunningBanner('Preview, Apply and Verify still work; DeepSeek Harness cannot use the routes until the gateway runs.'),
+    body: [
+      h('table', { class: 'list', 'aria-label': 'DeepSeek Harness profiles' },
+        h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Profile'), h('th', { scope: 'col' }, 'Routes'), h('th', { scope: 'col' }, 'Models'), h('th', { scope: 'col' }, 'Points at this gateway'))),
+        h('tbody', {}, S.profiles.map(p => { const [t, c] = pt(p); return h('tr', {}, h('td', { class: 'mono' }, p.name), h('td', { class: 'num' }, p.routes), h('td', { class: 'num' }, p.models), h('td', { class: c }, t)); }))),
+      h('div', { class: 'banner', style: '--c:var(--teal);margin-top:14px' }, h('p', {}, h('b', {}, 'Video tools plugin: '), h('span', { class: tc }, tt), '. Details on Video › DeepSeek Harness.'))],
+    actions: [
+      h('button', { type: 'button', class: 'btn', 'data-k': 'h-preview', onclick: previewHarness }, 'Preview changes'),
+      h('button', { type: 'button', class: 'btn outline', 'data-k': 'h-verify', onclick: verifyHarness }, 'Verify'),
+      h('button', { type: 'button', class: 'btn danger', 'data-k': 'h-remove', onclick: removeHarness }, 'Remove from DeepSeek Harness')],
+  };
+}
+function previewHarness() {
+  const lines = S.profiles.map(p => p.points === 'yes' ? `${p.name}: up to date (4 routes, ${p.models} models)` : p.points === 'stale' ? `${p.name}: would update dshproxy-chat (2 models added: claude-fable-5-3, gpt-6.1-terra)` : `${p.name}: would add the llm-pi-ai entry with 4 dshproxy-* routes`);
+  msgBox('Preview', 'What dsh apply would change:', { kind: 'info', out: [...lines, 'Each changed profile would be backed up first.', 'Dry run: nothing was changed.'].join('\n') });
+}
+function verifyHarness() {
+  const bad = S.profiles.some(p => p.points !== 'yes');
+  const lines = S.profiles.map(p => p.points === 'yes' ? `${p.name}: OK  routes 4/4 · models ${p.models} · default model ok · credential ok` : p.points === 'stale' ? `${p.name}: WARN  2 offered models missing (claude-fable-5-3, gpt-6.1-terra): run dsh apply` : `${p.name}: not applied`);
+  lines.forEach(l => logLine('[verify] ' + l));
+  msgBox('Verify DeepSeek Harness', bad ? 'Verify found something to fix.' : 'Every profile checks out.', { kind: bad ? 'warn' : 'info', out: lines.join('\n') });
+}
+async function removeHarness() {
+  const yes = await ask('DeepSeek Harness', 'Remove the DSHProxy routes from every DeepSeek Harness profile?', { kind: 'warn', danger: true });
+  if (!yes) return;
+  const out = S.profiles.filter(p => p.points !== 'none').map(p => `${p.name}: removed 4 dshproxy-* routes (backup written)`).concat(['The DSHPROXY_API_KEY reference stays in ~/.dsh/.credentials.yaml.']).join('\n');
+  S.profiles.forEach(p => { p.points = 'none'; p.routes = 0; p.models = 0; });
+  logLine('dsh remove: DSHProxy routes removed from every profile.'); renderAll();
+  msgBox('DeepSeek Harness', 'The DSHProxy routes were removed.', { kind: 'info', out });
+}
+
+/* ---------- Apply to DeepSeek Harness (header) ---------- */
+async function applyFlow() {
+  if (S.applyBusy) return;
+  S.applyBusy = true; renderAll();
+  await wait(500);
+  const installAfterQuit = S.tools !== 'installed';
+  const lines = [
+    ['done', 'DeepSeek Harness is installed and has been opened once.', ''],
+    ['todo', 'The chat routes will be written into every DeepSeek Harness profile.', 'Each profile is backed up first.\nNothing else in it is changed.'],
+    installAfterQuit ? ['todo', 'The video tools will be installed after you quit DeepSeek Harness.', 'DeepSeek Harness is open now.\nYou will be asked to quit it, and you can skip that step.'] : ['done', 'The video tools are already installed.', ''],
+    ['todo', (installAfterQuit ? 'Start DeepSeek Harness again afterwards.' : 'Restart DeepSeek Harness afterwards.') + ' DSHProxy does not do that for you.', ''],
+  ];
+  const go = await setupDialog('What is in place, and what Apply will do', lines, [{ label: 'Cancel', value: false }, { label: 'Apply', value: true, cls: 'primary', auto: true }]);
+  if (!go) { S.applyBusy = false; renderAll(); return; }
+  logLine('dsh apply: chat routes written into 3 profiles (each backed up first).');
+  S.profiles.forEach(p => { p.points = 'yes'; p.routes = 4; p.models = offeredCount() + 6; });
+  let toolsOk = !installAfterQuit, skipped = false;
+  if (installAfterQuit) {
+    skipped = !(await harnessWaitDialog());
+    if (!skipped) { S.tools = 'installed'; S.toolsVersion = '0.4.0'; toolsOk = true; logLine('Video tools: installed in DeepSeek Harness.'); }
+    else logLine('Video tools: not installed.');
+  }
+  S.harnessCheckedAt = Date.now();
+  S.applyBusy = false; renderAll();
+  const out = ['desktop: routes up to date (backup written)', 'work: routes updated, 2 models added (backup written)', 'lab: llm-pi-ai entry added with 4 dshproxy-* routes (backup written)',
+    '~/.dsh/.credentials.yaml: DSHPROXY_API_KEY reference present', 'Restart DeepSeek Harness to see the changes.'];
+  await resultDialog(skipped ? 'The video tools were not installed' : 'DeepSeek Harness is set up', out, toolsOk);
+}
+const MARKS = { done: ['✓', 'var(--ok)', 'In place'], todo: ['→', 'var(--accent)', 'To do'], cannot: ['✗', 'var(--bad)', 'Cannot'], note: ['!', 'var(--warn)', 'Note'] };
+function setupDialog(heading, lines, buttons) {
+  return new Promise(res => openDialog({ cls: 'wide', cancelValue: false, onClose: v => res(!!v), build(api) {
+    api.d.append(h('div', { class: 'dlg-body' }, h('p', { class: 'status-line', style: 'margin:0 0 2px' }, 'Apply to DeepSeek Harness'), h('h2', { id: api.id + '-t' }, heading),
+      h('ul', { class: 'setup' }, lines.map(([k, t, sub]) => { const [g, c, word] = MARKS[k]; return h('li', {}, h('span', { class: 'dot', style: `--c:${c}`, 'aria-hidden': 'true' }, g), h('div', {}, h('span', { class: 'sr' }, word + ': '), t, sub ? h('small', {}, sub) : null)); }))),
+      h('div', { class: 'dlg-btns' }, buttons.map(b => h('button', { type: 'button', class: 'btn ' + (b.cls || ''), 'data-autofocus': b.auto || null, onclick: () => api.close(b.value) }, b.label))));
+  } }));
+}
+function harnessWaitDialog() {
+  return new Promise(res => openDialog({ cls: 'wide', cancelValue: false, onClose: v => res(!!v), build(api) {
+    api.d.append(h('div', { class: 'dlg-body' }, h('h2', { id: api.id + '-t' }, 'Quit DeepSeek Harness to install the video tools'),
+      h('p', {}, 'The chat routes are written. The video tools can only be installed while DeepSeek Harness is closed.'),
+      h('p', {}, 'Closing its window may not be enough: DeepSeek Harness can keep running in the menu bar or the Dock. Quit it with ⌘Q.'),
+      h('p', {}, 'This window closes by itself when DeepSeek Harness has quit, and the video tools are installed then. DSHProxy does not close DeepSeek Harness for you.'),
+      h('div', { class: 'marquee', role: 'progressbar', 'aria-label': 'Waiting for DeepSeek Harness to quit' }),
+      h('div', { class: 'proto-box' }, 'Prototype only:', h('button', { type: 'button', class: 'btn proto small', onclick: () => api.close(true) }, 'Simulate: DeepSeek Harness has quit'))),
+      h('div', { class: 'dlg-btns' }, h('button', { type: 'button', class: 'btn', 'data-autofocus': true, onclick: () => api.close(false) }, 'Skip the video tools')));
+  } }));
+}
+function resultDialog(heading, out, ok) {
+  return new Promise(res => openDialog({ cls: 'wide', onClose: () => res(), build(api) {
+    const copy = h('button', { type: 'button', class: 'btn left', onclick: () => { copy.textContent = 'Copied'; } }, 'Copy folder path');
+    api.d.append(h('div', { class: 'dlg-body' }, h('div', { class: 'msg' }, glyph(ok ? 'ok' : 'warn'), h('div', { class: 'msg-text' },
+      h('h2', { id: api.id + '-t' }, heading), h('p', {}, 'The chat routes were applied. DSHProxy reported:'),
+      h('div', { class: 'out', tabindex: '0', role: 'region', 'aria-label': 'Command output' }, out.join('\n')),
+      ok ? null : h('p', {}, 'Apply again after quitting DeepSeek Harness to install the video tools.')))),
+      h('div', { class: 'dlg-btns' }, copy, h('button', { type: 'button', class: 'btn primary', 'data-autofocus': true, onclick: () => api.close() }, 'OK')));
+  } }));
+}
+
+/* ---------- Log ---------- */
+function pageLog() {
+  return {
+    title: 'Log', fill: true,
+    note: 'Gateway output and what this window did. The gateway also writes dshproxy.log in the data folder.',
+    body: h('pre', { class: 'log', id: 'logText', tabindex: '0', role: 'log', 'aria-label': 'Gateway log', 'aria-live': 'off' }, S.log.join('\n') + '\n'),
+    actions: [h('button', { type: 'button', class: 'btn', 'data-k': 'datafolder', onclick: () => toast(`Would open ${HOME} in Finder (mocked).`) }, 'Open data folder'),
+      h('span', { class: 'spacer' }), h('span', { class: 'live' + (running() ? '' : ' off') }, h('i', { 'aria-hidden': 'true' }), running() ? 'Live' : 'Gateway not running: no new lines')],
+    after: () => { const p = $('#logText'); p.scrollTop = p.scrollHeight; },
+  };
+}
+
+/* ---------- Video › Accounts ---------- */
+function kreaState() {
+  const k = S.krea;
+  if (k.state === 'signingin') return ['Signing in...', 'c-warn'];
+  if (k.state === 'signedin') { const d = new Date(k.until); return [`Signed in · until ${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}, ${hm(d)}`, 'c-ok']; }
+  return ['Not signed in', 'c-muted'];
+}
+function pageVAccounts() {
+  const k = S.krea, [st, cls] = kreaState();
+  return {
+    title: 'Video accounts',
+    note: "Video has one signed-in service, a Krea workspace. Sign in to Krea starts DSHProxy's separate Krea helper and opens Krea's consent page in your browser. The helper keeps the sign-in; this app sees only whether one is present and until when. The chat accounts (Claude, ChatGPT, Gemini, Kimi) are not used for video.",
+    body: [
+      h('table', { class: 'list', 'aria-label': 'Video accounts' },
+        h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Service'), h('th', { scope: 'col' }, 'Billed in'), h('th', { scope: 'col' }, 'Sign-in'), h('th', { scope: 'col' }, 'State'))),
+        h('tbody', {}, h('tr', {}, h('td', {}, h('span', { class: 'cell' }, logo('krea', 22, 'Krea'), 'Krea workspace · krea')), h('td', {}, 'workspace compute units'), h('td', {}, 'In your browser'), h('td', { class: cls }, st)))),
+      k.state === 'signingin' ? h('div', { class: 'proto-box' }, 'Prototype only:',
+        h('button', { type: 'button', class: 'btn proto small', 'data-k': 'krea-ok', onclick: () => kreaDone(true) }, 'Simulate: consent given in the browser'),
+        h('button', { type: 'button', class: 'btn proto small', 'data-k': 'krea-no', onclick: () => kreaDone(false) }, 'Simulate: Krea refused')) : null],
+    actions: [
+      h('button', { type: 'button', class: 'btn primary', 'data-k': 'krea-in', disabled: k.state === 'signingin', onclick: kreaSignIn }, 'Sign in to Krea…'),
+      h('button', { type: 'button', class: 'btn', 'data-k': 'krea-cancel', disabled: k.state !== 'signingin', onclick: () => { S.krea.state = 'signedout'; S.krea.line = 'Krea sign-in cancelled.'; logLine('Krea sign-in cancelled.'); renderAll(); } }, 'Cancel'),
+      h('button', { type: 'button', class: 'btn danger', 'data-k': 'krea-out', disabled: k.state !== 'signedin', onclick: kreaSignOut }, 'Sign out'),
+      h('span', { class: 'spacer' }), h('span', { class: 'status-line', 'aria-live': 'polite' }, k.line || `State read from the Krea helper at ${hms(new Date(k.readAt))}; it is read when this page opens, not kept up to date.`)],
+  };
+}
+function kreaSignIn() {
+  S.krea.state = 'signingin'; S.krea.line = "Waiting for you to finish on Krea's consent page in your browser.";
+  logLine('Krea sign-in started; consent page opened in the browser.');
+  toast("Your browser opened Krea's consent page (mocked: nothing was opened).");
+  renderAll();
+}
+function kreaDone(ok) {
+  if (ok) { S.krea.state = 'signedin'; S.krea.until = Date.now() + 30 * DAY; S.krea.line = 'Signed in to Krea.'; }
+  else { S.krea.state = 'signedout'; S.krea.line = 'Krea sign-in did not complete (KREA_REFUSED): consent was not given. (Synthetic.)'; }
+  logLine(S.krea.line); renderAll();
+}
+async function kreaSignOut() {
+  const yes = await ask('Krea', 'Sign out of Krea?\n\nThe Krea sign-in stored on this computer is removed. Video on the Krea workspace route then needs a new sign-in.', { kind: 'warn', danger: true });
+  if (!yes) return;
+  S.krea.state = 'signedout'; S.krea.line = 'Signed out of Krea.'; logLine('Signed out of Krea.'); renderAll();
+}
+
+/* ---------- Video › API keys ---------- */
+function vkeyState(r) {
+  const env = r.inEnvironment ? ' · also set in the environment' : '';
+  if (!r.saved) return ['Not saved' + env, 'c-muted'];
+  if (!r.readable) return ['Saved, cannot be read: enter it again' + env, 'c-warn'];
+  return ['Saved' + env, ''];
+}
+function pageVKeys() {
+  const sel = S.vkeys.find(r => r.provider === S.vkeySel);
+  const anySaved = S.vkeys.some(r => r.saved);
+  return {
+    title: 'Video API keys',
+    note: "Save the key of a pay-per-use video provider here. It is stored encrypted in the DSHProxy data folder, like the Chat API keys, and is used by DSHProxy's video command; a key in the provider's environment variable is used instead when that is set. A saved key is not checked against the provider.",
+    body: [
+      anySaved ? null : h('div', { class: 'banner', style: '--c:var(--teal)' }, h('p', {}, h('b', {}, 'No video keys saved yet. '), 'Pick a provider and press Add or replace key.')),
+      h('table', { class: 'list', 'aria-label': 'Video API keys' },
+        h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Provider'), h('th', { scope: 'col' }, 'Environment variable'), h('th', { scope: 'col' }, 'Billed in'), h('th', { scope: 'col' }, 'State'))),
+        h('tbody', {}, S.vkeys.map(r => { const [st, cls] = vkeyState(r); return h('tr', { class: S.vkeySel === r.provider ? 'sel' : '', onclick: e => { if (e.target.tagName !== 'INPUT') { S.vkeySel = r.provider; renderAll(); } }, ondblclick: () => vkeyAdd(r) },
+          h('td', {}, h('label', { class: 'pick' }, h('input', { type: 'radio', name: 'vkeysel', checked: S.vkeySel === r.provider, 'data-k': 'vk-' + r.provider, onchange: () => { S.vkeySel = r.provider; renderAll(); } }), r.label)),
+          h('td', { class: 'mono c-muted' }, r.variable), h('td', {}, UNITS[r.routes[0]]), h('td', { class: cls }, st)); }))),
+      h('p', { class: 'status-line', style: 'margin-top:10px' }, 'The Krea workspace route uses a sign-in instead of a key: see Accounts.')],
+    actions: [
+      h('button', { type: 'button', class: 'btn primary', 'data-k': 'vk-add', disabled: !sel, onclick: () => vkeyAdd(sel) }, 'Add or replace key…'),
+      h('button', { type: 'button', class: 'btn danger', 'data-k': 'vk-remove', disabled: !sel || !sel.saved, onclick: () => vkeyRemove(sel) }, 'Remove key'),
+      h('span', { class: 'spacer' }), h('span', { class: 'status-line', 'aria-live': 'polite' }, S.vkeyLine)],
+  };
+}
+function vkeyAdd(r) {
+  keyDialog({ id: r.provider, name: r.label, regions: [] }, '', {
+    title: 'Video API key', label: `API key for ${r.label}:`,
+    validate: v => v.length > 512 ? 'A key is at most 512 characters.' : /^[\x21-\x7E]+$/.test(v) ? null : 'A key has only printable characters, without spaces.',
+    onSave: () => { r.saved = true; r.readable = true; S.vkeyLine = `Saved the ${r.label} key. It was not checked against ${r.label}.`; logLine(`video key set ${r.provider}: saved.`); renderAll(); },
+  });
+}
+async function vkeyRemove(r) {
+  const yes = await ask('Video API key', `Remove the saved ${r.label} video key?\n\nDSHProxy's video command can then use ${r.label} only with a key in ${r.variable}.`, { kind: 'warn', danger: true });
+  if (!yes) return;
+  r.saved = false; r.readable = false; S.vkeyLine = `Removed the ${r.label} key.`; logLine(`video key remove ${r.provider}: removed.`); renderAll();
+}
+
+/* ---------- Video › Lanes and Models ---------- */
+const COMPANY = m => m === 'wan-3.0' ? ['Alibaba', 'alibaba'] : m === 'minimax-h3' ? ['MiniMax', 'minimax'] : m.startsWith('seedance-') ? ['ByteDance', 'bytedance'] : ['', ''];
+const routeCell = v => !v.route ? ['Not configured', 'c-warn'] : !v.routes.includes(v.route) ? [`Not allowed: ${v.route}`, 'c-bad'] : [`${ROUTE_LABEL[v.route]} · ${v.route}`, ''];
+const billed = v => v.route && v.routes.includes(v.route) ? [UNITS[v.route], ''] : ['Choose a billing route', 'c-warn'];
+const vStatusLine = () => S.vLine || `Video settings read from DSHProxy at ${hms(new Date(S.vReadAt))}.`;
+function reloadVideo() { S.vReadAt = Date.now(); S.vLine = ''; logLine('video settings: read.'); renderAll(); }
+function pageVLanes() {
+  const rows = S.vmodels.filter(v => v.enabled);
+  if (rows.length && !rows.some(v => v.model === S.vSel)) S.vSel = rows[0].model;
+  return {
+    title: 'Video lanes',
+    note: 'Each enabled model has exactly one billing route. A paid job is never retried automatically, moved to another provider or passed on to another route. A saved route is a setting: it does not prove a sign-in, a key, availability or a price.',
+    body: [
+      rows.length ? h('table', { class: 'list', 'aria-label': 'Video lanes' },
+        h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Model'), h('th', { scope: 'col' }, 'Company'), h('th', { scope: 'col' }, 'Billing route'), h('th', { scope: 'col' }, 'Billed in'))),
+        h('tbody', {}, rows.map(v => { const [co, lg] = COMPANY(v.model), [rc, rcl] = routeCell(v), [bi, bcl] = billed(v);
+          return h('tr', { class: S.vSel === v.model ? 'sel' : '', onclick: e => { if (e.target.tagName !== 'INPUT') { S.vSel = v.model; renderAll(); } }, ondblclick: () => routeDialog(v) },
+            h('td', {}, h('label', { class: 'pick' }, h('input', { type: 'radio', name: 'vsel', checked: S.vSel === v.model, 'data-k': 'vl-' + v.model, onchange: () => { S.vSel = v.model; renderAll(); } }), h('span', { class: 'mono' }, v.model))),
+            h('td', {}, h('span', { class: 'cell' }, logo(lg, 20, co), co)), h('td', { class: rcl }, rc), h('td', { class: bcl }, bi)); })))
+        : h('div', { class: 'empty' }, h('p', {}, 'None enabled. Switch a model on in the Models tab.')),
+      h('p', { class: 'status-line', style: 'margin-top:10px' }, 'Logos show the company behind each model, not a model mark.')],
+    actions: [
+      h('button', { type: 'button', class: 'btn primary', 'data-k': 'vl-change', disabled: !rows.length, onclick: () => routeDialog(S.vmodels.find(v => v.model === S.vSel)) }, 'Change billing route…'),
+      h('button', { type: 'button', class: 'btn', 'data-k': 'v-reload', onclick: reloadVideo }, 'Reload video settings'),
+      h('span', { class: 'spacer' }), h('span', { class: 'status-line', 'aria-live': 'polite' }, vStatusLine())],
+  };
+}
+function pageVModels() {
+  return {
+    title: 'Video models',
+    note: 'Switched-on models with a billing route are what the separate DeepSeek Harness video tools may offer; new models start switched off. A switch is a setting only: it checks no sign-in, key, availability or price, it is not a spending limit, and nothing is generated or charged here. Choose the billing route under Lanes.',
+    body: [
+      h('table', { class: 'list', 'aria-label': 'Video models' },
+        h('thead', {}, h('tr', {}, h('th', { scope: 'col', style: 'width:54px' }, 'On'), h('th', { scope: 'col' }, 'Model'), h('th', { scope: 'col' }, 'Company'), h('th', { scope: 'col' }, 'Billing route'), h('th', { scope: 'col' }, 'Billed in'), h('th', { scope: 'col' }, 'State'))),
+        h('tbody', {}, S.vmodels.map(v => { const [co, lg] = COMPANY(v.model), [rc, rcl] = routeCell(v), [bi, bcl] = billed(v);
+          const valid = v.route && v.routes.includes(v.route);
+          const [st, scl] = !v.enabled ? ['Off', 'c-muted'] : valid ? ['Enabled', 'c-ok'] : ['No valid route', 'c-warn'];
+          return h('tr', {}, h('td', {}, h('input', { type: 'checkbox', role: 'switch', class: 'switch', checked: v.enabled, 'aria-label': `Switch on ${v.model}`, 'data-k': 'vm-' + v.model, onchange: e => toggleVModel(v, e.target) })),
+            h('td', { class: 'mono' }, v.model), h('td', {}, h('span', { class: 'cell' }, logo(lg, 20, co), co)), h('td', { class: rcl }, rc), h('td', { class: bcl }, bi), h('td', { class: scl }, st)); }))),
+      h('p', { class: 'status-line', style: 'margin-top:10px' }, 'Logos show the company behind each model, not a model mark.')],
+    actions: [h('button', { type: 'button', class: 'btn', 'data-k': 'v-reload', onclick: reloadVideo }, 'Reload video settings'),
+      h('span', { class: 'spacer' }), h('span', { class: 'status-line', 'aria-live': 'polite' }, vStatusLine())],
+  };
+}
+function toggleVModel(v, box) {
+  const want = box.checked;
+  const valid = v.route && v.routes.includes(v.route);
+  if (want && !valid) { box.checked = false; routeDialog(v, true); return; }
+  v.enabled = want;
+  saveVideo(v, `${v.model} ${want ? 'switched on' : 'switched off'}`);
+}
+function saveVideo(v, what) {
+  logLine(`video settings set ${v.model.toUpperCase()} ${v.route || 'none'} ${v.enabled ? 'enabled' : 'disabled'}`);
+  S.vLine = `Saved: ${what}. This is a setting only; nothing was checked or charged.`;
+  renderAll();
+}
+function routeDialog(v, enabling) {
+  if (!v) { msgBox('Video billing route', 'Pick a model in the list first.', { kind: 'info' }); return; }
+  const sel = h('select', { class: 'input', id: 'route-sel', style: 'width:100%' },
+    v.route ? null : h('option', { value: '', selected: true }, 'Choose a route'),
+    v.routes.map(r => h('option', { value: r, selected: r === v.route }, `${ROUTE_LABEL[r]} · ${r} · billed in ${UNITS[r]}`)));
+  const save = h('button', { type: 'button', class: 'btn primary', disabled: !v.route }, 'Save route');
+  sel.addEventListener('change', () => { save.disabled = !sel.value; });
+  const api = openDialog({ build(api) {
+    api.d.append(h('div', { class: 'dlg-body' }, h('h2', { id: api.id + '-t' }, 'Video billing route'),
+      h('label', { class: 'lbl-block', for: 'route-sel' }, `Charge ${v.model} to:`), sel,
+      h('p', { class: 'status-line', style: 'margin-top:10px' }, 'One route for each model. A paid job is never retried automatically or moved to another route.'),
+      h('p', { class: 'status-line' }, 'Saving a route does not check a sign-in, a key or a price, and charges nothing.' + (!v.enabled && !enabling ? ' The model stays switched off.' : ''))),
+      h('div', { class: 'dlg-btns' }, h('button', { type: 'button', class: 'btn', onclick: () => api.close() }, 'Cancel'), save));
+  } });
+  save.addEventListener('click', () => {
+    v.route = sel.value; if (enabling) v.enabled = true;
+    api.close();
+    saveVideo(v, `${v.model} → ${ROUTE_LABEL[v.route]} · ${v.route}${enabling ? ', switched on' : ''}`);
+  });
+}
+
+/* ---------- Video › DeepSeek Harness ---------- */
+function pageVHarness() {
+  const [tt, tc] = toolsRow();
+  const en = S.vmodels.filter(v => v.enabled);
+  const good = en.filter(v => v.route && v.routes.includes(v.route)).map(v => v.model);
+  const badm = en.filter(v => !(v.route && v.routes.includes(v.route))).map(v => v.model);
+  return {
+    title: 'Video in DeepSeek Harness',
+    note: 'Video reaches DeepSeek Harness through the video tools, a plugin in integrations/dsh-video of the DSHProxy folder. Apply to DeepSeek Harness, at the top of the window, installs it in the DeepSeek Harness desktop app, together with the Chat routes.',
+    body: [h('table', { class: 'list', 'aria-label': 'Video in DeepSeek Harness' },
+      h('thead', {}, h('tr', {}, h('th', { scope: 'col', style: 'width:44%' }, 'What'), h('th', { scope: 'col' }, 'State'))),
+      h('tbody', {},
+        h('tr', {}, h('td', {}, 'Video tools installed in DeepSeek Harness?'), h('td', { class: tc }, tt)),
+        h('tr', {}, h('td', {}, 'Enabled, with a billing route'), h('td', { class: good.length ? 'c-ok' : 'c-muted' }, good.length ? good.join(', ') : 'None')),
+        h('tr', {}, h('td', {}, 'Enabled, no valid route (not offered)'), h('td', { class: badm.length ? 'c-warn' : 'c-muted' }, badm.length ? badm.join(', ') : 'None')),
+        h('tr', {}, h('td', {}, 'Video tools in this DSHProxy folder'), h('td', { class: 'c-ok' }, 'Found: integrations/dsh-video')))),
+      h('p', { class: 'status-line', style: 'margin-top:10px' }, 'The video tools offer the enabled models above. Their README says what they can do and how far that has been checked.')],
+    actions: [h('span', { class: 'status-line', 'aria-live': 'polite' }, `Checked at ${hms(new Date(S.harnessCheckedAt))}. ${S.tools === 'installed' ? 'The video tools are installed and switched on.' : 'Apply to DeepSeek Harness installs the video tools.'}`)],
+  };
+}
+
+const PAGES = { c0: pageAccounts, c1: pageKeys, c2: pageLanes, c3: pageModels, c4: pageHarness, v0: pageVAccounts, v1: pageVKeys, v2: pageVLanes, v3: pageVModels, v4: pageVHarness, log: pageLog };
+
+/* =====================================================================
+   Menu-bar item (drawn mock: a web page cannot draw in the real menu bar)
+   ===================================================================== */
+const TEMPLATE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 2.6 10 8H6z" fill="currentColor"/><path d="M8 13.4 10 8H6z" fill="currentColor" opacity=".45"/></svg>';
+function openMenuBar() {
+  if (document.querySelector('dialog.mb')) return;
+  const opener = $('#mbOpen');
+  const d = h('dialog', { class: 'mb', 'aria-label': 'Menu bar (mock)' });
+  const stateWord = S.quit ? 'not running' : { running: 'running', starting: 'starting', notanswering: 'not answering', stopped: 'stopped' }[S.gateway];
+  const item = (label, fn, extra = {}) => h('button', { type: 'button', class: 'mb-item', role: extra.role || 'menuitem', 'aria-checked': extra.checked, tabindex: '-1', onclick: () => { close(); fn(); } },
+    h('span', { class: 'tick', 'aria-hidden': 'true' }, extra.tick || ''), label, extra.kbd ? h('span', { class: 'kbd', 'aria-hidden': 'true' }, extra.kbd) : null);
+  const now = new Date();
+  const icon = h('button', { type: 'button', class: 'mb-icon', 'aria-haspopup': 'menu', 'aria-expanded': 'true', 'aria-label': `DSHProxy: ${stateWord}`, onclick: () => { menu.hidden = !menu.hidden; icon.setAttribute('aria-expanded', String(!menu.hidden)); } });
+  icon.innerHTML = TEMPLATE_ICON;
+  const menu = h('div', { class: 'mb-menu', role: 'menu', 'aria-label': 'DSHProxy' },
+    h('div', { class: 'mb-status', role: 'none' }, h('span', { class: 'tick' }, ''), `DSHProxy: ${stateWord}`),
+    h('div', { class: 'mb-sep', role: 'separator' }),
+    item('Open DSHProxy', () => { if (S.quit) return; $('.tab[aria-selected=true]').focus(); toast('The DSHProxy window is brought to the front (mocked).'); }),
+    item('Add account…', () => { if (S.quit) return; S.workspace = 'chat'; S.section = 0; renderAll(); addAccountFlow(); }),
+    h('div', { class: 'mb-sep', role: 'separator' }),
+    item('Start gateway', () => { if (S.quit) { S.quit = false; rebuildShell(); renderAll(); } startGateway(); }),
+    item('Stop gateway', () => stopGateway()),
+    h('div', { class: 'mb-sep', role: 'separator' }),
+    item('Start at login', () => setLogin(!S.startAtLogin), { role: 'menuitemcheckbox', checked: String(S.startAtLogin), tick: S.startAtLogin ? '✓' : '' }),
+    h('div', { class: 'mb-sep', role: 'separator' }),
+    item('Quit', () => quitApp(), { kbd: '⌘Q' }));
+  d.append(
+    h('div', { class: 'mb-bar' },
+      h('div', { class: 'mb-left', 'aria-hidden': 'true' }, h('b', {}, 'Safari'), h('span', {}, 'File'), h('span', {}, 'Edit'), h('span', {}, 'View'), h('span', {}, 'Window'), h('span', {}, 'Help')),
+      h('span', { class: 'mb-glyph', 'aria-hidden': 'true' }, '◐'), h('span', { class: 'mb-glyph', 'aria-hidden': 'true' }, '▤'),
+      icon,
+      h('span', { class: 'mb-glyph', 'aria-hidden': 'true' }, `${DOW[now.getDay()]} ${now.getDate()} ${MON[now.getMonth()]} ${hm(now)}`)),
+    menu,
+    h('div', { class: 'mb-caption' },
+      h('p', {}, h('b', {}, 'Drawn mock of the menu-bar item. '), 'A web page cannot draw in the real macOS menu bar; in option (a) this item is the only native part. It opens the window, starts and stops the gateway, and owns the login item.'),
+      h('p', {}, 'Arrow keys move through the menu; Escape closes this mock.'),
+      h('button', { type: 'button', class: 'btn proto small', onclick: () => close() }, 'Close mock')));
+  function close() { if (d.open) d.close(); }
+  d.addEventListener('close', () => { d.remove(); if (!document.querySelector('dialog[open]') && opener.isConnected) opener.focus(); });
+  d.addEventListener('keydown', e => {
+    const items = [...menu.querySelectorAll('.mb-item')];
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+    else if (e.key === 'Tab') trapTab(e, d);
+  });
+  document.body.append(d);
+  d.showModal();
+  const r = icon.getBoundingClientRect();
+  menu.style.left = Math.max(8, Math.min(window.innerWidth - 262, r.left - 6)) + 'px';
+  menu.querySelector('.mb-item').focus();
+}
+
+/* =====================================================================
+   Backdrop stars (seed 1846, 150 stars in the top 62%, as in Skin.cs)
+   ===================================================================== */
+function drawStars() {
+  const c = $('#stars'), dpr = window.devicePixelRatio || 1, w = innerWidth, hh = innerHeight;
+  c.width = w * dpr; c.height = hh * dpr; c.style.width = w + 'px'; c.style.height = hh + 'px';
+  const g = c.getContext('2d'); g.scale(dpr, dpr); g.fillStyle = 'rgba(230,243,242,0.28)';
+  let s = 1846; const rnd = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+  for (let i = 0; i < 150; i++) { const x = rnd() * w, y = rnd() * hh * 0.62, big = rnd() < 1 / 12; g.fillRect(Math.round(x), Math.round(y), big ? 2 : 1, big ? 2 : 1); }
+}
+
+/* =====================================================================
+   Wiring
+   ===================================================================== */
+function applyScenario(scn) {
+  clearTimeout(startTimer);
+  document.querySelectorAll('dialog[open]').forEach(d => d.close());
+  S = initialState(scn);
+  seedLog();
+  rebuildShell();
+  renderAll();
+}
+$('#scenario').addEventListener('change', e => applyScenario(e.target.value));
+$('#pUpdate').addEventListener('change', e => { S.backend.available = e.target.checked; if (e.target.checked && S.backend.latest === S.backend.current) S.backend.latest = '6.7.3'; renderAll(); });
+$('#pInflight').addEventListener('change', e => { S.inflight = e.target.checked ? 2 : 0; renderAll(); });
+$('#mbOpen').addEventListener('click', openMenuBar);
+addEventListener('resize', drawStars);
+setInterval(() => { if (S && running() && !S.quit) logLine(LIVE[Math.floor(Math.random() * LIVE.length)]()); }, 2600);
+drawStars();
+applyScenario('sample');
+</script>
+</body>
+</html>

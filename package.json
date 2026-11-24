@@ -5,7 +5,8 @@
   "description": "Local model gateway for DeepSeek Harness: supervises a pinned CLIProxyAPI and adds lane failover.",
   "license": "MIT",
   "os": [
-    "win32"
+    "win32",
+    "darwin"
   ],
   "engines": {
     "node": ">=22"

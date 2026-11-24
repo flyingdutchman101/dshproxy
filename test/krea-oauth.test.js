@@ -1,4 +1,5 @@
 'use strict';
+require("./support/keychain"); // on macOS: a throwaway keychain for this file and its children, never a login Keychain
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {createHash}=require('node:crypto');
@@ -125,7 +126,7 @@ test('helper status takes no further argument, and sign-out still clears the sto
  const touched=[];const x=statusRun(()=>({load:async()=>{touched.push('load');return session()},clear:async()=>{touched.push('clear')}}),['logout']);
  await main(x.params);assert.deepEqual(touched,['clear']);assert.deepEqual(x.output,[]);
 });
-test('the real helper with an empty or damaged temporary store answers signed out, exits 0 and writes nothing',async()=>{
+test('the real helper with an empty or damaged temporary store answers signed out, exits 0 and writes nothing', { skip: process.platform === "darwin" ? "the Windows store; macOS has the same test below, against its own store" : false },async()=>{
  const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
  const {spawnSync}=require('node:child_process');
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'dshproxy-krea-status-'));
@@ -142,6 +143,28 @@ test('the real helper with an empty or damaged temporary store answers signed ou
   for(const text of ['not a session {','["only","two"]','{"accessToken":"synthetic-STATUS-plain","resource":"https://api.krea.ai/mcp","expiresAt":99999999999999}','']){
    await fs.writeFile(path.join(store,'session.v1'),text);
    signedOutLine(run({LOCALAPPDATA:dir}));
+   assert.equal(await fs.readFile(path.join(store,'session.v1'),'utf8'),text);
+   assert.deepEqual(await fs.readdir(store),['session.v1']);
+  }
+ } finally {await fs.rm(dir,{recursive:true,force:true});}
+});
+// The same on macOS: the store is under the home folder, and with no home
+// folder there is no store, as on a system the helper does not support.
+test('on macOS, the real helper with an empty or damaged temporary store answers signed out, exits 0 and writes nothing', { skip: process.platform === 'darwin' ? false : 'macOS only; Windows has the test above' },async()=>{
+ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
+ const {spawnSync}=require('node:child_process');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'dshproxy-krea-status-'));
+ const helper=path.resolve(__dirname,'../bin/dshproxy-krea.js');
+ const run=(env)=>spawnSync(process.execPath,[helper,'status'],{env:{TMPDIR:dir,DSHPROXY_KEYCHAIN:process.env.DSHPROXY_KEYCHAIN,...env},input:'{"action":"quote"}\n',encoding:'utf8',timeout:20000});
+ const signedOutLine=r=>{assert.equal(r.status,0,r.stderr);assert.equal(r.stdout,'{"signedIn":false,"canRenew":false}\n');assert.equal(r.stderr,'');};
+ try {
+  signedOutLine(run({HOME:dir}));
+  assert.deepEqual(await fs.readdir(dir),[]);
+  const unsupported=run({});assert.equal(unsupported.status,0,unsupported.stderr);assert.equal(unsupported.stdout,'{"signedIn":false}\n');assert.equal(unsupported.stderr,'');
+  const store=path.join(dir,'Library','Application Support','DSHProxy','KreaOAuth');await fs.mkdir(store,{recursive:true});
+  for(const text of ['not a session {','["only","two"]','{"accessToken":"synthetic-STATUS-plain","resource":"https://api.krea.ai/mcp","expiresAt":99999999999999}','']){
+   await fs.writeFile(path.join(store,'session.v1'),text);
+   signedOutLine(run({HOME:dir}));
    assert.equal(await fs.readFile(path.join(store,'session.v1'),'utf8'),text);
    assert.deepEqual(await fs.readdir(store),['session.v1']);
   }

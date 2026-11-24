@@ -1,6 +1,6 @@
 # DeepSeekProxy (DSHProxy)
 
-A local model gateway for DeepSeek Harness on Windows. It runs a pinned, unmodified [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) release and puts one small HTTP server in front of it.
+A local model gateway for DeepSeek Harness on Windows and macOS. It runs a pinned, unmodified [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) release and puts one small HTTP server in front of it.
 
 DeepSeek Harness gets two kinds of model from it:
 
@@ -11,8 +11,48 @@ It is a standalone project. It shares no code or git history with DroidProxy or 
 
 ## Requirements
 
-- Windows, x64 or arm64
+- Windows, x64 or arm64, or macOS on Apple Silicon or Intel
 - Node.js 22 or later
+
+## macOS
+
+**Quick start.** You need DeepSeek Harness, Node.js 22 or later (for example `brew install node`) and Apple's Command Line Tools (`xcode-select --install`; Xcode itself is not needed). Then, in Terminal:
+
+```sh
+git clone https://github.com/flyingdutchman101/dshproxy.git
+cd dshproxy
+npm ci --ignore-scripts
+app-macos/build.sh             # makes DSHProxy.app in this folder
+open DSHProxy.app
+```
+
+DSHProxy appears in the menu bar and starts its gateway. In its window: **+ Add account** (or **API keys**), then **Apply to DeepSeek Harness**, then restart DeepSeek Harness and pick a lane such as `lane-main`. Keep the `dshproxy` folder where it is: the app runs DSHProxy from it. The app is built on your own Mac and signed only for it, so macOS asks nothing; it is not notarised by Apple.
+
+The gateway and the command line work on macOS as on Windows: sign in to providers, save API keys, apply the routes to DeepSeek Harness, chat through a lane, stop, update the backend. Install and run them as in [Set up from the command line](#set-up-from-the-command-line), in Terminal:
+
+```sh
+npm ci --ignore-scripts
+node bin/dshproxy.js login claude
+node bin/dshproxy.js key set deepseek    # the key is read from standard input
+node bin/dshproxy.js start               # keep this window open
+```
+
+The first `start` downloads the macOS release of CLIProxyAPI for your processor and installs it only if its SHA-256 matches [backend.lock.json](backend.lock.json).
+
+**Video on macOS** works as on Windows: the `video` commands, the paid entries in the DeepSeek Harness model picker, and the Krea sign-in (`node bin/dshproxy-krea.js login`), which is kept in `~/Library/Application Support/DSHProxy/KreaOAuth/`, readable by your account only and encrypted with the same Keychain-held key. `dshproxy dsh bundle install` finds DeepSeek Harness in `/Applications` or `~/Applications` (or `DSHPROXY_HARNESS_DIR`) and runs its own `dsh plugin` command; quit DeepSeek Harness first.
+
+**The Mac app.** `DSHProxy.app` is the counterpart of the Windows app: an icon in the menu bar (no Dock icon), a window with the same pages (Chat: Accounts, API keys, Lanes, Models, DeepSeek Harness, Log; Video: Accounts, API keys, Lanes, Models, DeepSeek Harness), the gateway kept running while the window is closed, Quit in the menu, and **Start at login**. It does everything through the gateway's control API and the command line, as the Windows app does. Build it once (Swift and the Command Line Tools; Xcode is not needed):
+
+```sh
+app-macos/build.sh             # makes DSHProxy.app in this folder
+open DSHProxy.app
+```
+
+`DSHProxy.app` must be built in this folder; it remembers where it was built, so it can be moved to `/Applications` afterwards. It finds Node.js on the `PATH` or in `/opt/homebrew/bin` and `/usr/local/bin`. Start at login adds `~/Library/LaunchAgents/com.dshproxy.app.plist`, which opens the app in the menu bar without its window. It starts a gateway only when none answers; one it did not start, it shows but does not stop. Differences from the Windows app: Start is in the menu only, menu items are greyed out when they do not apply, confirmations default to Cancel, and the app uses the system's light or dark look. The Windows app's `--preview` options and its one notification ("still running" after the window is first closed) are not in the Mac app.
+
+**What protects which secret.** The key that encrypts your saved API keys (`master.key`) is wrapped with a key DSHProxy keeps in your login Keychain (an item named `DSHProxy`, account `key-wrapper`), as Windows wraps it with DPAPI. Every file and folder DSHProxy writes is readable by your account only. `backend-config.yaml` and `auth/` hold API keys and sign-ins in plain text, as on Windows, because CLIProxyAPI reads them from there. If your login Keychain is locked, macOS asks for its password; DSHProxy waits 10 seconds, then says that the Keychain is locked and saves nothing. Decision: [0009](docs/decisions/0009-keys-on-macos-are-wrapped-through-the-keychain.md).
+
+`dsh apply` makes `~/.dsh/.credentials.yaml` readable by your account only every time, because DeepSeek Harness refuses one that others can read, and `dsh verify` reports one that is not.
 
 ## Windows app
 
@@ -85,7 +125,10 @@ The first `start` or `login` downloads the CLIProxyAPI release named in [backend
 | `key remove <provider>` | Removes a saved API key |
 | `key list` | Lists API-key providers and their regions |
 | `models` | Lists the models that can be offered right now |
-| `dsh apply [--dry-run]` | Writes the models into every DeepSeek Harness profile; repairs a missing default model |
+| `backend version` | Shows the CLIProxyAPI version in use |
+| `backend update` | Asks the running gateway to look for a newer CLIProxyAPI and switch to it, as the app's **Update...** does |
+| `backend rollback` | With the gateway stopped, goes back to the previous CLIProxyAPI version |
+| `dsh apply [--dry-run]` | Writes the models into every DeepSeek Harness profile; repairs a default model that is missing or names a DSHProxy model that is gone |
 | `dsh verify` | Checks the profiles back: routes, base URLs, offered models, image caps, default model, credential, leftover DroidProxy providers |
 | `dsh status` | Shows which DSHProxy routes each profile has |
 | `dsh remove [--dry-run]` | Removes DSHProxy's routes from every profile |
@@ -147,7 +190,7 @@ A request that needs none of these reaches CLIProxyAPI byte for byte.
 
 It leaves every other entry, route and comment alone, including VeryCuteDroidProxy's `droidproxy-*` routes. It backs each profile up before changing it. Fields you add to a model entry, and its `input` list, are kept on the next sync.
 
-It does not change the default model, the delegation lanes or `allowedModels`. To let subagents use a DSHProxy route, add it to `allowedModels` yourself.
+It does not change the delegation lanes or `allowedModels`, nor a default model that names another provider. It sets the default model to a lane only when there is none, when it names no provider, or when it names a DSHProxy model that is gone (a lane counts as there even while none of its models can serve; `dsh verify` reports it); the gateway does the same when it updates the routes by itself. To let subagents use a DSHProxy route, add it to `allowedModels` yourself.
 
 `dsh remove` takes the four routes out again. If `dsh apply` had to add the `llm-pi-ai` entry itself, `dsh remove` takes that out too, unless you have since put other routes in it. The `DSHPROXY_API_KEY` reference stays.
 
@@ -158,7 +201,7 @@ Everything is under `~/.dshproxy` (override with `DSHPROXY_HOME`):
 | File | Contents |
 |---|---|
 | `settings.json` | Ports, lanes, and API keys in encrypted form |
-| `master.key` | The key that encrypts the API keys, wrapped by Windows DPAPI for your account |
+| `master.key` | The key that encrypts the API keys, wrapped by Windows DPAPI for your account, or on macOS with a key kept in your login Keychain |
 | `auth/` | Subscription credentials written by CLIProxyAPI |
 | `backend-config.yaml` | The CLIProxyAPI configuration, rewritten on every start. **It holds your API keys in plain text**, because CLIProxyAPI reads them from there. |
 | `bin/<version>/` | The installed CLIProxyAPI release |
@@ -193,11 +236,11 @@ Once the ladders have been edited by hand (in settings.json), the tab shows **Cu
 **Lanes are never changed for you.** When a newer version of a model on a lane appears (for example Fable 5.3 for Fable 5.2), the Models tab suggests it; nothing changes until you press **Use** and confirm.
 
 **Backend updates.** Every 6 hours DSHProxy asks GitHub for the latest CLIProxyAPI release (no drafts or pre-releases). When one is newer, the app shows **Update...**. Updating:
-1. downloads the release's Windows zip and checks it against the `checksums.txt` that release publishes (addresses outside the official release path are refused);
+1. downloads the release's archive for your system (the Windows zip, or the macOS `.tar.gz`) and checks it against the `checksums.txt` that release publishes (addresses outside the official release path are refused);
 2. starts it on a spare loopback port with your accounts and sends one short request per signed-in service (an out-of-quota answer does not count against it);
 3. only if that passes, switches `~/.dshproxy/backend.lock.json` to it, keeps the version it replaces, and restarts the gateway (a few seconds offline). The restart waits for a moment with no request in flight; if none comes within 15 minutes it restarts anyway and the log says how many requests were cut.
 
-If the new version will not start, DSHProxy goes back to the previous one by itself. **Roll back...** in the app, or `dshproxy backend rollback` with the gateway stopped, returns to the previous version. The version shipped in the repo's `backend.lock.json` is the floor: an older update is ignored.
+If the new version will not start, DSHProxy goes back to the previous one by itself. From the command line, `dshproxy backend update` does the same while the gateway runs. **Roll back...** in the app, or `dshproxy backend rollback` with the gateway stopped, returns to the previous version. The version shipped in the repo's `backend.lock.json` is the floor: an older update is ignored.
 
 ## Sign-in and limits
 
@@ -230,7 +273,7 @@ The Windows app reaches these through a control API on the gateway (`/dshproxy/c
 
 ## Updating the backend
 
-Edit `version`, the two `url` values and the two `sha256` values in [backend.lock.json](backend.lock.json). Take the checksums from `checksums.txt` on the CLIProxyAPI release page. The next `start` installs the new version.
+Edit `version`, the four `url` values and the four `sha256` values (Windows and macOS, two processors each) in [backend.lock.json](backend.lock.json). Take the checksums from `checksums.txt` on the CLIProxyAPI release page. The next `start` installs the new version.
 
 ## Tests
 
@@ -239,11 +282,13 @@ npm test
 npm run check
 ```
 
+On macOS the tests use throwaway keychain files and never your login Keychain. The tests that lock a keychain make macOS show a password dialog, so they run only on CI or with `DSHPROXY_TEST_LOCKED_KEYCHAIN=1`. `node scripts/start-stop-check.js` downloads the backend, starts and stops it in a throwaway folder.
+
 ## Video routing (CLI)
 
 From a source checkout, `node bin/dshproxy.js video help` works without starting the gateway. `video list` shows the supported model names. `video quote wan-3.0` prints a dated offline estimate for a five-second, native 720p, 16:9 text-only clip; H3 uses 768p. You can specify the route, for example `video quote minimax-h3 callirra`. Callirra's dollars are a **full-utilization subscription equivalent**, not a purchase or a cash rate. These API-route quotes never contact a provider.
 
-**Krea workspace route (Windows, mock-tested release candidate).** The separate helper owns the workspace session; the routing CLI does not receive OAuth tokens. Sign-in is an explicit account operation, never an effect of a quote. After separately authorizing it, run `node bin/dshproxy-krea.js login` from this checkout (a registered public client may require `--client-id ID`). Select the intended Krea workspace during consent. An expired session requires another explicit login.
+**Krea workspace route (Windows and macOS, mock-tested release candidate).** The separate helper owns the workspace session; the routing CLI does not receive OAuth tokens. Sign-in is an explicit account operation, never an effect of a quote. After separately authorizing it, run `node bin/dshproxy-krea.js login` from this checkout (a registered public client may require `--client-id ID`). Select the intended Krea workspace during consent. An expired session requires another explicit login.
 
 - `video quote MODEL krea --prompt "PROMPT"` contacts the signed-in workspace for a compute-unit preflight, not a USD estimate. Unknown tool shapes or unverified presets are refused. In particular, H3 needs an explicit 768p selector.
 - `video submit MODEL krea --max-units COUNT --confirm-charge "PROMPT"` requests a fresh preflight before one generation call. The cap limits the quoted amount, not the final debit. `video status MODEL krea JOB_ID` checks the original job. After an uncertain submission check the workspace; never retry blindly.

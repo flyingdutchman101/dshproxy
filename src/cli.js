@@ -53,6 +53,7 @@ Usage:
   dshproxy dsh bundle status [--json]  Show whether the video plugin is installed in DeepSeek Harness (reads only)
   dshproxy dsh bundle install [--json] Install the video plugin with DeepSeek Harness's own command (quit DeepSeek Harness first)
   dshproxy backend version             Show the CLIProxyAPI version in use
+  dshproxy backend update              Ask the running gateway to update CLIProxyAPI
   dshproxy backend rollback            Go back to the previous CLIProxyAPI version
   dshproxy preset list                 Show the routing presets and the active one
   dshproxy preset use <name>           Switch all lanes to a preset: performance, balanced, cheap
@@ -220,6 +221,52 @@ function askToStop(origin, token, waitSeconds) {
   });
 }
 
+// One call to the running gateway's control interface. Resolves the JSON it
+// answers; rejects with one sentence for anything else. The token goes into
+// the request header and nowhere else.
+function askGateway(origin, token, name, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const request = http.request(`${origin}${CONTROL_PREFIX}${name}`, { method: "POST", agent: false, headers: { "x-dshproxy-token": token, "content-type": "application/json", "content-length": 2 } }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        let value = null;
+        try {
+          value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        } catch {
+          // reported below
+        }
+        if (response.statusCode === 401) reject(new Error("The running gateway did not accept the control token; it may use another data folder. Nothing was changed."));
+        else if (response.statusCode === 404) reject(new Error("The running gateway is an older DSHProxy that cannot do this. Nothing was changed."));
+        else if (response.statusCode !== 200 || value === null || typeof value !== "object") reject(new Error(`The running gateway refused: ${value?.error || `HTTP ${response.statusCode}`}`));
+        else resolve(value);
+      });
+      response.on("error", () => reject(new Error("The connection to the gateway was lost before it answered.")));
+    });
+    request.on("error", (error) => reject(new Error(`The gateway could not be reached (${error.code || error.message}).`)));
+    request.setTimeout(timeoutMs, () => request.destroy(new Error("no answer in time")));
+    request.end("{}");
+  });
+}
+
+// `dshproxy backend update`: the running gateway looks for a newer
+// CLIProxyAPI and applies it, as the Windows app's Update... button does.
+async function updateBackend(out) {
+  const origin = settingsFile.origin(settingsFile.load());
+  if (await lookAt(origin, STOP_STATUS_MS) === "closed") throw new Error(`The gateway is not running on ${origin}. Nothing was changed.`);
+  const tokenFile = settingsFile.paths().controlToken;
+  const token = controlToken(tokenFile);
+  if (!token) throw new Error(`${tokenFile} cannot be read, so the running gateway cannot be asked. Nothing was changed.`);
+  const checked = await askGateway(origin, token, "update/check", 60 * 1000);
+  if (checked.error) throw new Error(`DSHProxy could not check for a newer CLIProxyAPI: ${checked.error} Nothing was changed.`);
+  if (!checked.available) return out(`CLIProxyAPI ${checked.current} is up to date.`);
+  out(`CLIProxyAPI ${checked.latest} is available (running ${checked.current}). Downloading it, checking it and trying it on a spare port...`);
+  const applied = await askGateway(origin, token, "update/apply", 30 * 60 * 1000);
+  if (!applied.ok) throw new Error(applied.message || "The update was not applied.");
+  out(`${applied.message} The gateway restarts on it now.`);
+  return undefined;
+}
+
 function printAccounts(state, out) {
   if (!state.accounts.length) {
     out("Accounts: none. Sign in with `dshproxy login <provider>`.");
@@ -331,6 +378,15 @@ function rollbackLock(out) {
 async function main(argv, out = console.log) {
   // Offline media quotes must not migrate, read, or modify the user's chat settings.
   // `video key set` reads its key from standard input, like `key set` below.
+  // On macOS the data folder is private to this account (spec 0014, design 3),
+  // for every command that may use it, video commands included.
+  if (process.platform === "darwin") {
+    try {
+      fs.chmodSync(settingsFile.homeDir(), 0o700);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
   if (argv[0] === "video") return require("./video/command").run(argv.slice(1), out, { readSecret });
   // Only the default data folder is migrated; a DSHPROXY_HOME the user set is
   // used as given.
@@ -583,12 +639,13 @@ async function main(argv, out = console.log) {
         else out("Start DSHProxy again to use it.");
         return undefined;
       }
+      if (args[0] === "update") return updateBackend(out);
       if (args[0] === "version") {
         const lock = app.currentLock();
         out(`CLIProxyAPI ${lock.version}${lock.previous ? ` (previous ${lock.previous.version} kept)` : ""}`);
         return undefined;
       }
-      throw new Error("Usage: dshproxy backend version|rollback");
+      throw new Error("Usage: dshproxy backend version|update|rollback");
     }
     case "preset": {
       const [action, name] = args;

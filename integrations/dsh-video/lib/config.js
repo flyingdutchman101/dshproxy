@@ -8,6 +8,13 @@ const KEYS = ['root', 'node', 'home', 'timeoutMs']
 // The same names DSHProxy hands to its own Krea helper. Provider keys, tokens
 // and every other variable of the host stay behind.
 const ENVIRONMENT = ['SystemRoot', 'LOCALAPPDATA', 'TEMP', 'TMP', 'USERPROFILE']
+// The same on macOS (docs/work/0014-macos-port, stage C): the home folder, the
+// temporary folder, and the keychain that wraps DSHProxy's key when it is not
+// the login Keychain.
+const MAC_ENVIRONMENT = ['HOME', 'TMPDIR', 'DSHPROXY_KEYCHAIN']
+// Where Homebrew puts node: an application started from the Dock gets a PATH
+// without these.
+const MAC_NODE_FOLDERS = ['/opt/homebrew/bin', '/usr/local/bin']
 const DEFAULT_TIMEOUT_MS = 100_000
 
 function absolute(value, label) {
@@ -19,10 +26,11 @@ function absolute(value, label) {
 
 // The Harness desktop runtime is not Node: started with a script it opens the
 // application. Look for node the way the DSHProxy app does, PATH first.
-function findNode(env, platform) {
+function findNode(env, platform, macFolders = MAC_NODE_FOLDERS) {
   const name = platform === 'win32' ? 'node.exe' : 'node'
   const folders = String(env.PATH ?? env.Path ?? '').split(path.delimiter).map((part) => part.trim()).filter(Boolean)
   if (platform === 'win32' && env.ProgramFiles) folders.push(path.join(env.ProgramFiles, 'nodejs'))
+  if (platform === 'darwin') folders.push(...macFolders)
   for (const folder of folders) {
     const candidate = path.join(folder, name)
     try {
@@ -46,13 +54,13 @@ export function resolveSettings(config, host) {
   }
 
   const env = {}
-  for (const name of ENVIRONMENT) if (typeof host.env[name] === 'string' && host.env[name]) env[name] = host.env[name]
+  for (const name of host.platform === 'darwin' ? MAC_ENVIRONMENT : ENVIRONMENT) if (typeof host.env[name] === 'string' && host.env[name]) env[name] = host.env[name]
   const home = given.home !== undefined ? absolute(given.home, 'home') : host.env.DSHPROXY_HOME
   if (typeof home === 'string' && home) env.DSHPROXY_HOME = home
 
   let node
   if (given.node !== undefined) node = absolute(given.node, 'node')
-  else node = host.versions.electron ? findNode(host.env, host.platform) : host.execPath
+  else node = host.versions.electron ? findNode(host.env, host.platform, host.nodeFolders) : host.execPath
 
   return {
     // This bundle lives in DSHProxy at integrations/dsh-video.

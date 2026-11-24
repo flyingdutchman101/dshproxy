@@ -40,9 +40,18 @@ function result(req,data) {
   }
   return job;
 }
+// The helper's environment: these names and no others, each copied when set.
+// Windows: where PowerShell and the sign-in store are. macOS (0014, stage B):
+// the home folder (the sign-in store), the temporary folder, and the keychain
+// that wraps the store's key when it is not the login Keychain.
+function helperEnvironment(source,platform=process.platform) {
+  const names=platform==='darwin'?['HOME','TMPDIR','DSHPROXY_KEYCHAIN']:['SystemRoot','LOCALAPPDATA','TEMP','TMP','USERPROFILE'];
+  const env={}; for(const name of names) if(source[name]) env[name]=source[name];
+  return env;
+}
 function invoke(req) {
   return new Promise((resolve,reject)=>{
-    const env={}; for(const name of ['SystemRoot','LOCALAPPDATA','TEMP','TMP','USERPROFILE']) if(process.env[name]) env[name]=process.env[name];
+    const env=helperEnvironment(process.env);
     const child=spawn(process.execPath,[path.join(__dirname,'../../bin/dshproxy-krea.js')],{env,stdio:['pipe','pipe','pipe'],windowsHide:true,shell:false});
     const unknown='Krea helper did not return a verified result. For a submission the outcome may be unknown; check your workspace before trying again.';
     let bytes=0, stdout='',stderr='',done=false;
@@ -55,4 +64,4 @@ function invoke(req) {
     child.stdin.end(JSON.stringify(req)+'\n');
   });
 }
-module.exports={request,result,invoke};
+module.exports={request,result,invoke,helperEnvironment};

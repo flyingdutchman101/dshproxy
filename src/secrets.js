@@ -85,7 +85,8 @@ async function unlockMasterKey(file) {
 // key, but only one file is put in place, whole and in one step, and it is
 // never written again: the others drop their key and use the one in the file.
 // Otherwise each would encrypt with a key that the next one overwrites.
-async function loadMasterKey(file, { create = false } = {}) {
+async function loadMasterKey(file, { create = false, keywrap = null } = {}) {
+  if (keywrap || process.platform === "darwin") return loadWrappedMasterKey(file, { create, keywrap: keywrap || require("./keywrap-darwin").defaultKeywrap() });
   if (fs.existsSync(file)) return unlockMasterKey(file);
   if (!create) return null;
   const key = crypto.randomBytes(KEY_BYTES);
@@ -94,6 +95,26 @@ async function loadMasterKey(file, { create = false } = {}) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   if (createIfAbsent(file, `${blob}\n`)) return key;
   return unlockMasterKey(file);
+}
+
+// The same, on macOS: the key file holds the master key wrapped by
+// `keywrap` (src/keywrap-darwin.js, the Keychain) where Windows has a DPAPI
+// blob. The same rules: a file that cannot be unwrapped is an error and is
+// never replaced, and of several first uses one file is put in place.
+async function unlockWrapped(file, keywrap) {
+  const key = await keywrap.unwrap(fs.readFileSync(file, "utf8"));
+  if (!key || key.length !== KEY_BYTES) throw new Error(`macOS could not unlock ${file}. Saved API keys cannot be read from this account.`);
+  return key;
+}
+
+async function loadWrappedMasterKey(file, { create, keywrap }) {
+  if (fs.existsSync(file)) return unlockWrapped(file, keywrap);
+  if (!create) return null;
+  const key = crypto.randomBytes(KEY_BYTES);
+  const wrapped = await keywrap.wrap(key);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (createIfAbsent(file, `${wrapped}\n`)) return key;
+  return unlockWrapped(file, keywrap);
 }
 
 module.exports = { encryptWithKey, decryptWithKey, loadMasterKey };
