@@ -556,6 +556,380 @@ await check("IdleStop: cancel() -> .cancelled and the command (and its child) is
     try expect(await waitUntil(1) { !alive(pids.parent) && !alive(pids.child) }, "still running: command \(alive(pids.parent)), child \(alive(pids.child))")
 }
 
+// MARK: - 7. Mapping (JSON -> values the app shows)
+//
+// Sample JSON shaped exactly as the CLI and the gateway print it (src/cli.js statusJson, src/daemon.js,
+// src/limits.js, src/login.js, src/video/command.js, src/video/keys.js, src/dsh/bundle.js,
+// bin/dshproxy-krea.js). Times are read in Europe/Paris (UTC+1 in November); "now" is fixed.
+
+let paris = TimeZone(identifier: "Europe/Paris")!
+let mappingNow = ISO8601DateFormatter().date(from: "2026-11-24T09:00:00Z")!   // 10:00 local, a Tuesday
+
+func jsonObject(_ text: String) throws -> [String: Any] {
+    guard let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else { throw CheckFailure(description: "sample is not a JSON object") }
+    return object
+}
+
+let sampleStatus = """
+{"running":true,"origin":"http://127.0.0.1:8417","startedAt":"2026-11-24T08:00:00.000Z","inFlight":2,
+ "backend":{"name":"CLIProxyAPI","version":"6.9.2","port":8418,"running":true,"pid":4242},
+ "backendLock":{"version":"6.9.2","publishedAt":"2026-11-01T10:00:00Z","previous":"6.8.0"},
+ "update":{"available":true,"current":"6.9.2","latest":"6.10.0","publishedAt":"2026-11-21T13:05:00Z","lock":{"name":"CLIProxyAPI","version":"6.10.0"},"checkedAt":"2026-11-24T06:00:00.000Z","error":null},
+ "discovery":{"fetchedAt":"2026-11-24T08:18:00.000Z","catalogError":null,"hasCatalog":true},
+ "modelList":[
+  {"id":"gpt-6-luna","name":"GPT-6 Luna","account":"codex","api":"openai-responses","contextWindow":272000,"maxTokens":64000,"efforts":["minimal","low"],"isNew":true,"offered":false,"reason":"switched off","created":null},
+  {"id":"claude-haiku-5-5","name":"Claude Haiku 5.5","account":"claude","api":"anthropic-messages","contextWindow":200000,"maxTokens":64000,"efforts":[],"isNew":false,"offered":true,"reason":"known","created":null},
+  {"id":"gemini-3-flash","name":"gemini-3-flash","account":"antigravity","api":"openai-completions","contextWindow":1000000,"maxTokens":65000,"efforts":[],"isNew":true,"offered":false,"reason":"older generation","created":1700000000},
+  {"id":"claude-opus-5-6","name":"Claude Opus 5.6","account":"claude","api":"anthropic-messages","contextWindow":1500000,"maxTokens":128000,"efforts":["low","high"],"isNew":true,"offered":true,"reason":"new","created":1763000000}],
+ "suggestions":[{"from":"claude-opus-5-5","to":"claude-opus-5-6","lanes":["main","architect"]}],
+ "home":"/Users/someone/.dshproxy",
+ "accounts":[{"provider":"claude","label":"Claude","account":"a@example.com","disabled":false,"expired":false},{"provider":"codex","label":"ChatGPT","account":"c@example.com","disabled":false,"expired":false}],
+ "loginProviders":[{"key":"codex","label":"ChatGPT (Codex)"},{"key":"claude","label":"Claude"}],
+ "providers":[{"key":"deepseek","label":"DeepSeek","regions":[{"key":"international","label":"Default"}]},
+              {"key":"zai","label":"GLM (Z.ai)","regions":[{"key":"international","label":"International"},{"key":"china","label":"China"}]},
+              {"key":"mistral","label":"Mistral (EU)","regions":[{"key":"eu","label":"EU"},{"key":"global","label":"Global"}]}],
+ "apiKeys":{"readable":[{"provider":"zai","region":"china"}],"unreadable":["deepseek"]},
+ "lanes":[{"name":"main","ladder":[{"model":"gpt-6-astra","available":true,"coolingUntil":null},{"model":"gpt-6.1-terra","available":true,"coolingUntil":"2026-11-24T09:23:00.000Z"},{"model":"deepseek/deepseek-v4-pro","available":false,"coolingUntil":null}]}],
+ "routing":{"active":{"name":"balanced","label":"Balanced"},"presets":[{"name":"performance","label":"Max performance","summary":"The strongest model each lane can reach, whatever it costs. Slowest and most quota-hungry."},{"name":"balanced","label":"Balanced","summary":"Strong models first with cheaper ones as failover. The working default."}]},
+ "models":["lane-main","gpt-6-astra","claude-opus-5-6"],
+ "deepseekHarness":{"home":"/Users/someone/.dsh","profiles":[
+  {"profile":"desktop","routes":[{"key":"dshproxy","baseURL":"http://127.0.0.1:8417/v1","models":12},{"key":"dshproxy-anthropic","baseURL":"http://127.0.0.1:8417","models":7}],"current":true,"error":null},
+  {"profile":"work","routes":[],"current":false,"error":null},
+  {"profile":"old","routes":[{"key":"dshproxy","baseURL":"http://127.0.0.1:9999/v1","models":3}],"current":false,"error":null},
+  {"profile":"broken","routes":[],"current":false,"error":"profile.yaml could not be read"}],"applied":false}}
+"""
+
+await check("Mapping: status --json -> header detail line, update bar, footer data, login providers") {
+    guard let status = FullStatus.parse(sampleStatus) else { throw CheckFailure(description: "parse gave nil") }
+    try expectEqual(status.running, true, "running")
+    try expectEqual(status.origin, "http://127.0.0.1:8417", "origin")
+    try expectEqual(status.home, "/Users/someone/.dshproxy", "home")
+    try expectEqual(status.inFlight, 2, "inFlight")
+    try expectEqual(status.detailLine, "http://127.0.0.1:8417  \u{B7}  CLIProxyAPI 6.9.2  \u{B7}  2 accounts  \u{B7}  3 models offered", "detail line")
+    try expectEqual(status.updateText(timeZone: paris), "CLIProxyAPI 6.10.0 is available (you run 6.9.2), released 21 Nov 14:05. Updating tries it first and keeps 6.9.2 for rollback.", "update bar")
+    try expectEqual(status.previousVersion, "6.8.0", "previous version")
+    var noUpdate = status
+    noUpdate.update = nil
+    try expectEqual(noUpdate.updateText(timeZone: paris), "Running CLIProxyAPI 6.9.2. The previous version 6.8.0 is kept.", "bar with only a previous version")
+    noUpdate.previousVersion = nil
+    try expectEqual(noUpdate.updateText(timeZone: paris), nil, "no bar")
+    try expectEqual(status.loginProviders.map(\.key), ["codex", "claude"], "login providers")
+    try expectEqual(LoginProvider.defaults.map(\.label), ["Claude", "ChatGPT (Codex)", "Gemini (Antigravity)", "Kimi"], "default providers")
+    try expectEqual(LoginProvider(key: "claude", label: "Claude").details, "Claude Pro or Max. Opens claude.ai.", "tile text")
+    try expectEqual(FullStatus.parse("not json"), nil, "not JSON")
+    try expectEqual(FullStatus.parse("[1]"), nil, "array")
+}
+
+await check("Mapping: status --json -> API keys, lanes, routing, models, suggestions, profiles") {
+    guard let status = FullStatus.parse(sampleStatus) else { throw CheckFailure(description: "parse gave nil") }
+    try expectEqual(status.keyProviders.map(\.stateText), ["Saved, cannot be read: add it again", "Saved", "Not set"], "key states")
+    try expectEqual(status.keyProviders.map(\.stateTone), [.bad, .ok, .muted], "key tones")
+    try expectEqual(status.keyProviders.map(\.regionLabel), ["", "China", ""], "key regions")
+    try expectEqual(status.keyProviders[1].regions.map(\.key), ["international", "china"], "regions")
+
+    let lane = status.lanes[0]
+    try expectEqual(lane.title, "lane-main", "lane title")
+    try expectEqual(lane.rungs.map(\.state), [.ok, .cooling, .unavailable], "rung states")
+    try expectEqual(lane.rungs.map { $0.why(now: mappingNow) }, ["can serve", "sitting out after running out of quota, back in 23 min", "no account or key"], "rung why")
+
+    try expectEqual(status.routing.activeName, "balanced", "active preset")
+    try expectEqual(status.routing.note, "Active: Balanced. Strong models first with cheaper ones as failover. The working default.", "routing note")
+    var custom = status.routing
+    custom.activeName = "custom"; custom.activeLabel = "Custom"
+    try expectEqual(custom.note, "Custom ladders, edited in settings.json. Pick a preset to replace them.", "custom note")
+
+    try expectEqual(ChatModel.visible(status.models, showHidden: false).map(\.id), ["claude-opus-5-6", "claude-haiku-5-5", "gpt-6-luna"], "visible models")
+    try expectEqual(ChatModel.visible(status.models, showHidden: true).map(\.id), ["claude-opus-5-6", "gemini-3-flash", "claude-haiku-5-5", "gpt-6-luna"], "with hidden models")
+    let byID = Dictionary(uniqueKeysWithValues: status.models.map { ($0.id, $0) })
+    try expectEqual(["claude-opus-5-6", "claude-haiku-5-5", "gpt-6-luna", "gemini-3-flash"].map { byID[$0]!.statusText },
+                    ["NEW \u{B7} found automatically", "Offered", "Off (you switched it off)", "Hidden: older generation"], "status texts")
+    var odd = byID["gemini-3-flash"]!
+    odd.reason = "not in the catalog"
+    try expectEqual(odd.statusText, "Hidden: no details known", "not in the catalog")
+    odd.reason = "switched on"
+    try expectEqual(odd.statusText, "Offered (you switched it on)", "switched on")
+    try expectEqual(byID["claude-opus-5-6"]!.highlighted, true, "new and offered is highlighted")
+    try expectEqual(byID["gpt-6-luna"]!.tone, .muted, "not offered is muted")
+    try expectEqual(byID["claude-opus-5-6"]!.contextText, "1.5M", "context")
+    try expectEqual(byID["claude-opus-5-6"]!.outputText, "128K", "output")
+    try expectEqual(byID["claude-opus-5-6"]!.reasoningText, "low, high", "reasoning")
+    try expectEqual(byID["claude-haiku-5-5"]!.reasoningText, "none", "no reasoning")
+    try expectEqual(["claude", "codex", "antigravity", "kimi"].map { a -> String in var m = odd; m.account = a; return m.serviceLabel }, ["Claude", "ChatGPT", "Gemini (Google)", "Kimi"], "service labels")
+    try expectEqual(byID["claude-opus-5-6"]!.tooltip, "Claude Opus 5.6  \u{B7}  Service: Claude", "tooltip")
+    try expectEqual([1_000_000, 1_234_567, 200_000, 999, 0].map(Format.tokens), ["1M", "1.23M", "200K", "999", "0"], "tokens")
+    try expectEqual(status.catalogNote(now: mappingNow, timeZone: paris), "Last checked 42 min ago.", "catalog note")
+    var unreachable = status
+    unreachable.catalogError = "HTTP 503"
+    try expectEqual(unreachable.catalogNote(now: mappingNow, timeZone: paris), "Model catalog not reachable: HTTP 503", "catalog error")
+    unreachable.catalogError = nil; unreachable.catalogCheckedAt = nil
+    try expectEqual(unreachable.catalogNote(now: mappingNow, timeZone: paris), "Not checked yet.", "not checked")
+
+    try expectEqual(status.suggestions.map(\.text), ["Newer model: claude-opus-5-6 could replace claude-opus-5-5 on lane main, architect."], "suggestion")
+    try expectEqual(status.profiles.map(\.pointing), ["Yes", "Not applied", "No: apply again", "profile.yaml could not be read"], "pointing")
+    try expectEqual(status.profiles.map(\.routeCount), [2, 0, 1, 0], "route counts")
+    try expectEqual(status.profiles.map(\.modelCount), [19, 0, 3, 0], "model counts")
+    try expectEqual(status.profiles.map(\.good), [true, false, false, false], "good")
+}
+
+await check("Mapping: fast check -> in-flight count and the print without it; Stop/Quit/restart questions") {
+    let a = FastStatus.read(try jsonObject(#"{"version":"1.2.0","origin":"http://127.0.0.1:8417","inFlight":3,"lanes":[]}"#))
+    let b = FastStatus.read(try jsonObject(#"{"lanes":[],"inFlight":0,"origin":"http://127.0.0.1:8417","version":"1.2.0"}"#))
+    try expectEqual(a.inFlight, 3, "count")
+    try expectEqual(a.print, b.print, "print ignores inFlight and key order")
+    try expect(!a.print.contains("inFlight"), "print still has inFlight")
+    let counts = try [#"{"inFlight":null}"#, #"{"inFlight":2.7}"#, #"{"inFlight":-1}"#, #"{"inFlight":true}"#, #"{"inFlight":"3"}"#, #"{"inFlight":5000000}"#, "{}"].map { InFlight.count(try jsonObject($0)) }
+    try expectEqual(counts, [0, 2, 0, 0, 0, 1_000_000, 0], "counts")
+
+    try expectEqual(InFlight.cutQuestion(count: 1, unanswered: false, quitting: false),
+                    "1 model request was in flight when the gateway was last checked, a few seconds ago at most. Stopping the gateway now cuts it.\n\nStop anyway?", "stop, 1")
+    try expectEqual(InFlight.cutQuestion(count: 3, unanswered: false, quitting: true),
+                    "3 model requests were in flight when the gateway was last checked, a few seconds ago at most. Quitting stops the gateway now and cuts them.\n\nQuit anyway?", "quit, 3")
+    try expectEqual(InFlight.cutQuestion(count: 2, unanswered: true, quitting: false),
+                    "The gateway did not answer when it was last checked, so requests may be in flight. 2 model requests were in flight when it last answered. Stopping the gateway now cuts any that are.\n\nStop anyway?", "stop, unanswered")
+    try expectEqual(InFlight.cutQuestion(count: 0, unanswered: true, quitting: true),
+                    "The gateway did not answer when it was last checked, so requests may be in flight. Quitting stops the gateway now and cuts any that are.\n\nQuit anyway?", "quit, unanswered, none")
+    try expectEqual(InFlight.restartQuestion(count: 3, unanswered: false),
+                    "3 model requests were in flight when the gateway was last checked, a few seconds ago at most. Restarting the gateway now cuts them.\n\nRestart anyway?", "restart question")
+    let saved = "Saved the zai key (region china). Restart the gateway, then run `dshproxy dsh apply`."
+    try expectEqual(InFlight.restartOffer(output: saved, inFlight: 2),
+                    saved + "\n\nRestart the gateway now so it uses the change?\n\n2 requests are in flight: the restart waits for a moment with none, at most 5 minutes, and cuts nothing.", "restart offer, busy")
+    try expectEqual(InFlight.restartOffer(output: saved, inFlight: 0), saved + "\n\nRestart the gateway now so it uses the change?", "restart offer, idle")
+    try expectEqual(InFlight.stillBusy(1),
+                    "1 request is still running after 5 minutes of waiting.\n\nNothing was restarted: the gateway keeps running as it was. The key change is used after the next restart of the gateway.", "still busy")
+}
+
+let sampleLimits = """
+{"fetchedAt":"2026-11-24T08:59:30.000Z","accounts":[
+ {"file":"claude-a@example.com.json","provider":"claude","label":"Claude","account":"a@example.com","plan":"max_20x","disabled":false,"state":"active","stateMessage":null,
+  "windows":[{"title":"5-hour","kind":"short","usedPercent":36.4,"leftPercent":63.6,"resetsAt":"2026-11-24T11:12:00.000Z","reported":true},
+             {"title":"Weekly","kind":"weekly","usedPercent":92.5,"leftPercent":7.5,"resetsAt":"2026-11-27T14:05:00.000Z","reported":true}],
+  "resets":null,"supported":true,"error":null,"primary":true,"siblings":2},
+ {"file":"claude-b@example.com.json","provider":"claude","label":"Claude","account":"b@example.com","plan":"pro","disabled":true,"state":"disabled","stateMessage":null,"windows":[],"resets":null,"supported":true,"error":null,"primary":false,"siblings":2},
+ {"file":"codex-c@example.com.json","provider":"codex","label":"ChatGPT","account":"c@example.com","plan":"self_serve_business_prolite","disabled":false,"state":"active","stateMessage":null,
+  "windows":[{"title":"5-hour","kind":"short","usedPercent":null,"leftPercent":null,"resetsAt":null,"reported":false},
+             {"title":"Weekly","kind":"weekly","usedPercent":27.5,"leftPercent":72.5,"resetsAt":"2026-11-24T23:30:00.000Z","reported":true}],
+  "resets":{"available":2,"applicable":2},"supported":true,"error":null,"primary":false,"siblings":1},
+ {"file":"kimi-d.json","provider":"kimi","label":"Kimi","account":"d@example.com","plan":null,"disabled":false,"state":"active","stateMessage":null,"windows":[],"resets":null,"supported":false,"error":null,"primary":false,"siblings":1},
+ {"file":"antigravity-e.json","provider":"antigravity","label":"Gemini","account":"e@example.com","plan":"google_ai_pro","disabled":false,"state":"active","stateMessage":null,"windows":[],"resets":null,"supported":true,"error":"No limits were reported.","primary":false,"siblings":1}]}
+"""
+
+await check("Mapping: GET limits -> cards (plan, chips, buttons, notes, resets), limit lines and the lowest limit") {
+    let report = LimitsReport.parse(try jsonObject(sampleLimits))
+    try expectEqual(report.accounts.map(\.file), ["claude-a@example.com.json", "claude-b@example.com.json", "codex-c@example.com.json", "kimi-d.json", "antigravity-e.json"], "files")
+    let a = report.accounts[0], b = report.accounts[1], c = report.accounts[2]
+    try expectEqual(a.who, "Claude (a@example.com)", "who")
+    try expectEqual([a.planText, c.planText, report.accounts[3].planText], ["max 20x", "self serve busi\u{2026}", ""], "plan chips")
+    try expectEqual(report.accounts.map(\.showsPrimaryChip), [true, false, false, false, false], "primary chips")
+    try expectEqual(report.accounts.map(\.primaryAction), [.clear, .none, .none, .none, .none], "primary buttons")
+    var resumed = b
+    resumed.disabled = false
+    try expectEqual(resumed.primaryAction, .make, "make primary")
+    try expectEqual(report.accounts.map(\.note), [nil, AccountNote(text: "Paused: DSHProxy does not use this account until you resume it.", isError: false), nil,
+                                                  AccountNote(text: "Kimi does not report its limits.", isError: false), AccountNote(text: "No limits were reported.", isError: true)], "notes")
+    try expectEqual(c.resetsAvailable, 2, "resets")
+    try expectEqual(c.windows.map(\.reported), [false, true], "reported")
+    try expectEqual(a.windows.map { $0.line(now: mappingNow, timeZone: paris) },
+                    ["64% left \u{B7} resets in 2 h 12 min (today 12:12)", "8% left \u{B7} resets in 3 d 5 h (Fri 27 Nov 15:05)"], "lines")
+    try expectEqual(c.windows[1].line(now: mappingNow, timeZone: paris), "73% left \u{B7} resets in 14 h 30 min (tomorrow 00:30)", "tomorrow")
+    try expectEqual(Format.reset(nil, now: mappingNow, timeZone: paris), "reset time not reported", "no reset time")
+    try expectEqual(Format.reset(mappingNow.addingTimeInterval(40.2 * 60), now: mappingNow, timeZone: paris), "resets in 41 min (today 10:40)", "minutes round up")
+    try expectEqual(Format.reset(mappingNow.addingTimeInterval(-5), now: mappingNow, timeZone: paris), "resets in now (today 09:59)", "past")
+    try expectEqual([63.6, 30, 29.9, 10, 9.99].map(LimitLevel.init(left:)), [.ok, .ok, .low, .low, .critical], "levels")
+    try expectEqual(report.lowest, LowestLimit(text: "Lowest limit: Claude Weekly, 8% left", left: 7.5), "lowest")
+    try expectEqual(LimitsReport.parse(try jsonObject(#"{"fetchedAt":null,"accounts":[]}"#)).lowest, nil, "no accounts, no lowest")
+    try expectEqual(Format.ago(mappingNow.addingTimeInterval(-30), now: mappingNow, timeZone: paris), "just now", "ago, seconds")
+    try expectEqual(Format.ago(mappingNow.addingTimeInterval(-7 * 60), now: mappingNow, timeZone: paris), "7 min ago", "ago, minutes")
+    try expectEqual(Format.ago(mappingNow.addingTimeInterval(-3 * 3600), now: mappingNow, timeZone: paris), "07:00", "ago, hours")
+    try expectEqual(Format.clock(mappingNow, timeZone: paris), "10:00:00", "clock")
+}
+
+await check("Mapping: GET resets, login/start, login/status; only https sign-in links") {
+    let credits = ResetCredits.parse(try jsonObject(#"{"available":2,"credits":[{"id":"cr1","title":"Weekly limit reset","description":"Included with ChatGPT Pro","expiresAt":"2026-12-31T12:00:00.000Z"},{"id":"cr2","title":"Limit reset","description":null,"expiresAt":null}]}"#))
+    try expectEqual(credits.count, 2, "count")
+    try expectEqual(credits.credits.map(\.id), ["cr1", "cr2"], "ids")
+    try expectEqual(credits.credits.map { $0.line(timeZone: paris) }, ["Included with ChatGPT Pro \u{B7} expires 31 Dec 2026", ""], "credit lines")
+    try expectEqual(ResetCredits.parse(try jsonObject(#"{"available":3,"credits":[]}"#)).count, 3, "unnamed resets")
+
+    let start = LoginStart.parse(try jsonObject(#"{"id":"st1","provider":"kimi","label":"Kimi","url":"https://www.kimi.com/code?x=1","flow":"device","userCode":"KQ7M-4XPD","expiresIn":300}"#))
+    try expectEqual(start, LoginStart(id: "st1", url: "https://www.kimi.com/code?x=1", device: true, userCode: "KQ7M-4XPD"), "device start")
+    let browser = LoginStart.parse(try jsonObject(#"{"id":"st2","provider":"claude","label":"Claude","url":"https://claude.ai/oauth?x","flow":"browser","userCode":null,"expiresIn":null}"#))
+    try expectEqual(browser?.device, false, "browser flow")
+    try expectEqual(LoginStart.parse(try jsonObject(#"{"url":"https://claude.ai"}"#)), nil, "no id")
+    try expectEqual(LoginProgress.parse(try jsonObject(#"{"status":"ok","error":null,"account":"a@example.com"}"#)), .ok(account: "a@example.com"), "ok")
+    try expectEqual(LoginProgress.parse(try jsonObject(#"{"status":"error","error":"Cancelled.","account":null}"#)), .error("Cancelled."), "error")
+    try expectEqual(LoginProgress.parse(try jsonObject(#"{"status":"wait","error":null,"account":null,"note":"busy"}"#)), .wait, "wait")
+    try expectEqual(Links.signInURL("https://claude.ai/oauth/authorize?x=1")?.absoluteString, "https://claude.ai/oauth/authorize?x=1", "https")
+    try expectEqual(["http://claude.ai/", "javascript:alert(1)", "file:///etc/passwd", "", "https://"].map { Links.signInURL($0) == nil }, [true, true, true, true, true], "refused")
+}
+
+let sampleVideoSettings = """
+{
+  "models": [
+    { "model": "wan-3.0", "enabled": true, "route": "krea", "routes": ["videorouter", "videorouter-replicate", "kovapi", "krea"] },
+    { "model": "minimax-h3", "enabled": true, "route": null, "routes": ["kovapi", "callirra", "none", "krea"] },
+    { "model": "seedance-2.0", "enabled": false, "route": "gone", "routes": ["videorouter"] }
+  ]
+}
+"""
+
+await check("Mapping: video settings -> rows, routes, billed in; set arguments; refusals") {
+    guard case .success(let models) = VideoSettings.parse(sampleVideoSettings) else { throw CheckFailure(description: "parse failed") }
+    try expectEqual(models.map(\.id), ["wan-3.0", "minimax-h3", "seedance-2.0"], "ids")
+    try expectEqual(models[1].routes, ["kovapi", "callirra", "krea"], "\"none\" is never a route")
+    try expectEqual(models.map(\.hasRoute), [true, false, false], "has route")
+    try expectEqual(models.map(\.routeCell), ["Krea workspace \u{B7} krea", "Not configured", "Not allowed: gone"], "route cells")
+    try expectEqual(models.map(\.billedIn), ["workspace compute units", nil, nil], "billed in")
+    try expectEqual(["callirra", "kovapi", "videorouter-replicate", "odd"].map(VideoSettings.units), ["plan credits", "US dollars", "US dollars", "units not known to this app"], "units")
+    try expectEqual(VideoSettings.routeName("videorouter-replicate"), "VideoRouter (Replicate) \u{B7} videorouter-replicate", "route name")
+    try expectEqual(VideoSettings.routeName("odd"), "odd", "unknown route name")
+    try expectEqual(VideoSettings.company("seedance-2.0").logo, "bytedance", "company logo")
+    try expectEqual(VideoSettings.company("minimax-h3").label, "MiniMax", "company")
+    try expectEqual(VideoSettings.company("other").label, "", "unknown company")
+    try expectEqual(VideoSettings.setArguments(model: "wan-3.0", route: "krea", enabled: true), ["video", "settings", "set", "wan-3.0", "krea", "enabled"], "set")
+    try expectEqual(VideoSettings.setArguments(model: "wan-3.0", route: "none", enabled: false), ["video", "settings", "set", "wan-3.0", "none", "disabled"], "switch off")
+    try expectEqual(VideoSettings.setArguments(model: "wan-3.0", route: "none", enabled: true), nil, "enable without route")
+    try expectEqual(VideoSettings.setArguments(model: "--evil", route: "krea", enabled: true), nil, "option as model")
+    func failure(_ text: String) -> String? { if case .failure(let error) = VideoSettings.parse(text) { return error.description }; return nil }
+    try expectEqual(failure("nope"), "DSHProxy did not answer with JSON.", "not JSON")
+    try expectEqual(failure(#"{"models":{}}"#), "The answer has no list of video models.", "no list")
+    try expectEqual(failure(#"{"models":[{"model":"a"},{"model":"a"}]}"#), "The answer lists a video model without a usable, unique name.", "duplicate")
+    guard case .failure(let refused) = VideoSettings.read(code: 1, stdout: "", stderr: "DSHProxy: Unknown video model\nmore") else { throw CheckFailure(description: "read of a failure succeeded") }
+    try expectEqual(refused.description, "Unknown video model", "first stderr line")
+    try expectEqual(VideoSettings.failure(code: 1, stderr: ""), "The DSHProxy command ended with code 1.", "no stderr")
+}
+
+let sampleVideoKeys = """
+{
+  "providers": [
+    { "provider": "videorouter", "label": "VideoRouter", "variable": "VIDEOROUTER_API_KEY", "routes": ["videorouter", "videorouter-replicate"], "saved": true, "readable": true, "inEnvironment": false },
+    { "provider": "kovapi", "label": "KovAPI", "variable": "KOVAPI_API_KEY", "routes": ["kovapi"], "saved": true, "readable": false, "inEnvironment": true },
+    { "provider": "callirra", "label": "Callirra", "variable": "CALLIRRA_API_KEY", "routes": ["callirra"], "saved": false, "readable": false, "inEnvironment": false }
+  ]
+}
+"""
+
+await check("Mapping: video key list -> states (strict shape); set/remove answers; local key check; masking") {
+    guard case .success(let providers) = VideoKeys.parse(sampleVideoKeys) else { throw CheckFailure(description: "parse failed") }
+    try expectEqual(providers.map(\.stateText), ["Saved", "Saved, cannot be read: enter it again \u{B7} also set in the environment", "Not saved"], "states")
+    try expectEqual(providers.map(\.stateTone), [.normal, .warn, .muted], "tones")
+    try expectEqual(providers.map(\.units), ["US dollars", "US dollars", "plan credits"], "units")
+    func failure(_ text: String) -> String? { if case .failure(let error) = VideoKeys.parse(text) { return error.description }; return nil }
+    try expectEqual(failure(#"{"providers":[{"provider":"kovapi","label":"KovAPI","variable":"KOVAPI_API_KEY","routes":[],"saved":true,"readable":true}]}"#),
+                    "The answer does not say whether each video key is saved.", "missing field")
+    try expectEqual(failure(#"{"providers":[{"provider":"kovapi","label":" KovAPI","variable":"KOVAPI_API_KEY","routes":[],"saved":true,"readable":true,"inEnvironment":false}]}"#),
+                    "The answer names a video key provider or its variable in a form this app does not show.", "odd label")
+    try expectEqual(failure(#"{"providers":[]}"#), "The answer lists no video key provider.", "empty")
+    try expectEqual(VideoKeys.refusal(""), "No video API key was given. Nothing was saved.", "empty key")
+    try expectEqual(VideoKeys.refusal(String(repeating: "k", count: 513)), "A video API key can be at most 512 characters. Nothing was saved.", "long key")
+    try expectEqual(VideoKeys.refusal("ab c"), "A video API key cannot contain spaces, line breaks or anything else outside printable ASCII. Nothing was saved.", "space")
+    try expectEqual(VideoKeys.refusal("k\u{E9}y"), "A video API key cannot contain spaces, line breaks or anything else outside printable ASCII. Nothing was saved.", "non-ASCII")
+    try expectEqual(VideoKeys.refusal(String(repeating: "k", count: 512)), nil, "512 is fine")
+    try expectEqual(VideoKeys.saved(code: 0, stdout: "{\n  \"provider\": \"kovapi\",\n  \"saved\": true\n}", provider: "kovapi"), true, "saved")
+    try expectEqual(VideoKeys.saved(code: 0, stdout: #"{"provider":"callirra","saved":true}"#, provider: "kovapi"), false, "other provider")
+    try expectEqual(VideoKeys.saved(code: 1, stdout: #"{"provider":"kovapi","saved":true}"#, provider: "kovapi"), false, "exit 1")
+    try expectEqual(VideoKeys.removed(code: 0, stdout: #"{"provider":"kovapi","saved":false,"removed":true}"#, provider: "kovapi"), true, "removed")
+    try expectEqual(VideoKeys.removed(code: 0, stdout: #"{"provider":"kovapi","saved":false,"removed":false}"#, provider: "kovapi"), false, "none saved")
+    try expectEqual(VideoKeys.removed(code: 0, stdout: #"{"provider":"kovapi","saved":false}"#, provider: "kovapi"), nil, "not as agreed")
+    try expectEqual(VideoKeys.without("refused sk-123 here", key: "sk-123"), "DSHProxy refused, with a message that is not shown here because it repeats what was typed.", "masked")
+    try expectEqual(VideoKeys.without("refused", key: "sk-123"), "refused", "kept")
+    try expectEqual(VideoKeys.setArguments("kovapi"), ["video", "key", "set", "kovapi"], "set arguments")
+    try expectEqual(VideoKeys.removeArguments("--all"), nil, "option as provider")
+}
+
+/// One `dsh bundle status --json` line (src/dsh/bundle.js look()): the base fields with `fields` in place of theirs.
+func bundleLine(_ fields: String) -> String {
+    let base = #"{"harness":"found","harnessRunning":false,"profile":"desktop","profileExists":true,"bundle":"not-installed","folder":"/Users/someone/dshproxy/integrations/dsh-video","linkedTo":null,"version":null,"canInstall":true,"canInstallAfterQuit":false,"reason":""}"#
+    var merged = (try! JSONSerialization.jsonObject(with: Data(base.utf8))) as! [String: Any]
+    for (key, value) in (try! JSONSerialization.jsonObject(with: Data(("{" + fields + "}").utf8))) as! [String: Any] { merged[key] = value }
+    return String(decoding: try! JSONSerialization.data(withJSONObject: merged), as: UTF8.self)
+}
+
+await check("Mapping: dsh bundle status --json -> state, plan, page texts and the Apply checklist") {
+    let notInstalled = HarnessSetup.parse("Moved the data folder.\n" + bundleLine(#""bundle":"not-installed""#) + "\n")
+    try expectEqual(notInstalled.state, .notInstalled, "state")
+    try expectEqual(notInstalled.planned, .install, "plan")
+    try expectEqual(notInstalled.willInstall, true, "will install")
+    try expectEqual(notInstalled.rowText, "No \u{B7} Apply to DeepSeek Harness installs them", "row")
+    try expectEqual(notInstalled.pageLine, "The video tools are not installed in DeepSeek Harness. Apply to DeepSeek Harness, at the top of the window, installs them.", "page line")
+    try expectEqual(notInstalled.confirmLines, [
+        SetupLine(.done, "DeepSeek Harness is installed and has been opened once."),
+        SetupLine(.toDo, "The chat routes will be written into every DeepSeek Harness profile.", "Each profile is backed up first.\nNothing else in it is changed."),
+        SetupLine(.toDo, "The video tools will be installed in DeepSeek Harness."),
+        SetupLine(.toDo, "Restart DeepSeek Harness afterwards. DSHProxy does not do that for you."),
+    ], "checklist")
+
+    let installed = HarnessSetup.parse(bundleLine(#""bundle":"installed","version":"0.1.0""#))
+    try expectEqual(installed.rowText, "Yes \u{B7} switched on \u{B7} version 0.1.0", "installed row")
+    try expectEqual(installed.rowTone, .ok, "installed tone")
+    try expectEqual(installed.planned, .nothing, "nothing to do")
+
+    let notFound = HarnessSetup.parse(bundleLine(#""bundle":"not-installed","harness":"not-found","profileExists":false,"canInstall":false,"reason":"DeepSeek Harness was not found on this computer. Install it and open it once, then try again.""#))
+    try expectEqual(notFound.state, .notFound, "not found")
+    try expectEqual(notFound.rowText, "No \u{B7} DeepSeek Harness was not found", "not found row")
+
+    let open = HarnessSetup.parse(bundleLine(#""bundle":"other-folder","harnessRunning":true,"linkedTo":"/old/dsh-video","canInstall":false,"canInstallAfterQuit":true,"reason":"DeepSeek Harness is running. Quit it completely, then try again.""#))
+    try expectEqual(open.planned, .installAfterQuit, "after quit")
+    try expectEqual(open.confirmLines[2], SetupLine(.toDo, "The video tools will be pointed at this DSHProxy folder after you quit DeepSeek Harness.",
+                                                    "DeepSeek Harness has them from another folder:\n/old/dsh-video\nDeepSeek Harness is open now.\nYou will be asked to quit it, and you can skip that step."), "tools line")
+    try expectEqual(open.confirmLines[3].text, "Start DeepSeek Harness again afterwards. DSHProxy does not do that for you.", "last line")
+
+    try expectEqual(HarnessSetup.parse("garbage").reason, "DSHProxy did not answer as expected.", "garbage")
+    try expectEqual(HarnessSetup.parse("  \n").reason, "DSHProxy gave no answer.", "nothing")
+    let failed = HarnessSetup.read(code: 1, stdout: "", stderr: "DSHProxy: dsh bundle is not available on macOS yet.\n")
+    try expectEqual(failed.state, .unreadable, "failed command")
+    try expectEqual(failed.pageLine, "Could not read whether the video tools are installed in DeepSeek Harness: dsh bundle is not available on macOS yet.", "failed page line")
+    try expectEqual(failed.planned, .unknown, "unknown plan")
+}
+
+await check("Mapping: Apply result (summary, shortened output, copy path) and dsh bundle install --json") {
+    let setup = HarnessSetup.parse(bundleLine(#""bundle":"not-installed""#))
+    let applied = (1...12).map { "line \($0)" }.joined(separator: "\n")
+    let done = setup.summary(applied: applied, outcome: .installed, install: HarnessInstall(ok: true, message: "Installed.", log: ""), folder: "/f")
+    try expectEqual(done.heading, "DeepSeek Harness is set up", "heading")
+    try expectEqual(done.lines[0], SetupLine(.done, "The chat routes were applied. DSHProxy reported:", (1...9).map { "line \($0)" }.joined(separator: "\n") + "\nAnd 3 more lines, on the Log page."), "shortened output")
+    try expectEqual(done.lines.dropFirst().map(\.text), ["The video tools are installed in DeepSeek Harness.", "Start DeepSeek Harness again."], "installed lines")
+    try expectEqual(done.copyPath, nil, "no copy path")
+    let failed = setup.summary(applied: "", outcome: .failed, install: HarnessInstall(ok: false, message: "dsh plugin add failed.", log: "/tmp/install.log"), folder: "/f")
+    try expectEqual(failed.heading, "The video tools were not installed", "failed heading")
+    try expectEqual(failed.lines[0].text, "The chat routes were applied.", "no output")
+    try expectEqual(failed.lines[1], SetupLine(.cannot, "The video tools were not installed.", "dsh plugin add failed.\nMore is in this file:\n/tmp/install.log"), "failure detail")
+    try expectEqual(failed.lines.last, SetupLine(.toDo, "To install them by hand, start DeepSeek Harness, open Plugins > Add plugin and choose this folder:", "/f"), "by hand")
+    try expectEqual(failed.copyPath, "/f", "copy path")
+    let skipped = setup.summary(applied: "x", outcome: .skipped, install: nil, folder: "/f")
+    try expectEqual(skipped.lines.map(\.text), ["The chat routes were applied. DSHProxy reported:", "The video tools were not installed, because you skipped that step.",
+                                                 "To install them, quit DeepSeek Harness and press Apply to DeepSeek Harness again.", "If anything above was updated, restart DeepSeek Harness so it uses the change."], "skipped")
+
+    try expectEqual(HarnessInstall.read(code: 0, stdout: #"{"ok":true,"bundle":"installed","message":"Installed.","log":null}"#, stderr: ""), HarnessInstall(ok: true, message: "Installed.", log: ""), "installed")
+    try expectEqual(HarnessInstall.read(code: 1, stdout: #"{"ok":true,"bundle":"installed","message":"Installed.","log":null}"#, stderr: "").ok, false, "exit 1 is not installed")
+    try expectEqual(HarnessInstall.read(code: 1, stdout: "", stderr: "DSHProxy: no\n").message, "no", "failure sentence")
+}
+
+await check("Mapping: Krea helper status, consent address checks, how a sign-in ended") {
+    let until = mappingNow.addingTimeInterval(89 * 86400)
+    let ms = Int64(until.timeIntervalSince1970 * 1000)
+    let signedIn = Krea.parseStatus("{\"signedIn\":true,\"expiresAt\":\(ms)}\n", now: mappingNow)
+    try expectEqual(signedIn, KreaStatus(signedIn: true, until: until), "signed in")
+    try expectEqual(Krea.describe(signedIn!, timeZone: paris), "Signed in \u{B7} until Sun 21 Feb 2027, 10:00", "describe")
+    try expectEqual(Krea.parseStatus(#"{"signedIn":false}"#, now: mappingNow), KreaStatus(signedIn: false, until: nil), "not signed in")
+    try expectEqual(Krea.describe(KreaStatus(signedIn: false, until: nil)), "Not signed in", "describe not signed in")
+    try expectEqual(Krea.parseStatus("{\"signedIn\":true,\"expiresAt\":\(ms - 90 * 86_400_000)}", now: mappingNow), nil, "expired")
+    try expectEqual(Krea.parseStatus("garbage", now: mappingNow), nil, "garbage")
+    try expectEqual(Krea.parseStatus("{\"signedIn\":false}\n{\"signedIn\":false}", now: mappingNow), nil, "two lines")
+
+    try expectEqual(Krea.consentAddress("https://krea.ai/oauth/authorize?client_id=x&state=y\n"), "https://krea.ai/oauth/authorize?client_id=x&state=y", "krea.ai")
+    try expectEqual(Krea.consentAddress("https://www.krea.ai"), "https://www.krea.ai", "bare host")
+    let refused = ["https://evil.com/krea.ai", "https://krea.ai@evil.com/", "https://krea.ai:444/", "http://krea.ai/", "https://api.krea.ai/x y", "https://krea.ai.evil.com/", "https://KREA.ai/"]
+    try expectEqual(refused.map { Krea.consentAddress($0) }, refused.map { _ in nil }, "refused addresses")
+
+    try expectEqual(Krea.ended(exitCode: 0, errors: ""), .signedIn, "exit 0")
+    try expectEqual(Krea.ended(exitCode: 1, errors: "KREA_REFUSED\n"), .refused, "refused")
+    try expectEqual(Krea.ended(exitCode: 1, errors: "KREA_LOGIN_REQUIRED"), .loginRequired, "login required")
+    try expectEqual(Krea.ended(exitCode: 1, errors: "boom"), .failed, "unnamed")
+    try expectEqual(Krea.ended(exitCode: nil, errors: ""), .failed, "no exit code")
+    try expectEqual(Krea.message(.signedIn), "Signed in to Krea.", "message")
+    try expectEqual(Krea.message(.refused), "Krea sign-in did not complete (KREA_REFUSED): it was refused or closed in the browser, took longer than three minutes, or Krea could not be reached.", "refused message")
+}
+
 // MARK: - End
 
 for cleanup in cleanups.reversed() { cleanup() }
