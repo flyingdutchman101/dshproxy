@@ -16,6 +16,18 @@ It is a standalone project. It shares no code or git history with DroidProxy or 
 
 ## macOS
 
+**Quick start.** You need DeepSeek Harness, Node.js 22 or later (for example `brew install node`) and Apple's Command Line Tools (`xcode-select --install`; Xcode itself is not needed). Then, in Terminal:
+
+```sh
+git clone https://github.com/flyingdutchman101/dshproxy.git
+cd dshproxy
+npm ci --ignore-scripts
+app-macos/build.sh             # makes DSHProxy.app in this folder
+open DSHProxy.app
+```
+
+DSHProxy appears in the menu bar and starts its gateway. In its window: **+ Add account** (or **API keys**), then **Apply to DeepSeek Harness**, then restart DeepSeek Harness and pick a lane such as `lane-main`. Keep the `dshproxy` folder where it is: the app runs DSHProxy from it. The app is built on your own Mac and signed only for it, so macOS asks nothing; it is not notarised by Apple.
+
 The gateway and the command line work on macOS as on Windows: sign in to providers, save API keys, apply the routes to DeepSeek Harness, chat through a lane, stop, update the backend. Install and run them as in [Set up from the command line](#set-up-from-the-command-line), in Terminal:
 
 ```sh
