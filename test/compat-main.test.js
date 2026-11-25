@@ -73,5 +73,5 @@ test('a backend lock with the macOS archives, as an update made by this version 
   fs.writeFileSync(path.join(dir, 'backend.lock.json'), `${JSON.stringify({ ...shipped, version: '99.0.1', previous: shipped }, null, 2)}\n`);
   const version = run(OLD, dir, ['backend', 'version']);
   assert.equal(version.status, 0, version.stderr);
-  assert.match(version.stdout, /^CLIProxyAPI 99\.0\.1 \(previous 8\.0\.72 kept\)/);
+  assert.equal(version.stdout.trimEnd(), `CLIProxyAPI 99.0.1 (previous ${shipped.version} kept)`);
 });
