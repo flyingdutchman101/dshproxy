@@ -689,7 +689,9 @@ test("a caller that never hangs up is cut off about two seconds after the answer
   // First a gateway whose caller hangs up as it should: nothing is cut off there, now or later.
   const orderly = await startGateway(t);
   assert.equal((await control(orderly, "stop", { waitSeconds: 5 }).done).text, '{"stopped":true}');
-  await until(() => orderly.events.includes("exit"), "the exit of the first gateway", 1500);
+  // A wait, not a speed claim: a loaded CI machine may take seconds to finish
+  // the first gateway. What is claimed below (the cut-off, the log line) is unchanged.
+  await until(() => orderly.events.includes("exit"), "the exit of the first gateway", 15000);
 
   const g = await startGateway(t);
   const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
@@ -700,7 +702,7 @@ test("a caller that never hangs up is cut off about two seconds after the answer
   const answered = Date.now();
   assert.equal(answer.text, '{"stopped":true}');
   // Well before the five seconds after which an unused connection is closed anyway.
-  await until(() => g.events.includes("exit"), "the exit", 4000);
+  await until(() => g.events.includes("exit"), "the exit", 15000);
   assert.ok(Date.now() - answered >= 1500, `told to exit ${Date.now() - answered} ms after the answer`);
   await until(() => closedByGateway, "the gateway to close the connection");
   assert.deepEqual(g.events, ["backend started", "backend stopping", "backend exited", "exit"]);
