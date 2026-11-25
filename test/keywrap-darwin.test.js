@@ -180,7 +180,9 @@ test('with no security program, nothing is saved and the sentence says why', mac
 test('a Keychain that could not be read is not asked again for a minute, so a command waits once', macOnly, async (t) => {
   const fake = standIn(t, { mode: 'hang' });
   let clock = 1000;
-  const keywrap = keywrapFor({ security: fake.program, keychain: FAKE('e'), env, timeoutMs: 500, now: () => clock });
+  // The stand-in must have time to start on a loaded machine before its silence
+  // counts: what is checked is the cache below, not how fast a program starts.
+  const keywrap = keywrapFor({ security: fake.program, keychain: FAKE('e'), env, timeoutMs: 5000, now: () => clock });
   const file = path.join(tempDir(t), 'master.key');
   await assert.rejects(secrets.loadMasterKey(file, { create: true, keywrap }), /did not answer/);
   const started = Date.now();
