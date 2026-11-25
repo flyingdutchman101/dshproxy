@@ -63,7 +63,8 @@ function send(res, status, value) {
 // `routes` maps "METHOD name" to async (body, query, { req, res }) => result.
 // A route that needs to know when its caller goes away, or to close the
 // connection after its answer, uses the third argument.
-function createControl({ token, routes }) {
+function createControl({ token, routes, apiCatalog }) {
+  if (apiCatalog) routes = { ...routes, "GET models/api-catalog": () => apiCatalog(false), "POST models/api-catalog/refresh": () => apiCatalog(true) };
   return async function handle(req, res) {
     if (!req.url.startsWith(PREFIX)) return false;
     if (req.headers.origin) {

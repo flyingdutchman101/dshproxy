@@ -18,6 +18,7 @@ func expectEqual<T: Equatable>(_ actual: T, _ expected: T, _ what: String) throw
     if actual != expected { throw CheckFailure(description: "\(what): expected \(expected), got \(actual)") }
 }
 
+// API catalog fixtures contain no live provider data.
 var passed = 0
 var failed = 0
 var cleanups: [() -> Void] = []
@@ -65,6 +66,21 @@ let missingNode = "Node.js was not found. Install Node.js 22 or later."
 
 func findError(_ body: () throws -> Locations) -> String? {
     do { _ = try body(); return nil } catch { return "\(error)" }
+}
+
+await check("API catalog: readiness, custom providers, regions, warnings and search") {
+    let statuses = ["ready", "needsKey", "otherRegion", "catalogOnly"]
+    let catalog = try APICatalog.parse(["models": statuses.map {
+        ["id": "synthetic-\($0)", "provider": "custom-example", "status": $0, "regions": ["eu"]] as [String: Any]
+    }, "warnings": ["Synthetic refresh warning"]])
+    try expectEqual(catalog.models.map { $0.status.rawValue }, statuses, "exact readiness")
+    try expectEqual(catalog.warnings, ["Synthetic refresh warning"], "warnings")
+    try expect(catalog.models.allSatisfy { $0.matches("CUSTOM") && $0.matches("eu") && !$0.matches("absent") }, "search includes custom providers and regions")
+    try expectEqual(catalog.models.last?.status.guidance, "Catalog only — not currently available to route", "catalog-only guidance")
+    do {
+        _ = try APICatalog.parse(["models": [["id": "x", "provider": "x", "status": "unknown", "regions": []]], "warnings": []])
+        throw CheckFailure(description: "Unknown readiness accepted")
+    } catch is DecodingError { }
 }
 
 await check("Locations: checkout from DSHPROXY_CHECKOUT, then from the recorded path, missing -> the sentence") {

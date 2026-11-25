@@ -344,6 +344,7 @@ struct LadderChip: View {
 
 struct ModelsPage: View {
     @ObservedObject var store: AppStore
+    @State private var apiCatalog = false
 
     private var rows: [ChatModel] { ChatModel.visible(store.status?.models ?? [], showHidden: store.showHidden) }
 
@@ -351,12 +352,20 @@ struct ModelsPage: View {
         VStack(alignment: .leading, spacing: 12) {
             PageHeader(title: "Models",
                        note: "Ticked models are offered to DeepSeek Harness. New models are found automatically every 3 hours; when the list changes, the DSHProxy routes in DeepSeek Harness are updated (restart DeepSeek Harness to see them).") {
+                if !apiCatalog {
                 Toggle("Show hidden models", isOn: $store.showHidden).toggleStyle(.checkbox)
                 Button(store.checkingModels ? "Checking for new models..." : "Check for new models") { Task { await store.checkForModels() } }
                     .buttonStyle(.borderedProminent)
                     .disabled(!store.isRunning || store.checkingModels)
+                }
             }
-            if !store.isRunning || store.status == nil {
+            Picker("Model view", selection: $apiCatalog) {
+                Text("Offered models").tag(false)
+                Text("API catalog").tag(true)
+            }.pickerStyle(.segmented)
+            if apiCatalog {
+                APICatalogPage(store: store)
+            } else if !store.isRunning || store.status == nil {
                 GatewayStatePanel(store: store, what: "Models")
                 Spacer(minLength: 0)
             } else if let status = store.status {

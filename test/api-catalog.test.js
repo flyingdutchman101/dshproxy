@@ -1,0 +1,30 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { createControl } = require('../src/control');
+const { createApiCatalog } = require('../src/api-catalog');
+test('catalog enumerates all regions and custom IDs without discovery until refresh', async () => {
+  let calls = 0;
+  const catalog = createApiCatalog({settings:{providers:{qwen:{region:'singapore'}},custom:[{name:'local',models:['custom']}]},readable:{qwen:{region:'singapore'}},custom:[{name:'local',models:['custom']}],fetchMetadata:async () => {calls++; return {data:[{id:'vendor/chat',architecture:{input_modalities:['text'],output_modalities:['text']}},{id:'vendor/image',architecture:{input_modalities:['text'],output_modalities:['image']}}]};}});
+  const first = await catalog(false);
+  assert.equal(calls,0);
+  const find = id => first.models.find(m => m.id === id);
+  assert.equal(find('qwen/qwen4-max').status,'ready');
+  assert.equal(find('qwen/glm-5.3').status,'otherRegion');
+  assert.equal(find('deepseek/deepseek-v4-pro').status,'needsKey');
+  assert.equal(find('local/custom').status,'ready');
+  assert.deepEqual(find('qwen/glm-5.3').regions,['tokenplan']);
+  const refreshed = await catalog(true);
+  assert.equal(calls,1);
+  assert.equal(refreshed.models.find(m => m.id === 'openrouter/vendor/chat').status,'catalogOnly');
+  assert.ok(!refreshed.models.some(m => m.id === 'openrouter/vendor/image'));
+});
+test('control exposes authenticated API catalog separately from routing', async () => {
+  const handle = createControl({token:'test', routes:{}, apiCatalog: () => ({models:[{id:'deepseek/example',provider:'deepseek',status:'needsKey',regions:['international']}],warnings:[]})});
+  let status, result;
+  const res = {writeHead(s){status=s}, end(s){result=JSON.parse(s)}};
+  await handle({url:'/dshproxy/control/models/api-catalog',method:'GET',headers:{}},res);
+  assert.equal(status,401);
+  await handle({url:'/dshproxy/control/models/api-catalog',method:'GET',headers:{'x-dshproxy-token':'test'}},res);
+  assert.equal(status,200);
+  assert.equal(result.models[0].status,'needsKey');
+});

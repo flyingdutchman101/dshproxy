@@ -304,6 +304,7 @@ async function start({ home, print = console.log, restart = null, exit = null, b
   writeToken(paths.controlToken, controlToken);
   const control = createControl({
     token: controlToken,
+    apiCatalog: require('./api-catalog').createApiCatalog({ settings, readable: state.readable, custom: state.custom }),
     routes: {
       "POST login/start": ({ provider }) => logins.start(String(provider || "")),
       "GET login/status": (_body, { id }) => logins.status(String(id || "")).then((result) => {
