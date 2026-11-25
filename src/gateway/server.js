@@ -253,6 +253,13 @@ function createGateway({ upstream, resolve, describe = () => ({}), failover, ses
     const retries = [...retryDelays];
     const report = (code, model) => {
       log(`${label}: HTTP ${code} in ${Date.now() - startedAt}ms${model ? ` served=${model}` : ""} · ${trace}`);
+      // The caller's own output budget: DeepSeek Harness clamps max_tokens to 1 when it believes
+      // the conversation no longer fits the context window it was told, and every reply is then
+      // cut after a few tokens. Name it once per request, so the cause is visible.
+      const budget = parsed?.max_tokens ?? parsed?.max_completion_tokens ?? null;
+      if (typeof budget === "number" && budget <= 8) {
+        log(`${label}: the caller's output budget is exhausted (max_tokens=${budget}): the conversation no longer fits the context window it was told for this model. Type /compact in the chat or start a new session.`);
+      }
     };
     const dumpFailure = (code, model, text) => {
       try {

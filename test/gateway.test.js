@@ -559,3 +559,20 @@ test("a slow usage report does not stretch the pause before a retry", async (t) 
   assert.equal(response.status, 200);
   assert.ok(Date.now() - started < 1000, `answered after ${Date.now() - started} ms`);
 });
+
+// A caller whose output budget is clamped to nothing (DeepSeek Harness does that when the
+// conversation no longer fits the context window it was told) gets a reply cut after a few
+// tokens. The gateway says so in one line, so the cause is visible instead of mysterious.
+test("a request whose output budget is exhausted is named as such in the log", async (t) => {
+  const backend = await startBackend(t, (model) => ({ status: 200, body: { served: model } }));
+  const { url, logs } = await startGateway(t, backend.port);
+  const tiny = await post(url, { model: "lane-main", max_tokens: 1, messages: [{ role: "user", content: "x".repeat(400000) }] });
+  assert.equal(tiny.status, 200);
+  const hints = logs.filter((line) => /output budget is exhausted/.test(line));
+  assert.equal(hints.length, 1, logs.join("\n"));
+  assert.match(hints[0], /max_tokens=1/);
+  assert.match(hints[0], /compact/i);
+  // A normal turn says nothing of the kind.
+  await post(url, { model: "lane-main", max_tokens: 64000, messages: [{ role: "user", content: "hello" }] });
+  assert.equal(logs.filter((line) => /output budget is exhausted/.test(line)).length, 1);
+});

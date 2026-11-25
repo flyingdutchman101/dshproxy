@@ -326,6 +326,10 @@ DSHProxy learns all of this from the provider's usage report, the same one the A
 
 This is meant for plans you own and would otherwise use by hand, one after the other. It does not rotate requests across accounts to get around a plan's limits: providers treat that as abuse and suspend accounts for it. Using a subscription sign-in through any gateway is at the provider's discretion; an API key is the route their terms describe for programs.
 
+## When a reply is cut off after a few tokens
+
+If DeepSeek Harness answers each turn with "Output token limit reached" after a few seconds, the conversation has grown past the context window it was told for the model (a lane declares the smallest window among its rungs). The gateway logs one line that says so: `the caller's output budget is exhausted (max_tokens=1)`. Type `/compact` in the chat, or start a new session; a model with a larger window (for example `claude-opus-5-5` on its own) also helps until the conversation grows again.
+
 ## License
 
 MIT, see [LICENSE](LICENSE). CLIProxyAPI is a separate project under its own license; DSHProxy downloads its released binary and does not include its source.
