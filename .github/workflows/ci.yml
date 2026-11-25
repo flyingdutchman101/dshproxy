@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, macos-port]
   pull_request:
 
 permissions:
