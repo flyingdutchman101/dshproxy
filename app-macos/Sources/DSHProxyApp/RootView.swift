@@ -213,6 +213,9 @@ struct FooterView: View {
                 .help(store.footer)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Check for app updates…") { store.checkAppUpdate() }
+                .disabled(store.isSample)
+                .help("Check the official DSHProxy repository for a newer passing build.")
             Toggle("Start at login", isOn: Binding(get: { store.startAtLogin }, set: { store.setStartAtLogin($0) }))
                 .toggleStyle(.checkbox)
                 .disabled(store.isSample)

@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var subs = Set<AnyCancellable>()
     private var alertOpen = false
     var startHidden = false
+    var updateBusy = false
 
     init(store: AppStore) {
         self.store = store
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             guard let self else { done(-1); return }
             self.present(spec, done)
         }
+        store.checkAppUpdate = { [weak self] in Task { await self?.checkForUpdate() } }
         store.openWindow = { [weak self] in self?.openWindow() }
         store.$gateway.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateIcon() }.store(in: &subs)
         store.$statusUnavailable.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateIcon() }.store(in: &subs)
@@ -50,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         store.launch()
         if !startHidden { openWindow() }
+        Task { await showUpdateResult() }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -107,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         case .start: Task { await store.startGateway() }
         case .stop: store.stopRequested()
         case .loginItem: store.setStartAtLogin(!store.startAtLogin)
+        case .selfUpdate: Task { await checkForUpdate() }
         case .quit: NSApp.terminate(nil)
         }
     }

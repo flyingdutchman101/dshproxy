@@ -72,6 +72,9 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm ci --ignore-scripts
       - run: node scripts/check.js
+      - name: Compile the Windows desktop app
+        shell: powershell
+        run: .\app\build.ps1
       # A checkout of main beside this one, for the test that reads each
       # other's data folders (docs/work/0014-macos-port, C13).
       - name: Check out main for the compatibility test

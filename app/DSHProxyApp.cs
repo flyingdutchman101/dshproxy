@@ -1166,9 +1166,16 @@ namespace DSHProxy
             }
             BeginInvoke(new Action(() =>
             {
-                StartGateway();
-                StartStatusChecks();
-                limitsTimer.Start();
+                // Restore the gateway under the desktop's ownership before the worker verifies it.
+                if (Environment.GetEnvironmentVariable("DSHPROXY_UPDATE_SESSION") == null || Environment.GetEnvironmentVariable("DSHPROXY_UPDATE_RESUME") == "1") StartGateway();
+                SelfUpdateCommand(new[] { "self-update", "result" }, result =>
+                {
+                    var state = Json.Str(Json.Get(result, "status"));
+                    StartStatusChecks();
+                    limitsTimer.Start();
+                    if (state != "none")
+                        Msg.Show(this, "DSHProxy update: " + state + "\n\n" + Json.Str(Json.Get(result, "message")), "DSHProxy update", MessageBoxButtons.OK, state == "success" ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                });
             }));
         }
 
@@ -1444,13 +1451,17 @@ namespace DSHProxy
                 }
             };
 
-            var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 42, ColumnCount = 2, Padding = new Padding(22, 8, 22, 8) };
+            var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 42, ColumnCount = 3, Padding = new Padding(22, 8, 22, 8) };
             bottomRow = bottom;
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             footer.Margin = new Padding(0, 5, 0, 0);
             bottom.Controls.Add(footer, 0, 0);
-            bottom.Controls.Add(autostartBox, 1, 0);
+            bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            var checkApp = new Button { Text = "Check for app updates…", AutoSize = true, Margin = Padding.Empty, Enabled = !ReadOnly && previewLimits == null };
+            checkApp.Click += (s, e) => CheckSelfUpdate();
+            bottom.Controls.Add(checkApp, 1, 0);
+            bottom.Controls.Add(autostartBox, 2, 0);
             footer.TextChanged += (s, e) => LayoutColumn();
             
             var nav = new NavStrip(tabs);
@@ -1485,10 +1496,87 @@ namespace DSHProxy
             menu.Items.Add("Start gateway", null, (s, e) => StartGateway());
             menu.Items.Add("Stop gateway", null, (s, e) => StopRequested());
             menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Check for DSHProxy updates…", null, (s, e) => CheckSelfUpdate());
             menu.Items.Add("Quit", null, (s, e) => Quit());
             tray.ContextMenuStrip = menu;
             tray.DoubleClick += (s, e) => ShowWindow();
             tray.BalloonTipClicked += (s, e) => { ShowWindow(); tabs.SelectedIndex = 0; };
+        }
+
+        private bool selfUpdateBusy;
+
+        private void SelfUpdateCommand(string[] args, Action<Dictionary<string, object>> done)
+        {
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                Dictionary<string, object> reply;
+                try
+                {
+                    var result = cli.Run(args, null, args.Length > 1 && args[1] == "install" ? 1500000 : 120000);
+                    reply = Json.Obj(Json.Serializer.DeserializeObject(result.Out));
+                    if (reply == null || !reply.ContainsKey("status")) throw new InvalidOperationException("The updater returned an invalid response.");
+                }
+                catch (Exception error)
+                {
+                    reply = new Dictionary<string, object> { { "status", "unavailable" }, { "message", error.Message } };
+                }
+                if (IsDisposed || !IsHandleCreated || quitting) return;
+                try { BeginInvoke(new Action(() => { if (!quitting) done(reply); })); }
+                catch (InvalidOperationException) { }
+            });
+        }
+
+        private void CheckSelfUpdate()
+        {
+            if (ReadOnly || previewLimits != null || selfUpdateBusy) return;
+            selfUpdateBusy = true;
+            ShowWindow();
+            SelfUpdateCommand(new[] { "self-update", "check" }, reply =>
+            {
+                var status = Json.Str(Json.Get(reply, "status"));
+                var message = Json.Str(Json.Get(reply, "message"));
+                var sha = Json.Str(Json.Get(reply, "candidate"));
+                var installed = Json.Str(Json.Get(reply, "installed"));
+                var valid = System.Text.RegularExpressions.Regex.IsMatch(sha, "\\A[0-9a-fA-F]{40}\\z");
+                if (status != "available" || !valid)
+                {
+                    selfUpdateBusy = false;
+                    Msg.Show(this, (status == "current" ? "DSHProxy is up to date." : "DSHProxy update unavailable.") + "\n\n" + message + "\n\nInstalled: " + installed,
+                        "DSHProxy update", MessageBoxButtons.OK, status == "current" ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                    return;
+                }
+                using (var dialog = new Form { Text = "DSHProxy update", StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(540, 280), FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false })
+                {
+                    var body = new Label { Left = 20, Top = 20, Width = 500, Height = 160, Text = "Installed: " + (installed.Length > 12 ? installed.Substring(0, 12) : installed) + "\nCandidate: " + sha.Substring(0, 12) + "\n" + Json.Str(Json.Get(reply, "subject")) + "\n\n" + message + "\n\nInstall this revision? DSHProxy will close and relaunch. Active requests must finish first." };
+                    var link = new LinkLabel { Left = 20, Top = 185, Width = 500, Text = "View official commit" };
+                    var url = Json.Str(Json.Get(reply, "url"));
+                    Uri uri;
+                    link.Enabled = Uri.TryCreate(url, UriKind.Absolute, out uri) && uri.Scheme == "https" && uri.Host == "github.com";
+                    link.LinkClicked += (s, e) => { try { Process.Start(url); } catch (Exception error) { Msg.Show(dialog, error.Message, "Open commit", MessageBoxButtons.OK, MessageBoxIcon.Warning); } };
+                    var install = new Button { Text = "Install", Left = 330, Top = 230, DialogResult = DialogResult.OK };
+                    var cancel = new Button { Text = "Cancel", Left = 425, Top = 230, DialogResult = DialogResult.Cancel };
+                    dialog.Controls.AddRange(new Control[] { body, link, install, cancel });
+                    dialog.CancelButton = cancel;
+                    dialog.AcceptButton = cancel;
+                    if (dialog.ShowDialog(this) != DialogResult.OK) { selfUpdateBusy = false; return; }
+                }
+                SelfUpdateCommand(new[] { "self-update", "install", "--sha", sha, OwnGatewayAlive ? "--owns-gateway" : "--no-gateway" }, result =>
+                {
+                    selfUpdateBusy = false;
+                    if (Json.Str(Json.Get(result, "status")) == "started")
+                    {
+                        // The detached helper owns draining, replacement and relaunch.
+                        // Normal Quit stops the gateway and would interrupt requests.
+                        quitting = true;
+                        timer.Stop();
+                        limitsTimer.Stop();
+                        tray.Visible = false;
+                        Application.Exit();
+                        return;
+                    }
+                    Msg.Show(this, "DSHProxy update did not start.\n\n" + Json.Str(Json.Get(result, "message")), "DSHProxy update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                });
+            });
         }
 
         private void ShowWindow()

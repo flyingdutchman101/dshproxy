@@ -155,6 +155,7 @@ final class AppStore: ObservableObject {
     /// Set by AppDelegate.
     var presentAlert: (AlertSpec, @escaping (Int) -> Void) -> Void = { _, done in done(-1) }
     var openWindow: () -> Void = {}
+    var checkAppUpdate: () -> Void = {}
     var windowVisible = false { didSet { if windowVisible && !oldValue { refreshStatus() } } }
 
     // Gateway and polling state (inventory 1.11, 1.12)
@@ -215,7 +216,9 @@ final class AppStore: ObservableObject {
         launching = true
         Task {
             await fullStatus()
-            await startGateway()
+            // Keep ownership in this desktop so Stop/Quit work after relaunch.
+            let env = ProcessInfo.processInfo.environment
+            if env["DSHPROXY_UPDATE_SESSION"] == nil || env["DSHPROXY_UPDATE_RESUME"] == "1" { await startGateway() }
             launching = false
         }
         ticker = Task { [weak self] in

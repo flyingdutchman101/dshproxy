@@ -1,0 +1,7 @@
+# Local implementation handoff
+
+Base: `811d776`; no commit, push, signing of a release, or deployment. Desktop update checking is user-initiated and independent of backend updates. The native app must run from the checkout being updated. A separate build, exact-SHA authorization and idle handoff precede switching; the relaunched GUI owns its gateway when it was previously running. Preserve backups on verification failure rather than discard edits.
+
+Independent review found a running gateway would originally have been restored by the detached worker; fixed in both desktop callers and added a real child-process regression. Temporary Git fixtures cover staging, partial activation, foreign local changes, verification and rollback. A fixture initially probed port zero (EADDRNOTAVAIL rather than connection refused on macOS); corrected it to use a closed ephemeral port. No live install or gateway restart performed.
+
+Final local verification: `node --test` 996 passed, 9 skipped, 0 failed; `swift build --package-path app-macos` passed; `swift run --package-path app-macos KitChecks` 36 passed, 0 failed; `node scripts/check.js` 127 files OK; `git diff --check` passed. Read-only `node bin/dshproxy.js self-update check` reported no newer passing revision. Windows CI now compiles WinForms; Windows runtime and interactive native install/relaunch on either platform remain release smoke-test gates. Mac build tooling emitted a nonfatal XCTest platform-path warning.

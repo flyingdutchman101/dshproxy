@@ -70,7 +70,7 @@ enum MenuEntry {
     case item(String, enabled: Bool, checked: Bool, key: String, tooltip: String?, action: MenuAction)
 }
 
-enum MenuAction { case open, addAccount, start, stop, loginItem, quit }
+enum MenuAction { case open, addAccount, start, stop, loginItem, selfUpdate, quit }
 
 @MainActor
 func menuEntries(_ store: AppStore) -> [MenuEntry] {
@@ -86,6 +86,7 @@ func menuEntries(_ store: AppStore) -> [MenuEntry] {
         .separator,
         .item("Start at login", enabled: !store.isSample, checked: store.startAtLogin, key: "", tooltip: nil, action: .loginItem),
         .separator,
+        .item("Check for DSHProxy updates…", enabled: !store.isSample, checked: false, key: "", tooltip: nil, action: .selfUpdate),
         .item("Quit DSHProxy", enabled: true, checked: false, key: "q", tooltip: nil, action: .quit),
     ]
 }

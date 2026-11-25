@@ -376,6 +376,7 @@ function rollbackLock(out) {
 }
 
 async function main(argv, out = console.log) {
+  if (argv[0] === 'self-update') return require('./self-update/command').run(argv.slice(1), out);
   // Offline media quotes must not migrate, read, or modify the user's chat settings.
   // `video key set` reads its key from standard input, like `key set` below.
   // On macOS the data folder is private to this account (spec 0014, design 3),

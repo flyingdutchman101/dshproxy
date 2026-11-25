@@ -231,6 +231,12 @@ A lane is one model ID that tries a ladder of real models in order. The ladders 
 
 Once the ladders have been edited by hand (in settings.json), the tab shows **Custom** until a preset is chosen again. The CLI can list the presets and the active one with `dshproxy preset list`; `dshproxy preset use` while a gateway is running needs a restart to take effect (the app switches it live).
 
+## Updating the desktop app
+
+On macOS and Windows, choose **Check for app updates…** in the window footer or tray menu. The check works with the gateway stopped. It offers the newest eligible commit on the official `main` branch whose push CI passed. Review the commit before choosing **Install**; checking alone installs nothing.
+
+Installation requires a clean Git checkout, its locally built desktop app, and the platform build tools. A moved app or a checkout with local changes must be updated manually. The old app stays open during the staged build. If its gateway is busy, the updater leaves the old version running rather than forcing a stop. After relaunch it checks the revision and restores the previous running or stopped state; if verification fails, it attempts to restore the previous version. This is separate from **Update…** for the CLIProxyAPI backend.
+
 ## New models and backend updates
 
 **Models are found automatically.** About 3 seconds after start and then every 3 hours, DSHProxy reads which models the backend serves to your accounts and CLIProxyAPI's public model catalog ([models.router-for.me](https://models.router-for.me/models.json)) for each model's context size, output limit and reasoning levels. A current-generation chat model that your accounts serve is offered without a DSHProxy update. Image models, older generations and models the catalog does not describe are hidden; switch any model on or off on the **Models** tab (saved as `models.extra` / `models.hidden` in settings.json). When the offered list changes, DSHProxy updates its routes in the DeepSeek Harness profiles that already have them (each backed up first) and asks you to restart DeepSeek Harness. Profiles you never applied DSHProxy to are not touched.
