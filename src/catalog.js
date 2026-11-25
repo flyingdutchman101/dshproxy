@@ -248,7 +248,11 @@ function laneModels(lanes, lookup = () => null) {
       name: `Lane · ${name}`,
       lane: name,
       api: "lanes",
-      contextWindow: known.length ? Math.min(...known.map((model) => model.contextWindow)) : 200000,
+      // The window is the largest on the ladder: a long conversation is not cut
+      // short because of a rung that failover would have passed over (a rung
+      // that cannot hold the request answers with an error and the next is tried).
+      // The output budget is the smallest: a reply has to fit on every rung.
+      contextWindow: known.length ? Math.max(...known.map((model) => model.contextWindow)) : 200000,
       maxTokens: known.length ? Math.min(...known.map((model) => model.maxTokens)) : 32000,
       efforts: ALL_EFFORTS
     };

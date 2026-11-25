@@ -15,12 +15,21 @@ test("the default reviewer ladder never reviews with the GPT family", () => {
   assert.deepEqual(settings.DEFAULT_LANES.reviewer.filter((id) => id.startsWith("gpt-")), []);
 });
 
-test("a lane is sized for the smallest model on its ladder", () => {
+test("a lane offers the largest context window on its ladder, and the smallest output budget", () => {
   const [lane] = catalog.laneModels({ main: ["gpt-6-astra", "claude-fable-5-2", "gemini-4-carbon-high"] });
   assert.equal(lane.id, "lane-main");
-  // GPT has the smallest context window, Gemini the smallest output.
-  assert.equal(lane.contextWindow, 272000);
+  // The window is the largest on the ladder: a conversation is never cut short
+  // because of a smaller rung that failover would have passed over. GPT has the
+  // smallest window (272,000), Claude the largest (1,000,000); Gemini the
+  // smallest output budget (65,536), and an output budget must hold on every rung.
+  assert.equal(lane.contextWindow, 1000000);
   assert.equal(lane.maxTokens, 65536);
+});
+
+test("a lane whose rungs are all unknown keeps the default window", () => {
+  const [lane] = catalog.laneModels({ main: [] });
+  assert.equal(lane.contextWindow, 200000);
+  assert.equal(lane.maxTokens, 32000);
 });
 
 test("an API-key model is found in whichever region lists it", () => {

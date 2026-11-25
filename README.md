@@ -328,7 +328,7 @@ This is meant for plans you own and would otherwise use by hand, one after the o
 
 ## When a reply is cut off after a few tokens
 
-If DeepSeek Harness answers each turn with "Output token limit reached" after a few seconds, the conversation has grown past the context window it was told for the model (a lane declares the smallest window among its rungs). The gateway logs one line that says so: `the caller's output budget is exhausted (max_tokens=1)`. Type `/compact` in the chat, or start a new session; a model with a larger window (for example `claude-opus-5-5` on its own) also helps until the conversation grows again.
+If DeepSeek Harness answers each turn with "Output token limit reached" after a few seconds, the conversation has grown past the context window it was told for the model (a lane declares the largest window among its rungs, so a lane itself is rarely the cause; the session's own history is). The gateway logs one line that says so: `the caller's output budget is exhausted (max_tokens=1)`. Type `/compact` in the chat, or start a new session; a model with a larger window (for example `claude-opus-5-5` on its own) also helps until the conversation grows again.
 
 ## License
 
