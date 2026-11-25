@@ -35,6 +35,7 @@ struct OutputSpec: Equatable {
 
 enum SheetKind: Identifiable, Equatable {
     case addAccount
+    case laneEditor([Lane])
     case reset(AccountLimits, ResetCredits)
     case chatKey(KeyProvider)
     case videoKey(VideoKeyProvider)
@@ -49,6 +50,7 @@ enum SheetKind: Identifiable, Equatable {
     var id: String {
         switch self {
         case .addAccount: return "add"
+        case .laneEditor: return "lane-editor"
         case .reset(let a, _): return "reset-\(a.file)"
         case .chatKey(let p): return "key-\(p.key)"
         case .videoKey(let p): return "vkey-\(p.id)"

@@ -105,6 +105,7 @@ enum Render {
         window("860-starting", size: CGSize(width: 860, height: 600)) { $0.gateway = .starting }
         let store = sampleStore()
         panel("sheet-add-account", AddAccountSheet(store: store))
+        if let lanes = store.status?.lanes { panel("sheet-lane-editor", LaneEditorSheet(store: store, lanes: lanes)) }
         panel("sheet-apply-checklist", ApplyChecklistSheet(store: store, setup: store.harnessSetup!))
         if let a = store.limits?.accounts.first(where: { $0.resetsAvailable > 0 }) {
             panel("sheet-reset", ResetSheet(store: store, account: a, credits: ResetCredits.parse(["available": 2, "credits": [["id": "cr1", "title": "Weekly limit reset", "description": "Sample credit", "expiresAt": "2026-12-31T12:00:00Z"]]])))

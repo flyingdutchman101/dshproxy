@@ -211,10 +211,17 @@ struct LanesPage: View {
     @ObservedObject var store: AppStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             PageHeader(title: "Lanes",
                        note: "A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key.") {
-                Button("Edit lanes (settings.json)\u{2026}") { Task { await store.editLanes() } }
+                Button("Edit lanes\u{2026}") {
+                    if let lanes = store.status?.lanes { store.sheet = .laneEditor(lanes) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!store.isRunning || (store.status?.lanes.isEmpty ?? true))
+                .accessibilityLabel("Edit lanes\u{2026}")
+                Button("Open settings.json\u{2026}") { Task { await store.editLanes() } }
+                    .accessibilityLabel("Open settings.json in TextEdit")
             }
             if !store.isRunning || store.status == nil {
                 GatewayStatePanel(store: store, what: "Lanes and their models")
@@ -222,11 +229,7 @@ struct LanesPage: View {
             } else if let status = store.status {
                 presetBox(status.routing)
                 legend
-                List {
-                    ForEach(status.lanes) { lane in LaneRow(lane: lane, now: store.now) }
-                }
-                .listStyle(.inset(alternatesRowBackgrounds: true))
-                .accessibilityLabel("Lanes")
+                laneTable(status.lanes)
             }
         }
         .pagePadding()
@@ -252,6 +255,24 @@ struct LanesPage: View {
         .card()
     }
 
+    @ViewBuilder private func laneTable(_ lanes: [Lane]) -> some View {
+        if lanes.isEmpty {
+            Text("No lanes are defined yet. Open settings.json to add one.")
+                .font(.callout).foregroundStyle(.secondary)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(lanes.enumerated()), id: \.element.id) { index, lane in
+                        if index > 0 { Divider() }
+                        LaneRow(lane: lane, now: store.now)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .accessibilityLabel("Lanes")
+        }
+    }
+
     private var legend: some View {
         HStack(spacing: 14) {
             LadderChip(model: "can serve", state: .ok, why: "")
@@ -268,19 +289,24 @@ struct LaneRow: View {
     let now: Date
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(lane.title).bold().frame(width: 104, alignment: .leading)
-            FlowLayout(spacing: 4, lineSpacing: 5) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(lane.title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .frame(width: 78, alignment: .leading)
+                .help(lane.title)
+            FlowLayout(spacing: 3, lineSpacing: 2) {
                 ForEach(Array(lane.rungs.enumerated()), id: \.offset) { i, rung in
-                    HStack(spacing: 4) {
-                        if i > 0 { Text("\u{203A}").foregroundStyle(.secondary).accessibilityHidden(true) }
+                    HStack(spacing: 3) {
+                        if i > 0 { Text("\u{203A}").font(.caption2).foregroundStyle(.secondary).accessibilityHidden(true) }
                         LadderChip(model: rung.model, state: rung.state, why: rung.why(now: now))
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(lane.title), first to last")
     }
@@ -299,12 +325,12 @@ struct LadderChip: View {
             case .unavailable: return ("\u{2717}", .red)
             }
         }()
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             Text(sym).bold().foregroundStyle(color)
             Text(model).foregroundStyle(state == .unavailable ? .secondary : .primary)
         }
-        .font(.callout)
-        .padding(.horizontal, 7).padding(.vertical, 2)
+        .font(.caption)
+        .padding(.horizontal, 5).padding(.vertical, 1)
         .background(Capsule().fill(color.opacity(0.10)))
         .overlay(Capsule().strokeBorder(color.opacity(0.40)))
         .fixedSize()

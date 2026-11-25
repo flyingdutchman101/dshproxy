@@ -12,6 +12,7 @@ struct SheetHost: View {
     var body: some View {
         switch kind {
         case .addAccount: AddAccountSheet(store: store)
+        case .laneEditor(let lanes): LaneEditorSheet(store: store, lanes: lanes)
         case .reset(let account, let credits): ResetSheet(store: store, account: account, credits: credits)
         case .chatKey(let provider): KeySheet(store: store, target: .chat(provider))
         case .videoKey(let provider): KeySheet(store: store, target: .video(provider))
