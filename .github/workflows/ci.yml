@@ -33,7 +33,16 @@ jobs:
           set -e
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
           if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then base=$(git rev-list --max-parents=0 HEAD | tail -1); fi
-          bad=$(git log --format='%ae%n%ce' "$base..HEAD" | sort -u | grep -vE '^(noreply@github\.com|[0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com)$' || true)
+          # GitHub's own test-merge commit for a pull request ("Merge <sha> into <sha>")
+          # is authored by the account, not by anyone's choice; it is reported, not
+          # failed, so a pull request is not blocked by something it cannot change.
+          real=$(git log --format='%H %ae%n%ce' "$base..HEAD" | grep -vE '^[0-9a-f]{40} ' | sort -u | true)
+          bad=$(printf '%s\n' "$real" | grep -vE '^(|noreply@github\.com|[0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com)$' || true)
+          for sha in $(git log --format='%H %s' "$base..HEAD" | grep -E '^[0-9a-f]{40} Merge [0-9a-f]{40} into [0-9a-f]{40}$' | cut -d" " -f1); do
+            if ! git log -1 --format='%ae' "$sha" | grep -qE '^(noreply@github\.com|[0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com)$'; then
+              echo "::warning::GitHub's test-merge commit $sha carries a private address. Turn on \"Keep my email addresses private\" on GitHub; until then every pull request publishes it."
+            fi
+          done
           if [ -n "$bad" ]; then
             echo "These commit author or committer addresses must not be published:"
             echo "$bad"
