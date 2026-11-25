@@ -1392,3 +1392,36 @@ test("a request for a video entry is answered by the gateway itself and never fo
   // The purchase record exists from the first start, so that it is old enough when it is needed.
   assert.ok(fs.existsSync(path.join(g.home, "video-picker", "claims.log")));
 });
+
+// The Lanes page of the Mac app edits a lane in place (rename, reorder, add, remove). The route
+// for that lives here so the Windows app can use it too; nothing else changes.
+test("a control call sets one lane's ladder and name, and refuses what it cannot serve", async (t) => {
+  const g = await startGateway(t);
+  const settingsFile = path.join(g.home, "settings.json");
+  const read = () => JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+
+  const saved = control(g, "lanes/set", { name: "main", models: ["claude-opus-5-5", "gpt-6-astra"] });
+  const answer = await saved.done;
+  assert.equal(answer.status, 200, answer.text);
+  assert.deepEqual(JSON.parse(answer.text).models, ["claude-opus-5-5", "gpt-6-astra"]);
+  assert.deepEqual(read().lanes.main, ["claude-opus-5-5", "gpt-6-astra"]);
+
+  // A lane renamed keeps its place; the old name is gone.
+  const moved = await control(g, "lanes/set", { name: "primary", previousName: "main", models: ["gpt-6-astra"] }).done;
+  assert.equal(moved.status, 200, moved.text);
+  assert.deepEqual(Object.keys(read().lanes).slice(0, 2), ["primary", "scout"]);
+
+  for (const body of [
+    { name: "primary", models: [] },                                  // an empty ladder
+    { name: "primary", models: ["no-such-model"] },                   // a model that does not exist
+    { name: "Bad Name", models: ["gpt-6-astra"] },                    // a name a lane ID cannot hold
+    { name: "primary", previousName: "scout", models: ["gpt-6-astra"] }, // a name already in use
+    { name: "primary" }                                               // no ladder at all
+  ]) {
+    const refused = await control(g, "lanes/set", body).done;
+    assert.equal(refused.status, 400, JSON.stringify(body) + " -> " + refused.text);
+    assert.match(JSON.parse(refused.text).error, /\S/);
+  }
+  assert.deepEqual(read().lanes.primary, ["gpt-6-astra"]);
+  assert.ok(read().lanes.scout.length > 0);
+});

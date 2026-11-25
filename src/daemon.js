@@ -397,6 +397,36 @@ async function start({ home, print = console.log, restart = null, exit = null, b
         await syncHarness("lanes changed");
         return { ok: true, lanes: changed };
       },
+      // Sets one lane's ladder and name (`lanes/set`), as the Mac app's lane editor does: a simple
+      // list in, the same list saved. Names a lane ID cannot hold, models that are not offered, an
+      // empty ladder and a name already used are refused with one sentence.
+      "POST lanes/set": async ({ name, previousName, models }) => {
+        const laneName = String(name || "");
+        const ladder = Array.isArray(models) ? models.map((model) => String(model)) : [];
+        if (!/^[a-z][a-z0-9-]{0,31}$/.test(laneName)) throw new Error("A lane name is lowercase letters, digits and dashes, starting with a letter, at most 32 characters.");
+        if (!ladder.length) throw new Error("A lane needs at least one model.");
+        if (new Set(ladder).size !== ladder.length) throw new Error("A model cannot appear twice on one lane.");
+        const current = settingsFile.load(state.home);
+        const from = previousName === undefined ? laneName : String(previousName);
+        if (!current.lanes[from]) throw new Error(`There is no lane called ${from} to change.`);
+        if (laneName !== from && current.lanes[laneName]) throw new Error(`There is already a lane called ${laneName}.`);
+        // A lane may name a model that cannot serve right now (its rung then shows ✗); what it
+        // may not name is a model the gateway does not know at all.
+        const offered = app.offeredModels(settings, activeAccounts(), state.readable, app.readDiscovery(state.home)).models.map((model) => model.id);
+        const known = (model) => !model.startsWith("lane-") && (Boolean(catalog.findModel(model)) || offered.includes(model));
+        const unknown = ladder.filter((model) => !known(model));
+        if (unknown.length) throw new Error(`Not offered right now: ${unknown.join(", ")}.`);
+        // The renamed lane keeps its place among the lanes.
+        const lanes = {};
+        for (const [key, value] of Object.entries(current.lanes)) lanes[key === from ? laneName : key] = key === from ? [...ladder] : value;
+        current.lanes = lanes;
+        settingsFile.save(current, state.home);
+        Object.assign(settings.lanes, current.lanes);
+        offered.at = 0;
+        log(`lane ${from === laneName ? laneName : `${from} renamed to ${laneName}`}: ${ladder.join(" > ")}`);
+        const result = await syncHarness(`lane ${laneName} changed`);
+        return { ok: true, name: laneName, models: [...ladder], harnessChanged: Boolean(result.changed) };
+      },
       // Switches every lane to a routing preset (performance / balanced / cheap).
       "POST lanes/preset": async ({ name }) => {
         const preset = presets.get(String(name || ""));
