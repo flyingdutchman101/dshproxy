@@ -74,6 +74,8 @@ await check("API catalog: readiness, custom providers, regions, warnings and sea
         ["id": "synthetic-\($0)", "provider": "custom-example", "status": $0, "regions": ["eu"]] as [String: Any]
     }, "warnings": ["Synthetic refresh warning"]])
     try expectEqual(catalog.models.map { $0.status.rawValue }, statuses, "exact readiness")
+    let routed = try APICatalog.parse(["models": ["openrouter/moonshotai/kimi", "qwen/glm-5.3", "custom/model"].map { ["id": $0, "provider": String($0.split(separator: "/")[0]), "status": "ready", "regions": []] as [String: Any] }, "warnings": []])
+    try expect(routed.models[0].matches("Moonshot AI") && routed.models[1].matches("Z.ai"), "search attributed publishers")
     try expectEqual(catalog.warnings, ["Synthetic refresh warning"], "warnings")
     try expect(catalog.models.allSatisfy { $0.matches("CUSTOM") && $0.matches("eu") && !$0.matches("absent") }, "search includes custom providers and regions")
     try expectEqual(catalog.models.last?.status.guidance, "Catalog only — not currently available to route", "catalog-only guidance")

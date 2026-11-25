@@ -29,7 +29,9 @@ function createApiCatalog({ settings, readable = {}, custom = [], fetchMetadata 
       const selected = providerRegionKey(provider, readable[provider]?.region || settings.providers?.[provider]?.region);
       for (const region of Object.keys(definition.regions)) for (const model of providerModels(provider, region)) {
         if (!rows.has(model.id)) rows.set(model.id, {id:model.id, provider, status:'needsKey', regions:[]});
-        rows.get(model.id).regions.push(region);
+        const row = rows.get(model.id);
+        if (!row.regions.length || region === selected) Object.assign(row, {contextWindow:model.contextWindow, maxTokens:model.maxTokens, efforts:model.efforts});
+        row.regions.push(region);
       }
       for (const row of rows.values()) if (row.provider === provider) row.status = !row.regions.includes(selected) ? 'otherRegion' : readable[provider] ? 'ready' : 'needsKey';
     }
@@ -46,7 +48,7 @@ function createApiCatalog({ settings, readable = {}, custom = [], fetchMetadata 
         try {
           const data = await fetchMetadata();
           if (!Array.isArray(data.data)) throw new Error('invalid metadata');
-          discovered = data.data.slice(0,10000).filter(m => typeof m.id === 'string' && /^[A-Za-z0-9._:/-]{1,200}$/.test(m.id) && m.architecture?.input_modalities?.includes('text') && m.architecture?.output_modalities?.length === 1 && m.architecture.output_modalities[0] === 'text').slice(0,2000).map(m => ({id:`openrouter/${m.id}`,provider:'openrouter',status:'catalogOnly',regions:Object.keys(API_PROVIDERS.openrouter.regions)}));
+          discovered = data.data.slice(0,10000).filter(m => typeof m.id === 'string' && /^[A-Za-z0-9._:/-]{1,200}$/.test(m.id) && m.architecture?.input_modalities?.includes('text') && m.architecture?.output_modalities?.length === 1 && m.architecture.output_modalities[0] === 'text').slice(0,2000).map(m => ({id:`openrouter/${m.id}`,provider:'openrouter',status:'catalogOnly',contextWindow:Number.isSafeInteger(m.context_length) && m.context_length > 0 ? m.context_length : undefined,maxTokens:Number.isSafeInteger(m.top_provider?.max_completion_tokens) && m.top_provider.max_completion_tokens > 0 ? m.top_provider.max_completion_tokens : undefined,regions:Object.keys(API_PROVIDERS.openrouter.regions)}));
           warning = null;
         } catch { warning = 'OpenRouter public metadata refresh failed; retained previous catalog.'; }
       })().finally(() => { pending = null; });

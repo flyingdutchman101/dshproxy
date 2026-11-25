@@ -342,6 +342,18 @@ struct LadderChip: View {
 
 // MARK: - Models
 
+struct ModelServiceCell: View {
+    let logo: String?
+    let label: String
+    var body: some View {
+        HStack(spacing: 4) {
+            if let logo { LogoView(name: logo, size: 14).accessibilityHidden(true) }
+            else { Image(systemName: "network").frame(width: 14).accessibilityHidden(true) }
+            Text(label).foregroundStyle(.secondary).lineLimit(1)
+        }
+    }
+}
+
 struct ModelsPage: View {
     @ObservedObject var store: AppStore
     @State private var apiCatalog = false
@@ -351,7 +363,7 @@ struct ModelsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             PageHeader(title: "Models",
-                       note: "Ticked models are offered to DeepSeek Harness. New models are found automatically every 3 hours; when the list changes, the DSHProxy routes in DeepSeek Harness are updated (restart DeepSeek Harness to see them).") {
+                       note: apiCatalog ? "Browse models by publisher and API service. Refresh checks OpenRouter’s public catalog; other services use local configuration. Browsing does not enable a route." : "Ticked models are offered to DeepSeek Harness. New models are found automatically every 3 hours; when the list changes, the DSHProxy routes in DeepSeek Harness are updated (restart DeepSeek Harness to see them).") {
                 if !apiCatalog {
                 Toggle("Show hidden models", isOn: $store.showHidden).toggleStyle(.checkbox)
                 Button(store.checkingModels ? "Checking for new models..." : "Check for new models") { Task { await store.checkForModels() } }
@@ -413,7 +425,7 @@ struct ModelsPage: View {
             }
             .width(min: 140, ideal: 160)
             TableColumn("Service") { m in
-                HStack(spacing: 4) { LogoView(name: m.account, size: 14); Text(m.serviceLabel).foregroundStyle(.secondary) }
+                ModelServiceCell(logo: m.account, label: m.serviceLabel)
             }
             .width(min: 54, ideal: 90)
             TableColumn("Context") { m in Text(m.contextText).monospacedDigit().frame(maxWidth: .infinity, alignment: .trailing) }
