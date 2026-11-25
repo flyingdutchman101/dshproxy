@@ -1,0 +1,13 @@
+# Secret scan for this repository (CI job "secret-scan"; also `gitleaks git -c .gitleaks.toml .`):
+# gitleaks' own rules, minus the made-up values the tests use on purpose.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "made-up keys and fixtures in tests"
+regexes = [
+  '''sk-test-[A-Za-z0-9-]*''',        # made-up API keys
+  '''synthetic[-_A-Za-z0-9]*''',      # made-up provider keys
+  '''bm90IG[A-Za-z0-9+/=]*''',        # base64 of "not a ...": a key file that is not one
+  '''wan-3\.0[-A-Za-z0-9./]*''',      # a model name next to a provider name
+]

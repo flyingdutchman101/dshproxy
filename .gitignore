@@ -11,3 +11,12 @@ app/icon/NOTICE-personal.md
 # The macOS app (app-macos/build.sh) and its build folder.
 /DSHProxy.app/
 app-macos/.build/
+# Files that hold secrets or machine data, should one ever land in this folder.
+.env
+.env.*
+*.keychain-db
+*.p12
+master.key
+control.token
+backend-config.yaml
+/DSHProxy.app/
