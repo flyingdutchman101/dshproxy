@@ -24,6 +24,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
+      # A commit's author address is public forever. Only GitHub's no-reply
+      # address may appear, so a private address is never published by a merge
+      # or a push. (Set "Keep my email addresses private" on GitHub too.)
+      - name: Commit authors carry no private address
+        shell: bash
+        run: |
+          set -e
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then base=$(git rev-list --max-parents=0 HEAD | tail -1); fi
+          bad=$(git log --format='%ae%n%ce' "$base..HEAD" | sort -u | grep -vE '^(noreply@github\.com|[0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com)$' || true)
+          if [ -n "$bad" ]; then
+            echo "These commit author or committer addresses must not be published:"
+            echo "$bad"
+            echo "Amend them to <id>+<login>@users.noreply.github.com, then push again."
+            exit 1
+          fi
+          echo "ok: every commit in $base..HEAD uses GitHub's no-reply address"
 
   test:
     runs-on: windows-latest

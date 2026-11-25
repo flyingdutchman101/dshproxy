@@ -1,0 +1,19 @@
+# Keeps the npm dependency and the GitHub Actions pinned in CI up to date.
+# Updates arrive as pull requests; CI must pass before one is merged.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: /integrations/dsh-video
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
