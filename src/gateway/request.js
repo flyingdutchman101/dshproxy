@@ -1,5 +1,5 @@
 // Changes the gateway makes to a request body before it reaches CLIProxyAPI:
-// the model it is served by, and a reasoning level that model accepts.
+// the target model, its supported reasoning level and any required role translation.
 // Nothing else is touched.
 
 const EFFORT_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -41,6 +41,18 @@ function prepareBody(raw, model, { efforts = null, upstream = null } = {}) {
   const target = upstream || model;
   let changed = body.model !== target;
   body.model = target;
+  // Qwen Cloud rejects the developer role. Scope this to the selected API
+  // route, not a model family (e.g. OpenRouter can also serve Qwen models).
+  if (model.startsWith("qwen/")) {
+    for (const messages of [body.messages, body.input]) {
+      if (!Array.isArray(messages)) continue;
+      for (const message of messages) {
+        if (message?.role !== "developer") continue;
+        message.role = "system";
+        changed = true;
+      }
+    }
+  }
   changed = clampEffort(body, efforts) || changed;
   return changed ? Buffer.from(JSON.stringify(body), "utf8") : raw;
 }

@@ -211,9 +211,9 @@ struct LanesPage: View {
     @ObservedObject var store: AppStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 16) {
             PageHeader(title: "Lanes",
-                       note: "A lane tries each model in order until one answers. Green: can serve. Amber: sitting out after running out of quota. Red: no account or key.") {
+                       note: "Models are tried from left to right. Edit a lane to change its fallback order.") {
                 Button("Edit lanes\u{2026}") {
                     if let lanes = store.status?.lanes { store.sheet = .laneEditor(lanes) }
                 }
@@ -228,7 +228,11 @@ struct LanesPage: View {
                 Spacer(minLength: 0)
             } else if let status = store.status {
                 presetBox(status.routing)
-                legend
+                HStack {
+                    Text("Fallback order").font(.headline)
+                    Spacer()
+                    legend
+                }
                 laneTable(status.lanes)
             }
         }
@@ -289,14 +293,15 @@ struct LaneRow: View {
     let now: Date
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .top, spacing: 14) {
             Text(lane.title)
-                .font(.caption.weight(.semibold))
+                .font(.body.weight(.semibold))
+                .padding(.vertical, 4)
                 .lineLimit(2)
                 .truncationMode(.middle)
-                .frame(width: 78, alignment: .leading)
+                .frame(width: 108, alignment: .leading)
                 .help(lane.title)
-            FlowLayout(spacing: 3, lineSpacing: 2) {
+            FlowLayout(spacing: 7, lineSpacing: 6) {
                 ForEach(Array(lane.rungs.enumerated()), id: \.offset) { i, rung in
                     HStack(spacing: 3) {
                         if i > 0 { Text("\u{203A}").font(.caption2).foregroundStyle(.secondary).accessibilityHidden(true) }
@@ -309,6 +314,7 @@ struct LaneRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(lane.title), first to last")
+        .padding(.vertical, 9)
     }
 }
 
@@ -325,14 +331,13 @@ struct LadderChip: View {
             case .unavailable: return ("\u{2717}", .red)
             }
         }()
-        HStack(spacing: 3) {
+        HStack(spacing: 5) {
             Text(sym).bold().foregroundStyle(color)
-            Text(model).foregroundStyle(state == .unavailable ? .secondary : .primary)
+            Text(model).foregroundStyle(.primary)
         }
-        .font(.caption)
-        .padding(.horizontal, 5).padding(.vertical, 1)
-        .background(Capsule().fill(color.opacity(0.10)))
-        .overlay(Capsule().strokeBorder(color.opacity(0.40)))
+        .font(.body)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Capsule().fill(color.opacity(0.12)))
         .fixedSize()
         .help(why.isEmpty ? model : "\(model): \(why)")
         .accessibilityElement(children: .ignore)

@@ -51,6 +51,18 @@ test("a lane request is rewritten to the rung that serves it", () => {
   assert.deepEqual(parse(prepareBody(raw, "gpt-6-astra")), { model: "gpt-6-astra", messages: [{ role: "user", content: "hi" }] });
 });
 
+test("Qwen Cloud accepts developer instructions as system messages without changing other attempts", () => {
+  const developer = { role: "developer", content: [{ type: "text", text: "second instruction" }] };
+  const system = { role: "system", content: "first instruction" };
+  const user = { role: "user", content: "developer" };
+  for (const field of ["messages", "input"]) {
+    const model = "openrouter/qwen/example";
+    const raw = body({ model, [field]: [system, developer, user] });
+    assert.deepEqual(parse(prepareBody(raw, "qwen/example"))[field], [system, { ...developer, role: "system" }, user]);
+    assert.equal(prepareBody(raw, model), raw);
+  }
+});
+
 test("a model served under another upstream name is sent with that name", () => {
   const raw = body({ model: "ag-c55o-high", reasoning_effort: "max" });
   assert.deepEqual(parse(prepareBody(raw, "ag-c55o-high", { efforts: ["high"], upstream: "claude-opus-5-5-high" })), { model: "claude-opus-5-5-high", reasoning_effort: "high" });
