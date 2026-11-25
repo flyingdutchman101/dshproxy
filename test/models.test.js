@@ -173,7 +173,12 @@ test("without the catalog or the served list, the hand-written models are still 
 test("a newer version of a model on a lane is suggested, never applied", () => {
   const models = buildModels({ catalog: parseCatalog(CATALOG), served: SERVED, accounts: new Set(["claude", "codex", "antigravity"]), extra: [] });
   const lanes = { main: ["gpt-6-astra", "claude-fable-5-2", "gemini-4-carbon-high"], architect: ["claude-fable-5-2", "gpt-6.1-terra"], scout: ["claude-haiku-5-5"] };
-  assert.deepEqual(suggestions(lanes, models), [{ from: "claude-fable-5-2", to: "claude-fable-5-3", lanes: ["main", "architect"] }]);
+  // GPT 6.2 is in the hand list (added 25 Nov), so the lane that names 6 Astra is
+  // told about it as well; the order is the order the lanes and rungs are visited.
+  assert.deepEqual(suggestions(lanes, models), [
+    { from: "gpt-6-astra", to: "gpt-6.2-astra", lanes: ["main"] },
+    { from: "claude-fable-5-2", to: "claude-fable-5-3", lanes: ["main", "architect"] }
+  ]);
   // The lanes object is not changed.
   assert.deepEqual(lanes.main, ["gpt-6-astra", "claude-fable-5-2", "gemini-4-carbon-high"]);
 });

@@ -21,6 +21,9 @@ const subscription = (id, name, account, api, extra = {}) => ({
 const SUBSCRIPTION_MODELS = [
   subscription("gpt-6-astra", "GPT 6 Astra", "codex", "openai", { contextWindow: 272000 }),
   subscription("gpt-6.1-sol", "GPT 6.1 Sol", "codex", "openai", { contextWindow: 272000 }),
+  // Released after the first hand list was written (seen in the backend's catalog, 25 Nov).
+  subscription("gpt-6.2-astra", "GPT 6.2 Astra", "codex", "openai", { contextWindow: 272000 }),
+  subscription("gpt-6.2-sol", "GPT 6.2 Sol", "codex", "openai", { contextWindow: 272000 }),
   subscription("gpt-6.1-terra", "GPT 6.1 Terra", "codex", "openai", { contextWindow: 272000 }),
   subscription("gpt-6-luna", "GPT 6 Luna", "codex", "openai", { contextWindow: 272000 }),
   subscription("claude-fable-5-2", "Fable 5.2", "claude", "claude"),

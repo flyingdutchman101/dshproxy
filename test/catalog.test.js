@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const catalog = require("../src/catalog");
 const { availability, createResolver, describe } = require("../src/lanes");
 const settings = require("../src/settings");
+const { suggestions } = require("../src/models");
 
 test("every default ladder names only models the gateway knows", () => {
   for (const [lane, ladder] of Object.entries(settings.DEFAULT_LANES)) {
@@ -121,4 +122,15 @@ test("invalid settings fall back to the defaults", () => {
 test("a forced model resolves to itself only", () => {
   const resolve = createResolver({ lanes: () => ({ main: ["gpt-6-astra", "claude-opus-5-5"] }), isAvailable: () => true });
   assert.deepEqual(resolve("claude-opus-5-5"), { lane: null, ladder: ["claude-opus-5-5"] });
+});
+
+// Released upstream after the hand list was written (seen in the backend's catalog
+// on 25 Nov): GPT 6.2 on the ChatGPT plan. Offered, and proposed to the lanes that
+// still name the older version — the user decides.
+test("GPT 6.2 is offered and proposed to lanes that still name the older version", () => {
+  const models = catalog.subscriptionModels();
+  assert.ok(models.find((model) => model.id === "gpt-6.2-astra"), "gpt-6.2-astra missing");
+  assert.ok(models.find((model) => model.id === "gpt-6.2-sol"), "gpt-6.2-sol missing");
+  const proposed = suggestions({ main: ["gpt-6-astra"], scout: ["gpt-6.1-sol"] }, models);
+  assert.deepEqual(proposed.map((item) => [item.from, item.to]).sort(), [["gpt-6-astra", "gpt-6.2-astra"], ["gpt-6.1-sol", "gpt-6.2-sol"]]);
 });
