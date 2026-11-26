@@ -57,14 +57,23 @@ const WORKSPACE = [
   ['flux-3', '720p', 'Flux 3 - 720p - Krea', 'black-forest-labs/flux-3-video', 629.6296296296297],
   ['flux-3', '1080p', 'Flux 3 - 1080p - Krea', 'black-forest-labs/flux-3-video', 1074.0740740740741],
 ];
+const ELEVEN = [
+  ['seedance-2.0','Seedance 2.0',['480p','720p','1080p','4k']],
+  ['seedance-2.5','Seedance 2.5',['480p','720p','1080p','4k']],
+  ['seedance-2.0-fast','Seedance 2.0 Fast',['480p','720p']],
+  ['seedance-2.0-mini','Seedance 2.0 Mini',['480p','720p']],
+  ['veo-3.1','Veo 3.1',['720p','1080p','4K']],
+  ['veo-3.1-fast','Veo 3.1 Fast',['720p','1080p','4K']],
+  ['aurora','Aurora',['480p','720p']],
+].flatMap(([model,name,resolutions])=>resolutions.map(resolution=>({model,resolution,route:'elevenlabs',label:`${name} - ${resolution} - ElevenLabs`})));
 const key = (entry) => `${entry.model} / ${entry.resolution} / ${entry.route}`;
 const find = (model, resolution, route) => catalog.entries().find((entry) => entry.model === model && entry.resolution === resolution && entry.route === route);
 
 test('entries() lists exactly the combinations with a published price or a recorded workspace schema, each under its picker name', () => {
   const listed = catalog.entries();
   const expected = [...PRICED.map(([model, resolution, route, label]) => ({ model, resolution, route, label })),
-    ...WORKSPACE.map(([model, resolution, label]) => ({ model, resolution, route: 'krea', label }))];
-  assert.equal(listed.length, 41);
+    ...WORKSPACE.map(([model, resolution, label]) => ({ model, resolution, route: 'krea', label })), ...ELEVEN];
+  assert.equal(listed.length, 61);
   assert.deepEqual(listed.map(key).sort(), expected.map(key).sort());
   for (const want of expected) assert.equal(find(want.model, want.resolution, want.route).label, want.label);
   assert.equal(new Set(listed.map((entry) => entry.label)).size, listed.length);
@@ -74,6 +83,13 @@ test('entries() lists exactly the combinations with a published price or a recor
 test('every entry carries a price or the live-quote marker, a date and at least one source', () => {
   for (const entry of catalog.entries()) {
     const name = key(entry);
+    if (entry.route === 'elevenlabs') {
+      assert.equal(entry.priceBasis, 'unavailable');
+      assert.equal(entry.usdMicros, undefined);
+      assert.equal(entry.verifiedOn, '2026-11-26');
+      assert.deepEqual(entry.sourceUrls, ['https://api.elevenlabs.io/openapi.json']);
+      continue;
+    }
     assert.deepEqual([entry.durationSeconds, entry.aspectRatio], [5, '16:9'], name);
     assert.match(entry.verifiedOn, /^2026-11-2[12]$/, name);
     assert.ok(Array.isArray(entry.sourceUrls) && entry.sourceUrls.length >= 1, name);
@@ -152,7 +168,7 @@ test('without a resolution a quote is exactly the answer given before resolution
 });
 
 test('Flux 3 is a fifth model: on VideoRouter and on Krea at 720p and 1080p, and nowhere at 480p', () => {
-  assert.deepEqual(catalog.models, ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0', 'flux-3']);
+  assert.deepEqual(catalog.models, ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0', 'flux-3', 'seedance-2.0-fast', 'seedance-2.0-mini', 'veo-3.1', 'veo-3.1-fast', 'aurora']);
   assert.deepEqual(catalog.routesFor('flux-3'), ['videorouter', 'krea']);
   assert.deepEqual(catalog.entries().filter((entry) => entry.model === 'flux-3').map((entry) => [entry.resolution, entry.route, entry.modelId]), [
     ['720p', 'videorouter', 'black-forest-labs/flux-3/black-forest-labs'], ['1080p', 'videorouter', 'black-forest-labs/flux-3/black-forest-labs'],
@@ -216,7 +232,7 @@ test('nothing is guessed: a combination without a published figure is not an ent
   assert.equal(catalog.entries().some((entry) => entry.model.startsWith('seedance') && entry.resolution === '768p'), false);
   assert.equal(catalog.entries().some((entry) => entry.model === 'flux-3' && entry.resolution === '480p'), false);
   assert.equal(catalog.entries().some((entry) => entry.model === 'minimax-h3' && entry.route.startsWith('videorouter')), false);
-  assert.equal(catalog.entries().some((entry) => /^(4k|2160p|1440p|960p)$/i.test(entry.resolution)), false);
+  assert.equal(catalog.entries().some((entry) => entry.route !== 'elevenlabs' && /^(4k|2160p|1440p|960p)$/i.test(entry.resolution)), false);
   assert.equal(catalog.entries().some((entry) => entry.modelId.includes('socheap-overseas') && entry.resolution !== '720p'), false);
   for (const [model, route, resolution] of [['seedance-2.5', 'videorouter', '768p'], ['seedance-2.5', 'kovapi', '768p'], ['seedance-2.0', 'kovapi', '4k'], ['minimax-h3', 'kovapi', '720p'],
     ['minimax-h3', 'callirra', '960p'], ['wan-3.0', 'videorouter', '1440p'], ['wan-3.0', 'videorouter', '720P'], ['wan-3.0', 'videorouter', ' 720p'], ['wan-3.0', 'videorouter', ''],
@@ -234,7 +250,7 @@ test('entries() hands out copies: changing one changes nothing for the next call
   const first = catalog.entries();
   first[0].usdMicros = 1; first[0].sourceUrls.push('https://example.invalid/'); first.pop();
   const second = catalog.entries();
-  assert.equal(second.length, 41);
+  assert.equal(second.length, 61);
   assert.equal(second[0].usdMicros, 409488);
   assert.equal(second[0].sourceUrls.includes('https://example.invalid/'), false);
 });

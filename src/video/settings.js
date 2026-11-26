@@ -44,7 +44,7 @@ function known(model) {
 
 function priced(model, route) {
   try {
-    return quote(model, route).route === route;
+    return ['published','effective'].includes(quote(model, route).priceBasis);
   } catch {
     return false;
   }
@@ -55,7 +55,7 @@ function priced(model, route) {
 // workspace route has not even that ("unverified"). Nothing is called verified.
 function routes(model) {
   if (!known(model)) throw new Error('Unknown video model');
-  return [...new Set([...routesFor(model), WORKSPACE_ROUTE])]
+  return routesFor(model)
     .map((route) => ({ route, compatibility: priced(model, route) ? 'published-estimate' : 'unverified' }));
 }
 

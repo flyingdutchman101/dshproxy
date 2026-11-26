@@ -84,12 +84,13 @@ async function refused(home, attempt, pattern, ...plain) {
 
 // Written out by hand from the spec, not computed.
 const facts = {
+  elevenlabs: {provider:'elevenlabs', label:'ElevenLabs', variable:'ELEVENLABS_API_KEY', routes:['elevenlabs']},
   videorouter: { provider: 'videorouter', label: 'VideoRouter', variable: 'VIDEOROUTER_API_KEY', routes: ['videorouter', 'videorouter-replicate'] },
   kovapi: { provider: 'kovapi', label: 'KovAPI', variable: 'KOVAPI_API_KEY', routes: ['kovapi'] },
   callirra: { provider: 'callirra', label: 'Callirra', variable: 'CALLIRRA_API_KEY', routes: ['callirra'] }
 };
 const row = (provider, state = {}) => ({ ...facts[provider], saved: false, readable: false, inEnvironment: false, ...state });
-const rows = (states = {}) => ['videorouter', 'kovapi', 'callirra'].map((provider) => row(provider, states[provider]));
+const rows = (states = {}) => ['videorouter', 'kovapi', 'callirra', 'elevenlabs'].map((provider) => row(provider, states[provider]));
 
 test('nothing saved: the three providers are listed as not saved, and listing creates nothing and unlocks nothing', async (t) => {
   const home = tempHome(t);

@@ -37,16 +37,17 @@ enum Gateway: String, CaseIterable {
 
 enum Workspace: String, CaseIterable, Identifiable {
     case chat, video
+    var sections: [Section] { Section.allCases.filter { self == .video || ($0 != .voice && $0 != .research) } }
     var id: String { rawValue }
-    var title: String { self == .chat ? "Chat" : "Video" }
+    var title: String { rawValue.capitalized }
     var hint: String {
         self == .chat ? "Chat accounts, keys, lanes and models."
-                      : "Video routing setup. Nothing is generated or charged from this window."
+                      : "Video, Voice and Foreplay Research. Paid requests require confirmation."
     }
 }
 
 enum Section: Int, CaseIterable, Identifiable {
-    case accounts, apiKeys, lanes, models, harness, log
+    case accounts, apiKeys, lanes, models, voice, research, harness, log
     var id: Int { rawValue }
     var title: String {
         switch self {
@@ -54,6 +55,8 @@ enum Section: Int, CaseIterable, Identifiable {
         case .apiKeys: return "API keys"
         case .lanes: return "Lanes"
         case .models: return "Models"
+        case .voice: return "Voice"
+        case .research: return "Research"
         case .harness: return "DeepSeek Harness"
         case .log: return "Log"
         }

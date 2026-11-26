@@ -54,6 +54,9 @@ struct PageView: View {
         case (.chat, .lanes): LanesPage(store: store)
         case (.chat, .models): ModelsPage(store: store)
         case (.chat, .harness): HarnessPage(store: store)
+        case (.chat, .voice), (.chat, .research): AccountsPage(store: store) // Not a selectable Chat tab.
+        case (.video, .voice): VoicePage(store: store)
+        case (.video, .research): ResearchPage(store: store)
         case (.video, .accounts): VideoAccountsPage(store: store)
         case (.video, .apiKeys): VideoKeysPage(store: store)
         case (.video, .lanes): VideoLanesPage(store: store)
@@ -169,7 +172,7 @@ struct NavBar: View {
             HStack(spacing: 14) { workspacePicker; sectionPicker; hint }
             VStack(alignment: .leading, spacing: compact ? 6 : 8) {
                 HStack(spacing: 14) { workspacePicker; hint }
-                sectionPicker
+                ScrollView(.horizontal, showsIndicators: true) { sectionPicker }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -188,7 +191,7 @@ struct NavBar: View {
 
     private var sectionPicker: some View {
         Picker("Section", selection: Binding(get: { store.section }, set: { store.go(store.workspace, $0) })) {
-            ForEach(Section.allCases) { Text($0.title).tag($0) }
+            ForEach(store.workspace.sections) { Text($0.title).tag($0) }
         }
         .pickerStyle(.segmented)
         .labelsHidden()

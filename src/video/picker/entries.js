@@ -44,6 +44,8 @@ function byId(list) {
   for (const entry of Array.isArray(list) ? list : []) {
     if (entry === null || typeof entry !== 'object') continue;
     if (![entry.model, entry.resolution, entry.route].every((name) => typeof name === 'string' && name)) continue;
+    // This picker accepts text and requires a verifiable spending cap.
+    if (entry.priceBasis === 'unavailable' || entry.inputMode === 'image-audio') continue;
     const id = idOf(entry);
     if (!ID.test(id) || dropped.has(id)) continue;
     if (found.has(id)) {

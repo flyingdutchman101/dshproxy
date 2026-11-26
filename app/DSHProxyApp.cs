@@ -17,6 +17,7 @@ using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 using System.Web.Script.Serialization;
@@ -1440,6 +1441,7 @@ namespace DSHProxy
                 // then scrolls its AutoScroll panel on the way back, which looks
                 // like the page jumping.
                 if (navStrip != null) navStrip.Focus();
+                if (videoMode && videoSections.SelectedIndex != tabs.SelectedIndex) videoSections.SelectedIndex = tabs.SelectedIndex;
                 ShowWorkspace();
                 EnterVideoPage();
                 // In the Video workspace the first section is the video
@@ -1466,6 +1468,25 @@ namespace DSHProxy
             
             var nav = new NavStrip(tabs);
             navStrip = nav;
+            chatNav = nav;
+            for (var i = 0; i < tabs.TabPages.Count; i++) videoSections.TabPages.Add(new Panel { Text = tabs.TabPages[i].Text });
+            videoSections.TabPages.Add(new Panel { Text = "Voice" });
+            voicePage = BuildVoicePage();
+            voicePage.Visible = false;
+            content.Controls.Add(voicePage);
+            videoSections.TabPages.Add(new Panel { Text = "Research" });
+            researchPage = BuildResearchPage();
+            researchPage.Visible = false;
+            content.Controls.Add(researchPage);
+            videoNav = new NavStrip(videoSections) { Visible = false };
+            switchRow.Controls.Add(videoNav);
+            videoSections.SelectedIndexChanged += (s, e) => {
+                var changed = videoSections.SelectedIndex >= 0 && videoSections.SelectedIndex < tabs.TabPages.Count && tabs.SelectedIndex != videoSections.SelectedIndex;
+                if (changed) { tabs.SelectedIndex = videoSections.SelectedIndex; return; }
+                videoNav.Focus();
+                ShowWorkspace();
+                EnterVideoPage();
+            };
             // The chat pages and the video pages share one area; ShowWorkspace
             // decides which of the two is on screen.
             content.Controls.Add(tabs);
@@ -3112,6 +3133,11 @@ namespace DSHProxy
         // What the command line last reported; null until it has answered.
         private List<VideoSettings.Model> videoModels;
         private string videoError;
+        private readonly PageHost videoSections = new PageHost();
+        private NavStrip chatNav;
+        private NavStrip videoNav;
+        private Panel voicePage;
+        private Panel researchPage;
         private bool videoMode;
         private bool videoBusy;
         private bool videoPending;
@@ -3142,11 +3168,150 @@ namespace DSHProxy
             return switchRow;
         }
 
+        private static LinkLabel OfficialBrowserLink(string text, string url)
+        {
+            var link = new LinkLabel { Text = text, AutoSize = true, Margin = new Padding(4, 8, 4, 4) };
+            link.LinkClicked += (s, e) => {
+                try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+                catch (Exception error) { Msg.Show(link.FindForm(), error.Message, "Open official website", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            };
+            return link;
+        }
+
+        private Panel BuildResearchPage()
+        {
+            var page = new Panel { Dock = DockStyle.Fill, Text = "Research" };
+            var layout = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(18), AutoScroll = true };
+            page.Controls.Add(layout);
+            layout.Controls.Add(new GlassLabel { Text = "Foreplay research — offline until you confirm potential credit spend. No automatic retries.", AutoSize = true });
+            layout.Controls.Add(OfficialBrowserLink("Foreplay API overview", "https://app.foreplay.co/api-overview"));
+            var key = new PillButton { Text = "Save Foreplay key…", AutoSize = true }; layout.Controls.Add(key);
+            layout.Controls.Add(new GlassLabel { Text = "Search ads", AutoSize = true });
+            var query = new TextBox { Width = 590, AccessibleName = "Ad search query" }; layout.Controls.Add(query);
+            var search = new PillButton { Text = "Search ads…", AutoSize = true }; layout.Controls.Add(search);
+            var boards = new PillButton { Text = "List boards…", AutoSize = true }; layout.Controls.Add(boards);
+            var status = new GlassLabel { Width = 590, Height = 64, Text = "Offline. Nothing has been sent." }; layout.Controls.Add(status);
+            var results = new TextBox { Width = 590, Height = 260, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, AccessibleName = "Research results" }; layout.Controls.Add(results);
+            var busy = false;
+            Action<string[], string, bool> run = (args, input, saving) => {
+                busy = true; layout.Enabled = false; status.Text = saving ? "Saving key locally…" : "Request in progress…";
+                ThreadPool.QueueUserWorkItem(_ => {
+                    Cli.Result reply;
+                    try { reply = cli.Run(args, input, 180000); }
+                    catch (Exception) { reply = new Cli.Result { Code = -1, Out = "", Err = "" }; }
+                    var message = saving ? "Key save failed. No key details are displayed." : "Request failed or status unknown. Credits may have been spent; check Foreplay before retrying.";
+                    var text = "";
+                    if (reply.Code == 0) {
+                        if (saving) message = "Foreplay key saved.";
+                        else try {
+                            var root = Json.Obj(Json.Serializer.DeserializeObject(reply.Out));
+                            var items = Json.Get(root, "items");
+                            if (!(items is object[]) && !(items is ArrayList)) throw new FormatException();
+                            var lines = new List<string>();
+                            foreach (var item in Json.Arr(items)) {
+                                var row = Json.Obj(item);
+                                var label = Json.Get(row, "label") as string;
+                                var id = Json.Get(row, "id") as string;
+                                if (label == null || id == null) throw new FormatException();
+                                lines.Add(label + " — " + id);
+                            }
+                            text = string.Join(Environment.NewLine, lines.ToArray());
+                            message = lines.Count == 0 ? "No results." : lines.Count + " results.";
+                        } catch (Exception) { message = "Response unreadable or status unknown. Check Foreplay before retrying; credits may have been spent."; }
+                    }
+                    try { BeginInvoke(new Action(() => { busy = false; layout.Enabled = true; status.Text = message; results.Text = text; })); }
+                    catch (InvalidOperationException) { }
+                });
+            };
+            key.Click += (s, e) => {
+                if (busy) return;
+                if (VideoSynthetic) { status.Text = "Sample mode: no command executed."; return; }
+                var secret = KeyDialog.Ask(this, "Foreplay");
+                if (!string.IsNullOrEmpty(secret)) run(new[] { "research", "key", "set" }, secret + "\n", true);
+            };
+            Action<bool> request = ads => {
+                if (busy) return;
+                if (VideoSynthetic) { status.Text = "Sample mode: no command executed."; return; }
+                if (ads && string.IsNullOrWhiteSpace(query.Text)) { status.Text = "Enter an ad search query."; return; }
+                busy = true;
+                var terms = ads ? "Search Foreplay Discovery? This requests up to 10 ads at 1 credit per returned ad." : "List up to 10 saved boards? Foreplay lists 1 credit for a successful nonempty request.";
+                var confirmed = Msg.Show(this, terms + " No automatic retries.", "Confirm potential credit spend", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+                busy = false;
+                if (!confirmed) return;
+                run(ads ? new[] { "research", "search", "--query", query.Text, "--confirm-credits" } : new[] { "research", "boards", "--confirm-credits" }, null, false);
+            };
+            search.Click += (s, e) => request(true);
+            boards.Click += (s, e) => request(false);
+            return page;
+        }
+
+        private Panel BuildVoicePage()
+        {
+            var page = new Panel { Dock = DockStyle.Fill, Text = "Voice" };
+            {
+                var layout = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(18), AutoScroll = true };
+                page.Controls.Add(layout);
+                layout.Controls.Add(new GlassLabel { Text = "Shared key: Video > API keys > ElevenLabs. No automatic spend or retries.", AutoSize = true });
+                var keys = new PillButton { Text = "Manage shared key", AutoSize = true };
+                keys.Click += (s, e) => { videoSections.SelectedIndex = VideoKeysPage; tabs.SelectedIndex = VideoKeysPage; EnterVideoPage(); };
+                layout.Controls.Add(keys);
+                layout.Controls.Add(OfficialBrowserLink("Browse ElevenLabs voice library", "https://elevenlabs.io/app/voice-library"));
+                var model = new ComboBox { Width = 590, DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "Voice model" };
+                model.Items.AddRange(new object[] { "eleven_v4", "eleven_v4_turbo", "eleven_flash_v2_5", "eleven_flash_v2", "scribe_v3", "scribe_v3_live", "scribe_v2_medical", "eleven_multilingual_sts_v2" });
+                model.SelectedIndex = 0;
+                layout.Controls.Add(model);
+                layout.Controls.Add(new GlassLabel { Text = "Speaker / voice ID (separate from model; not needed for transcription)", AutoSize = true });
+                var speaker = new TextBox { Width = 590, AccessibleName = "Speaker voice ID" }; layout.Controls.Add(speaker);
+                layout.Controls.Add(new GlassLabel { Text = "Input file: UTF-8 text for TTS; audio for transcription / voice changing", AutoSize = true });
+                var input = new TextBox { Width = 590, AccessibleName = "Input file" }; layout.Controls.Add(input);
+                var browse = new PillButton { Text = "Choose input…", AutoSize = true };
+                browse.Click += (s, e) => { using (var picker = new OpenFileDialog()) if (picker.ShowDialog(this) == DialogResult.OK) input.Text = picker.FileName; }; layout.Controls.Add(browse);
+                layout.Controls.Add(new GlassLabel { Text = "Output path (must be a new file; .mp3 audio or .json transcription)", AutoSize = true });
+                var output = new TextBox { Width = 590, AccessibleName = "Output file" }; layout.Controls.Add(output);
+                var save = new PillButton { Text = "Choose output…", AutoSize = true };
+                save.Click += (s, e) => { using (var picker = new SaveFileDialog()) if (picker.ShowDialog(this) == DialogResult.OK) output.Text = picker.FileName; }; layout.Controls.Add(save);
+                var status = new GlassLabel { Width = 590, Height = 48, Text = "Nothing has been sent." }; layout.Controls.Add(status);
+                var submit = Skin.Primary(new PillButton { Text = "Review paid request…", AutoSize = true }); layout.Controls.Add(submit);
+                var voiceBusy = false;
+                model.SelectedIndexChanged += (s, e) => {
+                    var id = (string)model.SelectedItem;
+                    speaker.Enabled = !id.StartsWith("scribe_", StringComparison.Ordinal);
+                    status.Text = id == "scribe_v3_live" ? "Raw PCM16 little-endian mono 16 kHz input; 2 to 30 seconds. No speaker ID." : id == "scribe_v2_medical" ? "Medical use requires appropriate agreements / BAA for PHI. Provider retention defaults apply; no compliance guarantee." : "Nothing has been sent.";
+                };
+                submit.Click += (s, e) => {
+                    if (voiceBusy) return;
+                    if (VideoSynthetic) { status.Text = "Preview mode: nothing was sent."; return; }
+                    var id = (string)model.SelectedItem;
+                    var operation = id == "scribe_v3_live" ? "live" : id.StartsWith("scribe_", StringComparison.Ordinal) ? "transcribe" : id == "eleven_multilingual_sts_v2" ? "change" : "tts";
+                    if (!File.Exists(input.Text) || !Path.IsPathRooted(output.Text) || File.Exists(output.Text) || (operation != "transcribe" && operation != "live" && !Regex.IsMatch(speaker.Text, "^[A-Za-z0-9_-]{1,128}$"))) { status.Text = "Choose an existing input, a new absolute output path, and a speaker ID when required."; return; }
+                    voiceBusy = true; layout.Enabled = false;
+                    if (Msg.Show(this, "Send " + input.Text + " to ElevenLabs using " + id + "?\n\nCharges depend on your account. This is not a price quote. No automatic retry. Output: " + output.Text, "Paid voice request", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) { voiceBusy = false; layout.Enabled = true; return; }
+                    var args = new List<string> { "voice", operation, id };
+                    if (operation != "transcribe" && operation != "live") args.AddRange(new[] { "--voice", speaker.Text });
+                    args.AddRange(new[] { operation == "tts" ? "--text-file" : "--input", input.Text, "--output", output.Text, "--confirm-charge" });
+                    layout.Enabled = false; status.Text = "Request in progress…";
+                    ThreadPool.QueueUserWorkItem(_ => {
+                        Cli.Result result;
+                        try { result = cli.Run(args.ToArray(), null, 180000); }
+                        catch (Exception error) { result = new Cli.Result { Code = -1, Err = error.Message, Out = "" }; }
+                        try { BeginInvoke(new Action(() => { voiceBusy = false; layout.Enabled = true; status.Text = result.Code == 0 ? result.Out : "Request uncertain or failed. Check ElevenLabs history before retrying. " + VideoSettings.Failure(result); })); }
+                        catch (InvalidOperationException) { }
+                    });
+                };
+                return page;
+            }
+        }
+
         private void SetWorkspace(bool video)
         {
             if (videoMode == video) return;
+            if (video) videoSections.SelectedIndex = tabs.SelectedIndex;
             videoMode = video;
+            chatNav.Visible = !video;
+            videoNav.Visible = video;
+            navStrip = video ? videoNav : chatNav;
             ShowWorkspace();
+            LayoutColumn();
             if (video)
             {
                 // Before the window exists there is nowhere to report to.
@@ -3169,11 +3334,21 @@ namespace DSHProxy
         // section index never changes here, so a switch stays on the same tab.
         private void ShowWorkspace()
         {
-            var index = tabs.SelectedIndex;
+            var index = videoMode ? videoSections.SelectedIndex : tabs.SelectedIndex;
+            var showVoice = videoMode && index == tabs.TabPages.Count;
             var logSelected = index == tabs.TabPages.Count - 1 && tabs.TabPages.Count > 0;
-            var showVideo = videoMode && index < videoPages.Count;
+            var showResearch = videoMode && index == tabs.TabPages.Count + 1;
+            var showVideo = videoMode && index >= 0 && index < videoPages.Count;
             content.SuspendLayout();
-            if (showVideo)
+            if (voicePage != null) voicePage.Visible = showVoice;
+            if (researchPage != null) researchPage.Visible = showResearch;
+            if (showVoice || showResearch)
+            {
+                (showResearch ? researchPage : voicePage).BringToFront();
+                tabs.Visible = false;
+                videoHost.Visible = false;
+            }
+            else if (showVideo)
             {
                 // The new page goes up before the old one comes down, so there
                 // is never a blank frame between them.
@@ -3193,7 +3368,9 @@ namespace DSHProxy
             content.ResumeLayout(true);
             content.Invalidate(true);
             SetText(workspaceHint, Tied(logSelected ? "The log is shared by the Chat and Video workspaces."
-                : videoMode ? "Video routing setup. Nothing is generated or charged from this window."
+                : showResearch ? "Foreplay research stays offline until you confirm a request."
+                : showVoice ? "Voice requests require your explicit paid-request confirmation."
+                : videoMode ? "Video routing setup. Voice requests are available in the Voice tab."
                 : "Chat accounts, keys, lanes and models."));
         }
 
@@ -3300,8 +3477,8 @@ namespace DSHProxy
             videoKeyRemove = new PillButton { Text = "Remove key", AutoSize = true, Enabled = false };
             videoKeyRemove.Click += (s, e) => RemoveVideoKey();
             AddVideoPage("API keys", videoKeysList,
-                VideoTop("Video API keys", "Save the key of a pay-per-use video provider here. It is stored encrypted in the DSHProxy data folder, like the Chat API keys, and is used by DSHProxy's video command; a key in the provider's environment variable is used instead when that is set. A saved key is not checked against the provider. Video generation from DeepSeek Harness works on the Krea route only for now."),
-                VideoBottom(videoKeysStatus, videoKeyAdd, videoKeyRemove, new GlassLabel { Text = "The Krea workspace route uses a sign-in instead of a key: see Accounts.", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(12, 11, 0, 0) }));
+                VideoTop("Video API keys", "Save the key of a pay-per-use video provider here. It is stored encrypted in the DSHProxy data folder, like the Chat API keys, and is used by DSHProxy's video command; a key in the provider's environment variable is used instead when that is set. A saved key is not checked against the provider. Dashboard sign-in lets you create an API key; it is not a separate OAuth billing route. Video generation from DeepSeek Harness works on the Krea route only for now."),
+                VideoBottom(videoKeysStatus, videoKeyAdd, videoKeyRemove, OfficialBrowserLink("Create ElevenLabs API key (browser)", "https://elevenlabs.io/app/api/api-keys"), OfficialBrowserLink("Register with KovAPI (browser)", "https://kovapi.com/register"), new GlassLabel { Text = "The Krea workspace route uses a sign-in instead of a key: see Accounts.", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(12, 11, 0, 0) }));
             SetPageStatus(videoAccountsStatus, "The Krea sign-in state has not been read yet.", Theme.Muted);
             SetPageStatus(videoKeysStatus, "The saved video keys have not been read yet.", Theme.Muted);
             FillVideoKeys();
@@ -3317,7 +3494,7 @@ namespace DSHProxy
             videoButtons.Add(changeRoute);
             videoButtons.Add(reloadLanes);
             AddVideoPage("Lanes", videoLanesList,
-                VideoTop("Video lanes", "Each enabled model has exactly one billing route. A paid job is never retried automatically, moved to another provider or passed on to another route. A saved route is a setting: it does not prove a sign-in, a key, availability or a price."),
+                VideoTop("Video lanes", "Each enabled model has exactly one billing route. A paid job is never retried automatically, moved to another provider or passed on to another route. A saved route is a setting: it does not prove a sign-in, a key, availability or a price. Unpriced ElevenLabs routes are setup only: no quote or generation is available."),
                 VideoBottom(videoLanesStatus, changeRoute, reloadLanes, CompanyNote()));
 
             // Models: switch exact models on and off.
@@ -3328,7 +3505,7 @@ namespace DSHProxy
             reloadModels.Click += (s, e) => LoadVideoSettings();
             videoButtons.Add(reloadModels);
             AddVideoPage("Models", videoModelsList,
-                VideoTop("Video models", "Ticked models with a billing route are what the separate DeepSeek Harness video bundle may offer; new models start switched off. A tick is a setting only: it checks no sign-in, key, availability or price, it is not a spending limit, and nothing is generated or charged here. Choose the billing route under Lanes."),
+                VideoTop("Video models", "Ticked models with a billing route are what the separate DeepSeek Harness video bundle may offer; new models start switched off. A tick is a setting only: it checks no sign-in, key, availability or price, it is not a spending limit, and nothing is generated or charged here. Choose the billing route under Lanes. ElevenLabs uses the shared Voice key; unpriced routes are setup only, with no quote or generation available. Veo variants support different durations; Aurora requires audio and an image. Check the CLI model options before submitting."),
                 VideoBottom(videoModelsStatus, reloadModels, CompanyNote()));
 
             // DeepSeek Harness: video gets there through the video tools, a
@@ -3792,7 +3969,7 @@ namespace DSHProxy
         // read their state then, and at no other time on their own.
         private void EnterVideoPage()
         {
-            if (!videoMode || !IsHandleCreated) return;
+            if (!videoMode || !IsHandleCreated || videoSections.SelectedIndex < 0 || videoSections.SelectedIndex >= tabs.TabPages.Count) return;
             if (tabs.SelectedIndex == VideoAccountsPage) ReadKreaState(null, Theme.Muted);
             else if (tabs.SelectedIndex == VideoKeysPage) ReadVideoKeys(null, false);
             else if (tabs.SelectedIndex == VideoHarnessPage) ReadHarnessSetup();
@@ -4804,6 +4981,7 @@ namespace DSHProxy
                 case "videorouter-replicate": return "VideoRouter (Replicate)";
                 case "kovapi": return "KovAPI";
                 case "callirra": return "Callirra";
+                case "elevenlabs": return "ElevenLabs";
                 default: return route;
             }
         }
@@ -6531,7 +6709,7 @@ namespace DSHProxy
                 var combo = new ComboBox { Left = 20, Top = 50, Width = 460, DropDownStyle = ComboBoxStyle.DropDownList, TabIndex = 0, AccessibleName = "Billing route for " + model };
                 foreach (var route in routes)
                 {
-                    combo.Items.Add(new Choice(route, VideoSettings.RouteName(route) + " \u00B7 billed in " + VideoSettings.Units(route)));
+                    combo.Items.Add(new Choice(route, VideoSettings.RouteName(route) + (route == "elevenlabs" ? " (setup only if unpriced)" : "") + " \u00B7 billed in " + VideoSettings.Units(route)));
                     if (route == current) combo.SelectedIndex = combo.Items.Count - 1;
                 }
                 var note = new GlassLabel

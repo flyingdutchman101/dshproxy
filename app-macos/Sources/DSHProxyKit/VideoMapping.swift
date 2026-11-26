@@ -77,6 +77,7 @@ public enum VideoSettings {
         case "videorouter-replicate": return "VideoRouter (Replicate)"
         case "kovapi": return "KovAPI"
         case "callirra": return "Callirra"
+        case "elevenlabs": return "ElevenLabs"
         default: return route
         }
     }

@@ -438,7 +438,7 @@ struct RouteSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Text("One route for each model. A paid job is never retried automatically or moved to another route.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Text("Saving a route does not check a sign-in, a key or a price, and charges nothing.\(enableAfter ? "" : " The model stays switched off.")")
+            Text("Saving a route does not check a sign-in, a key or a price, and charges nothing. Unpriced ElevenLabs routes are setup only: no quote or generation is available.\(enableAfter ? "" : " The model stays switched off.")")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()

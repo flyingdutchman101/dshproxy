@@ -42,12 +42,17 @@ test('an id is the model, the slug of the resolution and the route', () => {
   assert.equal(entries.idOf({ model: 'm', resolution: 'Ultra  HD_4.5 (beta)', route: 'r' }), 'm/ultra-hd-4.5-beta-/r');
 });
 
-test('with every entry of the real catalog switched on, each has its own well-formed id', async (t) => {
+test('with every catalog entry switched on, each submit-capable text entry has its own well-formed id', async (t) => {
   const home = tempHome(t);
   await switchAllOn(home);
-  const all = catalog.entries();
+  const all = catalog.entries().filter((entry) => entry.route !== 'elevenlabs');
+  assert.equal(all.length, 41);
+  assert.equal((await settings.entriesOn(home)).length, 61, 'all entries remain enabled in settings');
   const offered = await entries.offered(home);
   assert.ok(offered instanceof Map);
+  for (const entry of catalog.entries().filter((entry) => entry.route === 'elevenlabs')) {
+    assert.equal(offered.has(entries.idOf(entry)), false, 'unpriced ElevenLabs entries cannot be offered for spending');
+  }
   assert.equal(offered.size, all.length, 'no entry was left out, so no two share an id and every id is well formed');
   assert.deepEqual([...offered.keys()], all.map((entry) => entries.idOf(entry)), 'catalog order');
   assert.equal(new Set(offered.keys()).size, all.length);

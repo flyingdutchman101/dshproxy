@@ -117,6 +117,16 @@ test('an API-route quote is the dated published estimate and never carries the p
   for (const start of watch.starts) assert.ok(!JSON.stringify([start.args, start.options.env, start.stdin]).includes(PROMPT))
 })
 
+test('ElevenLabs quote explains missing prices without forwarding a prompt', async (t) => {
+  const facts = await host(t)
+  await saveSettings(facts.home, { 'veo-3.1': { enabled: true, route: 'elevenlabs' } })
+  const watch = spy()
+  const kit = tools({ root: realRoot }, facts.host, watch)
+  await assert.rejects(kit.run('video_quote', { model: 'veo-3.1', route: 'elevenlabs', prompt: PROMPT }), /no verified pre-generation estimate/)
+  assert.equal(watch.starts.length, 1)
+  assert.ok(!watch.starts[0].stdin.includes(PROMPT))
+})
+
 test('a quote is refused unless the model is enabled on exactly that route', async (t) => {
   const facts = await host(t)
   await saveSettings(facts.home, { 'wan-3.0': { enabled: true, route: 'videorouter' }, 'seedance-2.0': { enabled: false, route: 'kovapi' } })

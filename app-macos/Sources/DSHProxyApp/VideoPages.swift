@@ -99,6 +99,11 @@ struct VideoKeysPage: View {
         VStack(alignment: .leading, spacing: 12) {
             PageHeader(title: "Video API keys",
                        note: "Save the key of a pay-per-use video provider here. It is stored encrypted in the DSHProxy data folder, like the Chat API keys, and is used by DSHProxy's video command; a key in the provider's environment variable is used instead when that is set. A saved key is not checked against the provider. Video generation from DeepSeek Harness works on the Krea route only for now.")
+            HStack {
+                Link("Create ElevenLabs API key (browser)", destination: URL(string: "https://elevenlabs.io/app/api/api-keys")!)
+                Link("Register with KovAPI (browser)", destination: URL(string: "https://kovapi.com/register")!)
+            }
+            Text("Dashboard sign-in lets you create an API key; it is not a separate OAuth billing route.").font(.callout).foregroundStyle(.secondary)
             if let keys = store.videoKeys {
                 Table(keys, selection: $selection) {
                     TableColumn("Provider") { p in Text(p.label) }.width(min: 100, ideal: 120)
@@ -147,7 +152,7 @@ struct VideoLanesPage: View {
         let enabled = (store.videoModels ?? []).filter(\.enabled)
         VStack(alignment: .leading, spacing: 12) {
             PageHeader(title: "Video lanes",
-                       note: "Each enabled model has exactly one billing route. A paid job is never retried automatically, moved to another provider or passed on to another route. A saved route is a setting: it does not prove a sign-in, a key, availability or a price.") {
+                       note: "Each enabled model has exactly one billing route. A paid job is never retried automatically, moved to another provider or passed on to another route. A saved route is a setting: it does not prove a sign-in, a key, availability or a price. Unpriced ElevenLabs routes are setup only: no quote or generation is available.") {
                 Button("Reload video settings") { Task { await store.loadVideoSettings() } }.disabled(store.videoBusy)
             }
             if store.videoModels == nil {
@@ -192,7 +197,7 @@ struct VideoModelsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             PageHeader(title: "Video models",
-                       note: "Ticked models with a billing route are what the separate DeepSeek Harness video bundle may offer; new models start switched off. A tick is a setting only: it checks no sign-in, key, availability or price, it is not a spending limit, and nothing is generated or charged here. Choose the billing route under Lanes.") {
+                       note: "Ticked models with a billing route are what the separate DeepSeek Harness video bundle may offer; new models start switched off. A tick is a setting only: it checks no sign-in, key, availability or price, it is not a spending limit, and nothing is generated or charged here. Choose the billing route under Lanes. ElevenLabs models use the shared Voice key; unpriced routes are setup only, with no quote or generation available. Veo variants have different supported durations; Aurora requires both audio and an image. Check the model's CLI options before submitting a job.") {
                 Button("Reload video settings") { Task { await store.loadVideoSettings() } }.disabled(store.videoBusy)
             }
             if let models = store.videoModels {

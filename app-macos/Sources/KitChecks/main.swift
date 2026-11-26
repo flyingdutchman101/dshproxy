@@ -874,6 +874,20 @@ let sampleVideoSettings = """
 }
 """
 
+await check("Voice: separate speaker, file and WebSocket arguments, explicit approval") {
+    try expectEqual(VoiceRequest.models.count, 8, "all choices")
+    try expectEqual(VoiceRequest.arguments(model: "eleven_v4", speaker: "speaker123", input: "/tmp/input.txt", output: "/tmp/output.mp3"), ["voice", "tts", "eleven_v4", "--voice", "speaker123", "--text-file", "/tmp/input.txt", "--output", "/tmp/output.mp3", "--confirm-charge"], "speaker separate from model")
+    try expectEqual(VoiceRequest.arguments(model: "scribe_v3", speaker: "", input: "/tmp/input.wav", output: "/tmp/output.json"), ["voice", "transcribe", "scribe_v3", "--input", "/tmp/input.wav", "--output", "/tmp/output.json", "--confirm-charge"], "transcription has no speaker")
+    try expectEqual(VoiceRequest.arguments(model: "eleven_v4_turbo", speaker: "speaker123", input: "/in", output: "/out"), ["voice", "tts", "eleven_v4_turbo", "--voice", "speaker123", "--text-file", "/in", "--output", "/out", "--confirm-charge"], "turbo TTS")
+    try expectEqual(VoiceRequest.arguments(model: "scribe_v3_live", speaker: "ignored", input: "/in", output: "/out"), ["voice", "live", "scribe_v3_live", "--input", "/in", "--output", "/out", "--confirm-charge"], "live has no speaker")
+    for model in ["unknown"] {
+        try expectEqual(VoiceRequest.arguments(model: model, speaker: "speaker", input: "/in", output: "/out"), nil, "unsupported")
+    }
+    try expectEqual(VoiceRequest.arguments(model: "eleven_v4", speaker: "", input: "/in", output: "/out"), nil, "missing speaker")
+    try expectEqual(VoiceRequest.arguments(model: "eleven_v4", speaker: "speaker", input: "--option", output: "/out"), nil, "input cannot become an option")
+    try expectEqual(VoiceRequest.arguments(model: "eleven_v4", speaker: "speaker", input: "/same", output: "/same"), nil, "cannot overwrite input")
+}
+
 await check("Mapping: video settings -> rows, routes, billed in; set arguments; refusals") {
     guard case .success(let models) = VideoSettings.parse(sampleVideoSettings) else { throw CheckFailure(description: "parse failed") }
     try expectEqual(models.map(\.id), ["wan-3.0", "minimax-h3", "seedance-2.0"], "ids")
@@ -883,6 +897,7 @@ await check("Mapping: video settings -> rows, routes, billed in; set arguments; 
     try expectEqual(models.map(\.billedIn), ["workspace compute units", nil, nil], "billed in")
     try expectEqual(["callirra", "kovapi", "videorouter-replicate", "odd"].map(VideoSettings.units), ["plan credits", "US dollars", "US dollars", "units not known to this app"], "units")
     try expectEqual(VideoSettings.routeName("videorouter-replicate"), "VideoRouter (Replicate) \u{B7} videorouter-replicate", "route name")
+    try expectEqual(VideoSettings.routeLabel("elevenlabs"), "ElevenLabs", "shared voice/video provider")
     try expectEqual(VideoSettings.routeName("odd"), "odd", "unknown route name")
     try expectEqual(VideoSettings.company("seedance-2.0").logo, "bytedance", "company logo")
     try expectEqual(VideoSettings.company("minimax-h3").label, "MiniMax", "company")

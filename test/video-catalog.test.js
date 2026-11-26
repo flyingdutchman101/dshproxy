@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { models, quote } = require('../src/video/catalog');
 
 test('public models and pinned default benchmark quotes', () => {
-  assert.deepEqual(models, ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0', 'flux-3']);
+  assert.deepEqual(models, ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0', 'flux-3', 'seedance-2.0-fast', 'seedance-2.0-mini', 'veo-3.1', 'veo-3.1-fast', 'aurora']);
   for (const [model, route, modelId, usdMicros, resolution] of [
     ['seedance-2.5', 'videorouter', 'bytedance/seedance-2.5/socheap-overseas', 702125, '720p'],
     ['seedance-2.0', 'videorouter', 'bytedance/seedance-2.0/socheap-overseas', 459200, '720p'],

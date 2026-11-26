@@ -30,7 +30,7 @@ const file = (home) => path.join(home, 'video-settings.json');
 const onDisk = (home) => JSON.parse(fs.readFileSync(file(home), 'utf8'));
 const snapshot = (home) => (fs.existsSync(home) ? fs.readdirSync(home).sort().map((name) => [name, fs.readFileSync(path.join(home, name), 'utf8')]) : null);
 const off = { enabled: false, route: null };
-const allOff = { models: { 'seedance-2.5': off, 'seedance-2.0': off, 'minimax-h3': off, 'wan-3.0': off, 'flux-3': off } };
+const allOff = { models: { 'seedance-2.5': off, 'seedance-2.0': off, 'minimax-h3': off, 'wan-3.0': off, 'flux-3': off, 'seedance-2.0-fast': off, 'seedance-2.0-mini': off, 'veo-3.1': off, 'veo-3.1-fast': off, aurora: off } };
 const names = (list) => list.map((entry) => `${entry.model}/${entry.resolution}/${entry.route}`);
 const switchedOn = async (home) => names((await video.entries(home)).filter((entry) => entry.on));
 
@@ -42,7 +42,7 @@ const FLUX = { model: 'flux-3', resolution: '1080p', route: 'videorouter' };
 test('nothing saved: every entry of the catalog is listed and off, and reading creates nothing', async (t) => {
   const home = tempHome(t);
   const listed = await video.entries(home);
-  assert.equal(listed.length, 41);
+  assert.equal(listed.length, 61);
   assert.deepEqual(names(listed), names(catalog.entries()));
   assert.ok(listed.every((entry) => entry.on === false));
   assert.deepEqual(listed.map(({ on, ...entry }) => entry), catalog.entries());
@@ -57,7 +57,7 @@ test('an entry switched on is saved, returned and read back, with its picker nam
   const home = tempHome(t);
   const returned = await video.setEntry(home, SEEDANCE, true);
   assert.deepEqual(names(returned.filter((entry) => entry.on)), ['seedance-2.5/720p/krea']);
-  assert.equal(returned.length, 41);
+  assert.equal(returned.length, 61);
   assert.deepEqual(await switchedOn(home), ['seedance-2.5/720p/krea']);
   const [on] = await video.entriesOn(home);
   assert.deepEqual([on.model, on.resolution, on.route, on.label, on.priceBasis], ['seedance-2.5', '720p', 'krea', 'Seedance 2.5 - 720p - Krea', 'live-quote']);
@@ -228,7 +228,7 @@ test('while another command is changing the file, switching an entry waits and t
 function cli(home, args) {
   return new Promise((resolve) => {
     const env = { ...process.env, DSHPROXY_HOME: home };
-    for (const name of ['VIDEOROUTER_API_KEY', 'KOVAPI_API_KEY', 'CALLIRRA_API_KEY']) delete env[name];
+    for (const name of ['VIDEOROUTER_API_KEY', 'KOVAPI_API_KEY', 'CALLIRRA_API_KEY', 'ELEVENLABS_API_KEY']) delete env[name];
     const child = spawn(process.execPath, [path.resolve(__dirname, '../bin/dshproxy.js'), 'video', ...args], { env, windowsHide: true });
     let stdout = '', stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk; });
@@ -265,7 +265,7 @@ test('video entries lists every entry with on or off, and video entries set swit
   const s = session(t);
   const listed = await s.exec('entries');
   assert.deepEqual(Object.keys(listed), ['entries']);
-  assert.equal(listed.entries.length, 41);
+  assert.equal(listed.entries.length, 61);
   assert.ok(listed.entries.every((entry) => entry.on === false));
   assert.deepEqual(fs.readdirSync(s.home), []);
   const row = listed.entries.find((entry) => entry.label === 'Seedance 2.5 - 1080p - VideoRouter');
@@ -309,16 +309,17 @@ test('video entries set refuses an unknown model, resolution or route, a combina
   assert.deepEqual(s.seen, []);
 });
 
-test('video settings prints what it printed before, with Flux 3 as a fifth model, and says nothing about entries', async (t) => {
+test('video settings lists all ten models and their routes, and says nothing about entries', async (t) => {
   const s = session(t);
   await s.exec('entries', 'set', 'wan-3.0', '720p', 'krea', 'on');
   const printed = await s.exec('settings');
   assert.deepEqual(printed, { models: [
-    { model: 'seedance-2.5', enabled: false, route: null, routes: ['videorouter', 'kovapi', 'krea'] },
-    { model: 'seedance-2.0', enabled: false, route: null, routes: ['videorouter', 'kovapi', 'krea'] },
+    { model: 'seedance-2.5', enabled: false, route: null, routes: ['videorouter', 'kovapi', 'elevenlabs', 'krea'] },
+    { model: 'seedance-2.0', enabled: false, route: null, routes: ['videorouter', 'kovapi', 'elevenlabs', 'krea'] },
     { model: 'minimax-h3', enabled: false, route: null, routes: ['kovapi', 'callirra', 'krea'] },
     { model: 'wan-3.0', enabled: false, route: null, routes: ['videorouter', 'videorouter-replicate', 'kovapi', 'krea'] },
     { model: 'flux-3', enabled: false, route: null, routes: ['videorouter', 'krea'] },
+    ...['seedance-2.0-fast', 'seedance-2.0-mini', 'veo-3.1', 'veo-3.1-fast', 'aurora'].map((model) => ({ model, enabled: false, route: null, routes: ['elevenlabs'] })),
   ] });
   assert.deepEqual(await s.exec('settings', 'set', 'flux-3', 'krea', 'enabled'), { models: printed.models.map((row) => (row.model === 'flux-3' ? { ...row, enabled: true, route: 'krea' } : row)) });
   assert.deepEqual((await s.exec('entries')).entries.filter((entry) => entry.on).map((entry) => entry.label), ['Wan 3.0 - 720p - Krea']);

@@ -128,6 +128,7 @@ const keyRows = (states={}) => [
   {provider:'videorouter', label:'VideoRouter', variable:'VIDEOROUTER_API_KEY', routes:['videorouter','videorouter-replicate']},
   {provider:'kovapi', label:'KovAPI', variable:'KOVAPI_API_KEY', routes:['kovapi']},
   {provider:'callirra', label:'Callirra', variable:'CALLIRRA_API_KEY', routes:['callirra']},
+  {provider:'elevenlabs', label:'ElevenLabs', variable:'ELEVENLABS_API_KEY', routes:['elevenlabs']},
 ].map(row => ({...row, saved:false, readable:false, inEnvironment:false, ...states[row.provider]}));
 function holdsKey(home, ...plain) {
   return fsSync.readdirSync(home).some(name => plain.some(value => fsSync.readFileSync(pathMod.join(home, name)).includes(value)));

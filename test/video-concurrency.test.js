@@ -168,7 +168,7 @@ test('a lock left behind by a command that died is taken over at once, and no lo
     assert.deepEqual(names(home), ['master.key', 'video-keys.json', 'video-settings.json'], change.name);
   }
   assert.equal(await keys.resolve(home, 'callirra', read), KEY);
-  assert.deepEqual((await keys.list(home, read)).map((row) => row.saved), [false, false, true]);
+  assert.deepEqual((await keys.list(home, read)).map((row) => row.saved), [false, false, true, false]);
   assert.deepEqual(await enabledModels(home), ['minimax-h3=callirra', 'wan-3.0=kovapi']);
 });
 
@@ -256,7 +256,7 @@ test('a write that Windows refuses for a moment is tried again; one that stays r
     assert.equal(attempts, 3, change.name);
   }
   assert.equal(await keys.resolve(home, 'callirra', read), KEY);
-  assert.deepEqual((await keys.list(home, read)).map((row) => row.saved), [false, false, true]);
+  assert.deepEqual((await keys.list(home, read)).map((row) => row.saved), [false, false, true, false]);
   assert.deepEqual(await enabledModels(home), ['minimax-h3=callirra', 'wan-3.0=kovapi']);
   assert.deepEqual(names(home), ['master.key', 'video-keys.json', 'video-settings.json']);
 });
@@ -296,7 +296,7 @@ test('reading takes no lock: keys and settings are read while another command ho
   const { home, read } = await prepared(t);
   const before = [placeLock(keysFile(home)), placeLock(settingsFile(home))];
   assert.equal(await keys.resolve(home, 'kovapi', read), OTHER);
-  assert.deepEqual((await keys.list(home, read)).map((row) => row.readable), [false, true, false]);
+  assert.deepEqual((await keys.list(home, read)).map((row) => row.readable), [false, true, false, false]);
   assert.deepEqual(await enabledModels(home), ['minimax-h3=callirra']);
   assert.deepEqual(await settings.offered(home), [{ model: 'minimax-h3', route: 'callirra' }]);
   // Removing a key that is not saved changes nothing and waits for nobody.
@@ -311,7 +311,7 @@ test('reading takes no lock: keys and settings are read while another command ho
 function cli(home, args, input = '') {
   assert.equal(path.dirname(home), os.tmpdir());
   const env = { ...process.env, DSHPROXY_HOME: home, DSH_HOME: path.join(home, 'no-deepseek-harness') };
-  for (const name of ['VIDEOROUTER_API_KEY', 'KOVAPI_API_KEY', 'CALLIRRA_API_KEY']) delete env[name];
+  for (const name of ['VIDEOROUTER_API_KEY', 'KOVAPI_API_KEY', 'CALLIRRA_API_KEY', 'ELEVENLABS_API_KEY']) delete env[name];
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'dshproxy.js'), 'video', ...args], { env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
@@ -322,7 +322,7 @@ function cli(home, args, input = '') {
     child.stdin.end(input);
   });
 }
-const PROVIDER_KEYS = { videorouter: 'synthetic-VKEY-router-11', kovapi: 'synthetic-VKEY-kov-22', callirra: 'synthetic-VKEY-call-33' };
+const PROVIDER_KEYS = { videorouter: 'synthetic-VKEY-router-11', kovapi: 'synthetic-VKEY-kov-22', callirra: 'synthetic-VKEY-call-33', elevenlabs: 'synthetic-VKEY-eleven-44' };
 const setAll = (home) => Promise.all(Object.entries(PROVIDER_KEYS).map(([provider, key]) => cli(home, ['key', 'set', provider], `${key}\n`)));
 
 // Every command answered saved, and every key can be read back: by the
@@ -335,16 +335,16 @@ async function assertAllKeysSaved(home, results) {
   const saved = JSON.parse(fs.readFileSync(keysFile(home), 'utf8')).providers;
   assert.deepEqual(Object.fromEntries(Object.keys(PROVIDER_KEYS).map((provider) => [provider, saved[provider] ? secrets.decryptWithKey(master, saved[provider].keyEnc) : 'not saved'])), PROVIDER_KEYS);
   const listed = await cli(home, ['key', 'list']);
-  assert.deepEqual(JSON.parse(listed.stdout).providers.map((row) => [row.provider, row.saved, row.readable]), [['videorouter', true, true], ['kovapi', true, true], ['callirra', true, true]]);
+  assert.deepEqual(JSON.parse(listed.stdout).providers.map((row) => [row.provider, row.saved, row.readable]), [['videorouter', true, true], ['kovapi', true, true], ['callirra', true, true], ['elevenlabs', true, true]]);
   for (const name of names(home)) for (const key of Object.values(PROVIDER_KEYS)) assert.equal(fs.readFileSync(path.join(home, name)).includes(key), false);
 }
 
-test('three keys saved at the same moment in a fresh data folder are all kept under one master key', async (t) => {
+test('four keys saved at the same moment in a fresh data folder are all kept under one master key', async (t) => {
   const home = tempHome(t);
   await assertAllKeysSaved(home, await setAll(home));
 });
 
-test('three keys saved at the same moment, with the master key already there, are all kept', async (t) => {
+test('four keys saved at the same moment, with the master key already there, are all kept', async (t) => {
   const home = tempHome(t);
   const first = await cli(home, ['key', 'set', 'kovapi'], 'synthetic-VKEY-replaced-00\n');
   assert.equal(first.status, 0, first.stderr);
@@ -364,7 +364,7 @@ test('four video settings changed at the same moment are all kept', async (t) =>
     assert.deepEqual([own.enabled, own.route], [true, wanted[index][1]]);
   }
   const read = await cli(home, ['settings']);
-  assert.deepEqual(JSON.parse(read.stdout).models.map((row) => [row.model, row.route, row.enabled]), [...wanted.map(([model, route]) => [model, route, true]), ['flux-3', null, false]]);
+  assert.deepEqual(JSON.parse(read.stdout).models.map((row) => [row.model, row.route, row.enabled]), [...wanted.map(([model, route]) => [model, route, true]), ...['flux-3', 'seedance-2.0-fast', 'seedance-2.0-mini', 'veo-3.1', 'veo-3.1-fast', 'aurora'].map((model) => [model, null, false])]);
   assert.deepEqual(names(home), ['video-settings.json']);
 });
 

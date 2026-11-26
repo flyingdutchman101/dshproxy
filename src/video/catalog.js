@@ -24,6 +24,7 @@ const PROVIDERS = Object.freeze({
   kovapi: 'KovAPI',
   callirra: 'Callirra',
   krea: 'Krea',
+  elevenlabs: 'ElevenLabs',
 });
 
 // VideoRouter prices belong to one host, the last part of the model id; the
@@ -119,6 +120,10 @@ const catalog = {
     krea: krea('black-forest-labs/flux-3-video', { '720p': 629.6296296296297, '1080p': 1074.0740740740741 }, 'https://www.krea.ai/docs/api-reference/video/flux-3-video.md'),
   } },
 };
+for (const {model, name, resolutions} of require('./elevenlabs').rows()) {
+  if (!catalog[model]) catalog[model] = {name, defaultRoute:'elevenlabs', resolution:'720p', routes:{}};
+  catalog[model].routes.elevenlabs = resolutions;
+}
 const models = Object.freeze(Object.keys(catalog));
 
 function known(model) {
@@ -155,7 +160,11 @@ function describe(model, route, resolution, row) {
   const entry = { model, resolution, route, label: `${catalog[model].name} - ${resolution} - ${PROVIDERS[route]}`, modelId: row.modelId };
   if (row.host) entry.host = row.host;
   Object.assign(entry, { fixedTier: row.fixedTier === true, default: defaultOf(model, route) === resolution, ...CLIP });
-  if (route === WORKSPACE_ROUTE) {
+  if (route === 'elevenlabs') {
+    Object.assign(entry, {priceBasis:'unavailable', unit:'unknown', durationSeconds:row.durationSeconds,
+      aspectRatio:row.inputMode === 'image-audio' ? null : '16:9', supportedDurations:[...row.supportedDurations], inputMode:row.inputMode,
+      requiresProviderApproval:row.requiresProviderApproval, basis:'No verified public price or quote endpoint. Paid CLI submission is disabled.'});
+  } else if (route === WORKSPACE_ROUTE) {
     Object.assign(entry, { priceBasis: 'live-quote', unit: 'workspace_compute_units',
       basis: 'Quoted live in workspace compute units by a preflight in the signed-in Krea workspace. There is no fixed price.',
       reference: { computeUnits: row.units, recordedOn: DAY,
@@ -198,11 +207,17 @@ function entry(model, resolution, route) {
 // The dated estimate of an API route. With no resolution it answers for the
 // model's own one (720p, or 768p for MiniMax H3), exactly as it did before
 // resolutions existed. The Krea route has no estimate: it is quoted live.
-function quote(model, route, resolution) {
+function quote(model, route, resolution, durationSeconds) {
   const { defaultRoute } = known(model);
   if (route === undefined) route = defaultRoute;
   if (route === WORKSPACE_ROUTE) throw new Error(`Unsupported video route for ${model}`);
   const [name, row] = pick(model, route, resolution);
+  if (route === 'elevenlabs') {
+    const result = describe(model, route, name, row);
+    result.durationSeconds = require('./elevenlabs').duration(result, durationSeconds);
+    return result;
+  }
+  if (durationSeconds !== undefined && durationSeconds !== 5) throw new Error('This route supports only five-second clips.');
   return { model, route, resolution: name, ...CLIP, verifiedOn: row.verifiedOn, priceBasis: row.priceBasis || 'published',
     modelId: row.modelId, usdMicros: row.usdMicros,
     ...(row.credits === undefined ? {} : { credits: row.credits, assumption: row.assumption }),

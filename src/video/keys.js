@@ -24,7 +24,8 @@ const MASTER_KEY_BYTES = 32;
 const PROVIDERS = new Map([
   ['videorouter', { label: 'VideoRouter', variable: 'VIDEOROUTER_API_KEY', routes: ['videorouter', 'videorouter-replicate'] }],
   ['kovapi', { label: 'KovAPI', variable: 'KOVAPI_API_KEY', routes: ['kovapi'] }],
-  ['callirra', { label: 'Callirra', variable: 'CALLIRRA_API_KEY', routes: ['callirra'] }]
+  ['callirra', { label: 'Callirra', variable: 'CALLIRRA_API_KEY', routes: ['callirra'] }],
+  ['elevenlabs', { label: 'ElevenLabs', variable: 'ELEVENLABS_API_KEY', routes: ['elevenlabs'] }]
 ]);
 const NAMES = [...PROVIDERS.keys()].join(', ');
 

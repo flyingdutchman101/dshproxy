@@ -64,6 +64,9 @@ function clipPreset(data) {
 }
 
 function estimate(data, model, route) {
+  if (route === 'elevenlabs' && data?.model === model && data.route === route && data.priceBasis === 'unavailable') {
+    throw new Error('ElevenLabs has no verified pre-generation estimate for this model. Check the credit quote in ElevenLabs Flows. No prompt was sent and nothing was charged.')
+  }
   const unit = UNITS[data.currency]
   const preset = clipPreset(data)
   if (data.model !== model || data.route !== route || !unit || preset === null

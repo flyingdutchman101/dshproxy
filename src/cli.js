@@ -44,6 +44,8 @@ Usage:
   dshproxy key remove <provider>       Remove a saved API key
   dshproxy key list                    List API-key providers and their regions
   dshproxy key custom add|list|remove   Add a custom OpenAI-compatible endpoint (LiteLLM, One API, ...)
+  dshproxy research help               Search Foreplay ads and list saved boards
+  dshproxy voice help                  ElevenLabs voices, narration, transcription and voice changing
   dshproxy video help                  Quote benchmark videos, save provider keys, submit once, or check a job
   dshproxy models                      List the models that can be offered right now
   dshproxy dsh apply [--dry-run]       Write the models into every DeepSeek Harness profile
@@ -388,6 +390,8 @@ async function main(argv, out = console.log) {
       if (error.code !== "ENOENT") throw error;
     }
   }
+  if (argv[0] === 'research') return require('./research/command').run(argv.slice(1), out);
+  if (argv[0] === "voice") return require('./voice/command').run(argv.slice(1), out);
   if (argv[0] === "video") return require("./video/command").run(argv.slice(1), out, { readSecret });
   // Only the default data folder is migrated; a DSHPROXY_HOME the user set is
   // used as given.

@@ -628,7 +628,8 @@ final class AppStore: ObservableObject {
 
     // MARK: Navigation
 
-    func go(_ ws: Workspace, _ s: Section) {
+    func go(_ ws: Workspace, _ requested: Section) {
+        let s: Section = ws.sections.contains(requested) ? requested : .accounts
         let changed = ws != workspace || s != section
         workspace = ws
         section = s
@@ -641,7 +642,7 @@ final class AppStore: ObservableObject {
             case .apiKeys: Task { await readVideoKeys() }
             case .lanes, .models: Task { await loadVideoSettings() }
             case .harness: Task { await loadVideoSettings(); await readHarnessSetup() }
-            case .log: break
+            case .voice, .research, .log: break
             }
         }
     }

@@ -19,6 +19,7 @@ const vr = {
     provider: {only: [model.split('/')[2]], allow_fallbacks: false}}),
 };
 const providers = new Map([
+  ['elevenlabs', {submit:'https://api.elevenlabs.io/v1/flows/video', jobs:'https://api.elevenlabs.io/v1/flows/video/'}],
   ['videorouter', vr],
   ['videorouter-replicate', vr],
   // KovAPI, https://docs.kovapi.com/seedance-2.5/md (the same parameter on
@@ -43,6 +44,7 @@ function clip(route, modelId, resolution) {
     && (resolution === undefined ? entry.default : entry.resolution === resolution));
 }
 const STATES = {
+  elevenlabs: ['pending','generating','completed','failed'],
   videorouter: ['queued', 'in_progress', 'processing', 'completed', 'failed'],
   kovapi: ['queued', 'processing', 'succeeded', 'failed'],
   callirra: ['queued', 'running', 'completed', 'failed', 'cancelled', 'expired'],
@@ -57,16 +59,18 @@ function outputLink(value, key) {
     if (!url.username && !url.password && !url.hash && !value.includes(key) && !decodeURIComponent(value).includes(key)) return url.href;
   } catch { /* Malformed or unsafe provider metadata is omitted, not echoed. */ }
 }
-async function request(isSubmit, {route, modelId, resolution, jobId, prompt, key, fetchImpl = fetch}) {
+async function request(isSubmit, {route, modelId, resolution, jobId, prompt, durationSeconds, image, audio, key, fetchImpl = fetch}) {
   const entry = clip(route, modelId, resolution);
   if (!entry) throw new Error('Invalid video route or model');
   const provider = providers.get(route);
   if (typeof key !== 'string' || !key || key.length > 4096 || /[^\x21-\x7e]/.test(key)) throw new Error('Invalid video provider credential');
-  if (isSubmit ? typeof prompt !== 'string' || !prompt.trim() : !validId(jobId) || jobId.includes(key)) throw new Error(isSubmit ? 'Invalid video prompt' : 'Invalid video job ID');
+  const elevenBody = isSubmit && route === 'elevenlabs' ? require('./elevenlabs').body(entry, {prompt,durationSeconds,image,audio}) : undefined;
+  if (isSubmit ? !elevenBody && (typeof prompt !== 'string' || !prompt.trim()) : !validId(jobId) || jobId.includes(key)) throw new Error(isSubmit ? 'Invalid video prompt' : 'Invalid video job ID');
   const init = {method: isSubmit ? 'POST' : 'GET', redirect: 'error', signal: AbortSignal.timeout(30_000), headers: {Authorization: `Bearer ${key}`}};
+  if (route === 'elevenlabs') init.headers = {'xi-api-key':key};
   if (isSubmit) {
     init.headers['Content-Type'] = 'application/json';
-    init.body = JSON.stringify(provider.body(modelId, prompt, entry.resolution));
+    init.body = JSON.stringify(elevenBody || provider.body(modelId, prompt, entry.resolution));
   }
   try {
     const response = await fetchImpl(isSubmit ? provider.submit : provider.jobs + jobId, init);
@@ -87,7 +91,7 @@ async function request(isSubmit, {route, modelId, resolution, jobId, prompt, key
       result.reservedCredits = Number(job.credits_reserved) / 100;
     }
     if (status === 'succeeded' || status === 'completed') {
-      const url = outputLink(route === 'callirra' ? job.content_url : job.data?.[0]?.url, key);
+      const url = outputLink(['callirra','elevenlabs'].includes(route) ? job.content_url : job.data?.[0]?.url, key);
       if (url) result.outputUrl = url;
     }
     return result;

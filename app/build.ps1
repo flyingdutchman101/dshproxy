@@ -37,7 +37,7 @@ namespace DSHProxy
 $out = Join-Path $root 'DSHProxy.exe'
 & $csc /nologo /target:winexe /optimize+ /platform:anycpu `
     "/out:$out" "/win32icon:$icon" `
-    /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll /reference:System.Net.dll `
+    /reference:Accessibility.dll /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll /reference:System.Net.dll `
     @resources "/resource:$icon,app.ico" `
     (Join-Path $app 'DSHProxyApp.cs') (Join-Path $app 'Skin.cs') (Join-Path $app 'BuildInfo.cs')
 if ($LASTEXITCODE -ne 0) { throw "Build failed." }

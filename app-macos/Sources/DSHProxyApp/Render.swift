@@ -93,9 +93,9 @@ enum Render {
         out = URL(fileURLWithPath: outDir)
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         NSApplication.shared.setActivationPolicy(.prohibited)   // no Dock icon, no menu-bar item, no window on screen
-        let slugs: [Section: String] = [.accounts: "accounts", .apiKeys: "keys", .lanes: "lanes", .models: "models", .harness: "harness", .log: "log"]
+        let slugs: [Section: String] = [.accounts: "accounts", .apiKeys: "keys", .lanes: "lanes", .models: "models", .voice: "voice", .research: "research", .harness: "harness", .log: "log"]
         for section in Section.allCases {
-            for ws in Workspace.allCases where !(section == .log && ws == .video) {
+            for ws in Workspace.allCases where ws.sections.contains(section) && !(section == .log && ws == .video) {
                 let name = section == .log ? "log" : "\(ws.rawValue)-\(slugs[section]!)"
                 window("1280-" + name, size: CGSize(width: 1280, height: 800)) { $0.workspace = ws; $0.section = section }
                 window("860-" + name, size: CGSize(width: 860, height: 600)) { $0.workspace = ws; $0.section = section }

@@ -17,12 +17,14 @@ const help = `dshproxy video list
   video key list                         Show which provider keys are saved or set (never a key)
   video key set PROVIDER                 Save or replace a provider key, read from standard input
   video key remove PROVIDER              Remove a saved provider key
-API routes: videorouter (not H3), videorouter-replicate (Wan only), kovapi (not Flux 3), callirra (H3 only). Workspace route: krea.
+ElevenLabs: quote MODEL elevenlabs [--duration SECONDS]; pricing unavailable, paid CLI submission disabled.
+Veo uses 4/6/8 seconds (default 8). Aurora requires image+audio and has no fixed duration.
+API routes: elevenlabs, videorouter (not H3), videorouter-replicate (Wan only), kovapi (not Flux 3), callirra (H3 only). Workspace route: krea.
 Five seconds, 16:9, text only. Caps check the API estimate or workspace preflight, not the final bill.
 Without --resolution a clip is 720p (768p for H3). A model, resolution and route that video entries does not list
 is refused before any request. An entry that is on is offered for picking; that is not a spending limit.
-Credentials: a key saved with video key set (providers videorouter, kovapi, callirra), stored encrypted like the chat API keys,
-or VIDEOROUTER_API_KEY, KOVAPI_API_KEY or CALLIRRA_API_KEY, which wins when set. Never pass keys on the command line.
+Credentials: a key saved with video key set (providers elevenlabs, videorouter, kovapi, callirra), stored encrypted like the chat API keys,
+or ELEVENLABS_API_KEY, VIDEOROUTER_API_KEY, KOVAPI_API_KEY or CALLIRRA_API_KEY, which wins when set. Never pass keys on the command line.
 Video settings control what an integration offers, not what the direct video CLI can submit or a spending limit.`;
 
 
@@ -55,6 +57,13 @@ async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, work
   if (!args.length || (args.length === 1 && ['help','--help','-h'].includes(args[0]))) return out(help);
   // The resolution of a quote, a submission or a status check. With none
   // named, each of them does what it did before resolutions existed.
+  let durationSeconds;
+  if (['quote','submit','status'].includes(args[0]) && args.includes('--duration')) {
+    const at = args.indexOf('--duration');
+    if (at < 2 || args.indexOf('--duration', at+1) !== -1 || !/^\d{1,2}$/.test(args[at+1] || '')) throw new Error('--duration takes one integer number of seconds.');
+    durationSeconds = Number(args[at+1]);
+    args = [...args.slice(0,at), ...args.slice(at+2)];
+  }
   let resolution;
   if (['quote','submit','status'].includes(args[0])) [args, resolution] = withoutResolution(args);
   const named = resolution === undefined ? {} : {resolution};
@@ -101,6 +110,7 @@ async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, work
     const req = client.request(args);
     return emit(client.result(req, await (workspace || client.invoke)(req)));
   }
+  if (route === 'krea' && durationSeconds !== undefined && durationSeconds !== 5) throw new Error('Krea supports only five-second clips here.');
   if (route === 'krea' && ['quote','submit','status'].includes(action)) {
     if (!models.includes(model)) throw new Error('Unknown video model');
     const client = require('./workspace');
@@ -109,7 +119,8 @@ async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, work
     return emit({...client.result(req, await (workspace || client.invoke)(req)), ...named});
   }
   if (action === 'quote' && [2,3].includes(args.length)) {
-    const q = quote(model, route, resolution);
+    const q = quote(model, route, resolution, durationSeconds);
+    if (q.priceBasis === 'unavailable') return emit(q);
     const estimatedUsd = q.usdMicros / 1000000;
     const billing = q.priceBasis === 'effective'
       ? {currency:'credits', amount:q.credits, budgetFlag:'--max-credits'}
@@ -118,9 +129,9 @@ async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, work
     // The listing of a model also states the clip its Krea route runs when no
     // resolution is named: a resolution, or the name of a fixed tier, which has none.
     const clip = workspaceClip(model);
-    const {durationSeconds, aspectRatio} = q;
+    const {aspectRatio} = q;
     return emit({...q, ...billing, estimatedUsd,
-      workspace:{route:clip.route, durationSeconds, aspectRatio, ...(clip.fixedTier ? {fixedTier:clip.resolution} : {resolution:clip.resolution})}});
+      workspace:{route:clip.route, durationSeconds:q.durationSeconds, aspectRatio, ...(clip.fixedTier ? {fixedTier:clip.resolution} : {resolution:clip.resolution})}});
   }
   if (action === 'krea' && args.length === 2) {
     const clip = workspaceClip(model);
@@ -132,8 +143,9 @@ async function run(args, out, {env=process.env, fetchImpl=globalThis.fetch, work
   if (action !== 'submit' && action !== 'status') throw new Error(help);
   if (!model || !route) throw new Error('Specify both model and route.');
   // Refuses a model, route and resolution that are not an entry, before a key is looked for.
-  const q = quote(model, route, resolution);
+  const q = quote(model, route, resolution, durationSeconds);
   const submitting = action === 'submit';
+  if (submitting && q.priceBasis === 'unavailable') throw new Error('ElevenLabs pricing is unavailable; no job submitted.');
   if (submitting) {
     const creditPlan = q.priceBasis === 'effective';
     if (args.length !== 7 || args[3] !== (creditPlan ? '--max-credits' : '--max-usd') || args[5] !== '--confirm-charge' || !args[6].trim() || args[6].startsWith('--')) throw new Error(help);

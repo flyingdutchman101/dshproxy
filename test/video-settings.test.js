@@ -17,19 +17,20 @@ function tempHome(t) {
 }
 
 const off = { enabled: false, route: null };
-const allOff = { models: { 'seedance-2.5': off, 'seedance-2.0': off, 'minimax-h3': off, 'wan-3.0': off, 'flux-3': off } };
+const allOff = { models: { 'seedance-2.5': off, 'seedance-2.0': off, 'minimax-h3': off, 'wan-3.0': off, 'flux-3': off, 'seedance-2.0-fast': off, 'seedance-2.0-mini': off, 'veo-3.1': off, 'veo-3.1-fast': off, aurora: off } };
 const withModels = (changes) => ({ models: { ...allOff.models, ...changes } });
 
 // Written out by hand from the catalog and the `video` command, not computed:
 // the priced API routes per model, plus the Krea workspace route for each.
 const allowedRoutes = {
-  'seedance-2.5': ['videorouter', 'kovapi', 'krea'],
-  'seedance-2.0': ['videorouter', 'kovapi', 'krea'],
+  'seedance-2.5': ['videorouter', 'kovapi', 'elevenlabs', 'krea'],
+  'seedance-2.0': ['videorouter', 'kovapi', 'elevenlabs', 'krea'],
   'minimax-h3': ['kovapi', 'callirra', 'krea'],
   'wan-3.0': ['videorouter', 'videorouter-replicate', 'kovapi', 'krea'],
-  'flux-3': ['videorouter', 'krea']
+  'flux-3': ['videorouter', 'krea'],
+  'seedance-2.0-fast':['elevenlabs'], 'seedance-2.0-mini':['elevenlabs'], 'veo-3.1':['elevenlabs'], 'veo-3.1-fast':['elevenlabs'], aurora:['elevenlabs']
 };
-const everyRoute = ['videorouter', 'videorouter-replicate', 'kovapi', 'callirra', 'krea'];
+const everyRoute = ['videorouter', 'videorouter-replicate', 'kovapi', 'callirra', 'krea', 'elevenlabs'];
 
 // A refused change must leave the data folder exactly as it was.
 function snapshot(home) {
@@ -45,7 +46,7 @@ test('nothing saved: every catalog model is disabled with no route, and reading 
   const home = tempHome(t);
   const state = await video.read(home);
   assert.deepEqual(state, allOff);
-  assert.deepEqual(Object.keys(state.models), ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0', 'flux-3']);
+  assert.deepEqual(Object.keys(state.models), ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0', 'flux-3', 'seedance-2.0-fast', 'seedance-2.0-mini', 'veo-3.1', 'veo-3.1-fast', 'aurora']);
   assert.deepEqual(fs.readdirSync(home), []);
 
   const missing = path.join(home, 'not-created-yet');
@@ -112,6 +113,7 @@ test('changes started together are all kept', async (t) => {
     video.write(home, { models: { 'wan-3.0': { enabled: true } } })
   ]);
   assert.deepEqual(await video.read(home), { models: {
+    ...allOff.models,
     'seedance-2.5': { enabled: true, route: null },
     'seedance-2.0': { enabled: false, route: 'kovapi' },
     'minimax-h3': { enabled: true, route: 'kovapi' },
@@ -358,7 +360,7 @@ test('only a model that is enabled and has a route is offered', async (t) => {
 // route works; nothing here may call a route verified.
 test('the routes a model can take are listed: catalog routes as published estimates, the workspace route as unverified', () => {
   for (const [model, allowed] of Object.entries(allowedRoutes)) {
-    assert.deepEqual(video.routes(model), allowed.map((route) => ({ route, compatibility: route === 'krea' ? 'unverified' : 'published-estimate' })), model);
+    assert.deepEqual(video.routes(model), allowed.map((route) => ({ route, compatibility: ['krea','elevenlabs'].includes(route) ? 'unverified' : 'published-estimate' })), model);
   }
   assert.deepEqual(video.routes('minimax-h3'), [
     { route: 'kovapi', compatibility: 'published-estimate' },

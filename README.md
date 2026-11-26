@@ -302,11 +302,25 @@ From a source checkout, `node bin/dshproxy.js video help` works without starting
 - `video submit MODEL krea --max-units COUNT --confirm-charge "PROMPT"` requests a fresh preflight before one generation call. The cap limits the quoted amount, not the final debit. `video status MODEL krea JOB_ID` checks the original job. After an uncertain submission check the workspace; never retry blindly.
 - `video krea MODEL` remains an **offline manual handoff** for another OAuth-capable client. No workspace command falls back to API billing. Real OAuth issuer compatibility, model availability and actual charges require live verification before production use.
 
-**Provider keys.** `video key set PROVIDER` saves the key of a pay-per-use provider (`videorouter`, `kovapi`, `callirra`). The key is read from standard input, never from the command line, and is stored in `video-keys.json` in the data folder, encrypted with the same master key as the chat API keys. `video key list` shows which providers have a saved key and whether one is set in the environment; `video key remove PROVIDER` deletes it. A key in the provider's environment variable (`VIDEOROUTER_API_KEY`, `KOVAPI_API_KEY`, `CALLIRRA_API_KEY`) is used instead of a saved one. A saved key is not checked against the provider.
+**Provider keys.** `video key set PROVIDER` saves the key of a pay-per-use provider (`videorouter`, `kovapi`, `callirra`, `elevenlabs`). The key is read from standard input, never from the command line, and is stored in `video-keys.json` in the data folder, encrypted with the same master key as the chat API keys. `video key list` shows which providers have a saved key and whether one is set in the environment; `video key remove PROVIDER` deletes it. A key in the provider's environment variable (`VIDEOROUTER_API_KEY`, `KOVAPI_API_KEY`, `CALLIRRA_API_KEY`, `ELEVENLABS_API_KEY`) is used instead of a saved one. A saved key is not checked against the provider.
 
 For an explicitly paid run, use `video submit MODEL ROUTE --max-usd AMOUNT --confirm-charge "PROMPT"`, with the provider key saved or in the environment. For Callirra, use `--max-credits 10` instead of a dollar budget: the provider bills credits. The limit checks the local estimate per submission, **not** the provider's final debit or a cumulative budget. Rates may change. Save the returned model, route and job ID; use `video status MODEL ROUTE JOB_ID` to check progress. Nothing automatically retries a submission or changes hosts. After an ambiguous failure, check the provider dashboard before trying again. Output URLs may be short-lived and private; do not share job output or paste secrets into prompts.
 
-The Windows app's **Video** workspace edits the same settings: which models are on, the billing route of each, the provider keys, and the Krea sign-in. Nothing is generated or charged from the window, and video models are not chat models.
+The Windows app's **Video** workspace edits the same settings: which models are on, the billing route of each, the provider keys, and the Krea sign-in. Editing video routing settings does not generate video or incur charges. The separate Voice and Research tabs require confirmation before sending a potentially billable request.
+
+### ElevenLabs video and voice
+
+[Create an ElevenLabs key](https://elevenlabs.io/app/api/api-keys) and save it under **Video → API keys → ElevenLabs**. Voice and Video use the same key, or `ELEVENLABS_API_KEY`. Signing in to that dashboard lets you create a key; it does not connect your browser session or select a separate subscription route. For KovAPI, [create your account here](https://kovapi.com/register).
+
+The ElevenLabs video catalog includes Seedance 2.0, Fast, Mini and 2.5, Veo 3.1 and Fast, and Creatify Aurora. Veo accepts 4, 6 or 8 seconds; Aurora requires image and audio assets. DSHProxy cannot verify a pre-generation ElevenLabs video price and will not submit these models against a spending cap. To generate now, use ElevenLabs Flows and inspect its [Run-button credit quote](https://elevenlabs.io/docs/help-center/product/flows-image-video/flows/how-are-credits-charged-in-flows) before approving there.
+
+Run `node bin/dshproxy.js voice list` for models and capabilities, `voice voices` for account speakers and `voice help` for paid commands. Speech generation, transcription and voice changing require explicit confirmation. A voice confirmation is permission for one request, **not a price cap**. No paid request is needed to list models.
+
+### Foreplay ad research
+
+Open **Video → Research** to search ads in Foreplay Discovery or list your saved boards. Get a [Foreplay API key](https://app.foreplay.co/api-overview), then save it in Research or set `FOREPLAY_API_KEY`. This tab does not generate content or add a model. Opening it is offline; each search or board lookup requires confirmation because Foreplay may bill API credits. DSHProxy requests only the first page, with up to 10 results.
+
+CLI equivalents: `dshproxy research search --query "running shoes" --confirm-credits` and `dshproxy research boards --confirm-credits`. Use `dshproxy research help` for key management. See the [Foreplay API documentation](https://docs.foreplay.co/) for account requirements and endpoint pricing.
 
 ## Not included
 
