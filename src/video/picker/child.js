@@ -56,7 +56,7 @@ const ENVIRONMENT = Object.freeze(['SystemRoot', 'LOCALAPPDATA', 'APPDATA', 'TEM
 //   DSHPROXY_KEYCHAIN  the keychain that wraps the master key, when not the
 //                      login Keychain (src/keywrap-darwin.js).
 const MAC_ENVIRONMENT = Object.freeze(['HOME', 'TMPDIR', 'DSHPROXY_HOME', 'DSHPROXY_KEYCHAIN']);
-const KEY_VARIABLES = Object.freeze(['VIDEOROUTER_API_KEY', 'KOVAPI_API_KEY', 'CALLIRRA_API_KEY']);
+const KEY_VARIABLES = Object.freeze(['VIDEOROUTER_API_KEY', 'KOVAPI_API_KEY', 'CALLIRRA_API_KEY', 'YOTTA_API_KEY']);
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const amount = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -384,6 +384,10 @@ function argsFor(kind, entry, { prompt, cap, jobId } = {}) {
     throw new TypeError('A video request needs an entry with its model, resolution, route and unit.');
   }
   const { model, route } = entry;
+  if (route === 'yotta') {
+    const preset = require('../catalog').entries().find(item => item.model === model && item.route === route && item.resolution === entry.resolution);
+    if (!preset || entry.fixedTier !== preset.fixedTier || entry.unit !== 'usd_micros') throw new TypeError('Unsupported video preset for Yotta Labs.');
+  }
   const workspace = route === WORKSPACE_ROUTE;
   const resolution = entry.fixedTier === true ? [] : ['--resolution', entry.resolution];
   const needsPrompt = kind === 'submit' || (kind === 'quote' && workspace);

@@ -19,7 +19,7 @@ const path = require('node:path');
 
 const guard = fs.mkdtempSync(path.join(os.tmpdir(), 'dshproxy-picker-child-guard-'));
 process.env.DSHPROXY_HOME = guard;
-for (const name of ['VIDEOROUTER_API_KEY', 'KOVAPI_API_KEY', 'CALLIRRA_API_KEY']) delete process.env[name];
+for (const name of ['VIDEOROUTER_API_KEY', 'KOVAPI_API_KEY', 'CALLIRRA_API_KEY', 'YOTTA_API_KEY']) delete process.env[name];
 test.after(() => {
   try { assert.deepEqual(fs.readdirSync(guard), []); }
   finally { fs.rmSync(guard, { recursive: true, force: true }); }
@@ -169,9 +169,9 @@ test('for every entry of the real catalog, each list runs through the real comma
       for (const run of [quoted, bought, state]) assert.equal(run.fetch.length, 0);
       continue;
     }
-    const keyName = item.route === 'callirra' ? 'CALLIRRA_API_KEY' : item.route === 'kovapi' ? 'KOVAPI_API_KEY' : 'VIDEOROUTER_API_KEY';
+    const keyName = item.route === 'yotta' ? 'YOTTA_API_KEY' : item.route === 'callirra' ? 'CALLIRRA_API_KEY' : item.route === 'kovapi' ? 'KOVAPI_API_KEY' : 'VIDEOROUTER_API_KEY';
     const env = { [keyName]: 'synthetic-edge-test-key' };
-    const job = (status) => () => Response.json(item.route === 'callirra' ? { job: { id: 'job-7', status } } : { id: 'job-7', status });
+    const job = (status) => () => Response.json(item.route === 'yotta' ? { code: 10000, data: { request_id: 'job-7', status } } : item.route === 'callirra' ? { job: { id: 'job-7', status } } : { id: 'job-7', status });
     // A published price: no request at all.
     const quoted = await runReal(quoteArgs, { env });
     assert.equal(quoted.fetch.length, 0, item.id);
@@ -180,9 +180,12 @@ test('for every entry of the real catalog, each list runs through the real comma
     const bought = await runReal(submitArgs, { env, fetchAnswer: job('queued') });
     assert.equal(bought.fetch.length, 1, item.id);
     const sent = JSON.parse(bought.fetch[0].init.body);
-    assert.equal(sent.prompt, prompt, item.id);
+    assert.equal((sent.parameters || sent).prompt, prompt, item.id);
     assert.equal(sent.model, item.modelId, item.id);
-    assert.equal(String(sent.resolution).toLowerCase(), item.resolution.toLowerCase(), item.id);
+    if (item.route === 'yotta') {
+      assert.deepEqual(sent.parameters, { prompt, duration: 5, aspect_ratio: '16:9', multi_shot: false, generate_audio: false });
+      assert.equal(bought.fetch[0].init.headers['X-API-KEY'], env.YOTTA_API_KEY);
+    } else assert.equal(String(sent.resolution).toLowerCase(), item.resolution.toLowerCase(), item.id);
     assert.equal(bought.result.id, 'job-7');
     // The cap arrives: one step below the published price nothing is sent.
     const below = item.unit === 'callirra_credits' ? String(item.credits - 1) : usd(item.usdMicros - 1);
@@ -619,7 +622,7 @@ test('the real child, started with input that is not a request, exits non-zero a
 // -------------------------------- spawnChild --------------------------------
 
 const LISTED = ['SystemRoot', 'LOCALAPPDATA', 'APPDATA', 'TEMP', 'TMP', 'USERPROFILE', 'DSHPROXY_HOME'];
-const KEYS = ['VIDEOROUTER_API_KEY', 'KOVAPI_API_KEY', 'CALLIRRA_API_KEY'];
+const KEYS = ['VIDEOROUTER_API_KEY', 'KOVAPI_API_KEY', 'CALLIRRA_API_KEY', 'YOTTA_API_KEY'];
 const parentEnv = (extra = {}) => ({
   ...Object.fromEntries(LISTED.map((name) => [name, `value-of-${name}`])),
   ...Object.fromEntries(KEYS.map((name) => [name, `synthetic-${name}`])),

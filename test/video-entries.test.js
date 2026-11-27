@@ -10,6 +10,7 @@ const catalog = require('../src/video/catalog');
 
 // [model, resolution, route, label, provider model id, US dollar micros]
 const PRICED = [
+  ['kling-v3-standard', 'standard', 'yotta', 'Kling v3 Standard - standard - Yotta Labs', 'kling-v3-std-text', 357000],
   ['seedance-2.5', '480p', 'videorouter', 'Seedance 2.5 - 480p - VideoRouter', 'bytedance/seedance-2.5/botsmart', 409488],
   ['seedance-2.5', '720p', 'videorouter', 'Seedance 2.5 - 720p - VideoRouter', 'bytedance/seedance-2.5/socheap-overseas', 702125],
   ['seedance-2.5', '1080p', 'videorouter', 'Seedance 2.5 - 1080p - VideoRouter', 'bytedance/seedance-2.5/botsmart', 2272938],
@@ -73,7 +74,7 @@ test('entries() lists exactly the combinations with a published price or a recor
   const listed = catalog.entries();
   const expected = [...PRICED.map(([model, resolution, route, label]) => ({ model, resolution, route, label })),
     ...WORKSPACE.map(([model, resolution, label]) => ({ model, resolution, route: 'krea', label })), ...ELEVEN];
-  assert.equal(listed.length, 61);
+  assert.equal(listed.length, 62);
   assert.deepEqual(listed.map(key).sort(), expected.map(key).sort());
   for (const want of expected) assert.equal(find(want.model, want.resolution, want.route).label, want.label);
   assert.equal(new Set(listed.map((entry) => entry.label)).size, listed.length);
@@ -91,7 +92,10 @@ test('every entry carries a price or the live-quote marker, a date and at least 
       continue;
     }
     assert.deepEqual([entry.durationSeconds, entry.aspectRatio], [5, '16:9'], name);
-    assert.match(entry.verifiedOn, /^2026-11-2[12]$/, name);
+    if (entry.route === 'yotta') {
+      assert.equal(entry.verifiedOn, '2026-11-26');
+      assert.deepEqual(entry.sourceUrls, ['https://docs.yottalabs.ai/products/ai-gateway.md']);
+    } else assert.match(entry.verifiedOn, /^2026-11-2[12]$/, name);
     assert.ok(Array.isArray(entry.sourceUrls) && entry.sourceUrls.length >= 1, name);
     for (const url of entry.sourceUrls) assert.match(url, /^https:\/\/[^\s"<>\\]+$/, name);
     assert.equal(typeof entry.modelId, 'string', name);
@@ -105,7 +109,7 @@ test('every entry carries a price or the live-quote marker, a date and at least 
     } else {
       assert.ok(['published', 'effective'].includes(entry.priceBasis), name);
       assert.ok(Number.isSafeInteger(entry.usdMicros) && entry.usdMicros > 0, name);
-      assert.equal(entry.fixedTier, false, name);
+      assert.equal(entry.fixedTier, entry.route === 'yotta', name);
       assert.equal(entry.reference, undefined, name);
     }
   }
@@ -168,7 +172,7 @@ test('without a resolution a quote is exactly the answer given before resolution
 });
 
 test('Flux 3 is a fifth model: on VideoRouter and on Krea at 720p and 1080p, and nowhere at 480p', () => {
-  assert.deepEqual(catalog.models, ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0', 'flux-3', 'seedance-2.0-fast', 'seedance-2.0-mini', 'veo-3.1', 'veo-3.1-fast', 'aurora']);
+  assert.deepEqual(catalog.models, ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0', 'flux-3', 'seedance-2.0-fast', 'seedance-2.0-mini', 'veo-3.1', 'veo-3.1-fast', 'aurora', 'kling-v3-standard']);
   assert.deepEqual(catalog.routesFor('flux-3'), ['videorouter', 'krea']);
   assert.deepEqual(catalog.entries().filter((entry) => entry.model === 'flux-3').map((entry) => [entry.resolution, entry.route, entry.modelId]), [
     ['720p', 'videorouter', 'black-forest-labs/flux-3/black-forest-labs'], ['1080p', 'videorouter', 'black-forest-labs/flux-3/black-forest-labs'],
@@ -211,7 +215,7 @@ test('a Krea entry has no fixed price: it is quoted live, and the units recorded
 
 test('MiniMax H3 on Krea is one fixed tier under the name Krea gives it, and has no resolution', () => {
   const tiers = catalog.entries().filter((entry) => entry.fixedTier);
-  assert.deepEqual(tiers.map(key), ['minimax-h3 / 2K / krea']);
+  assert.deepEqual(tiers.map(key), ['minimax-h3 / 2K / krea', 'kling-v3-standard / standard / yotta']);
   assert.equal(tiers[0].label, 'MiniMax H3 - 2K - Krea');
   assert.deepEqual(catalog.entries().filter((entry) => entry.model === 'minimax-h3' && entry.route === 'krea').map((entry) => entry.resolution), ['2K']);
   assert.deepEqual(catalog.workspaceClip('minimax-h3'), { model: 'minimax-h3', route: 'krea', modelId: 'minimax/hailuo-3', resolution: '2K', fixedTier: true });
@@ -250,7 +254,7 @@ test('entries() hands out copies: changing one changes nothing for the next call
   const first = catalog.entries();
   first[0].usdMicros = 1; first[0].sourceUrls.push('https://example.invalid/'); first.pop();
   const second = catalog.entries();
-  assert.equal(second.length, 61);
+  assert.equal(second.length, 62);
   assert.equal(second[0].usdMicros, 409488);
   assert.equal(second[0].sourceUrls.includes('https://example.invalid/'), false);
 });

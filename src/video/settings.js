@@ -128,7 +128,7 @@ function named(value) {
 // switched on.
 function loadAll(home) {
   const target = file(home);
-  const state = { ...defaults(), on: new Set() };
+  const state = { ...defaults(), on: new Set(), off: new Set() };
   let text;
   let size;
   try {
@@ -166,6 +166,9 @@ function loadAll(home) {
       // not an entry of the catalog: off, and gone after the next write
     }
   }
+  for (const item of Array.isArray(saved.pickerExclusions) ? saved.pickerExclusions : []) {
+    try { state.off.add(named(item)); } catch { /* obsolete preset */ }
+  }
   return state;
 }
 
@@ -178,7 +181,8 @@ function load(home) {
 // file is the one a DSHProxy from before entries wrote.
 function serialised(state) {
   const on = catalogIds().filter(([id]) => state.on.has(id)).map(([, item]) => namesOf(item));
-  return `${JSON.stringify({ models: state.models, ...(on.length ? { entries: on } : {}) }, null, 2)}\n`;
+  const off = catalogIds().filter(([id]) => state.off.has(id)).map(([, item]) => namesOf(item));
+  return `${JSON.stringify({ models: state.models, ...(on.length ? { entries: on } : {}), ...(off.length ? { pickerExclusions: off } : {}) }, null, 2)}\n`;
 }
 
 // Reads the file, applies `change` to what it holds and puts the result in
@@ -248,8 +252,14 @@ async function setEntry(home, name, on, { io = {} } = {}) {
   const id = named(name);
   if (typeof on !== 'boolean') throw new Error('A video entry is switched with true or false.');
   return listed(await update(dir, (state) => {
-    if (on) state.on.add(id);
-    else state.on.delete(id);
+    if (on) {
+      state.off.delete(id);
+      state.on.add(id);
+    } else {
+      state.on.delete(id);
+      const model = state.models[name.model];
+      if (model.enabled && model.route === name.route) state.off.add(id);
+    }
   }, io));
 }
 
@@ -262,4 +272,15 @@ async function offered(home) {
     .map((model) => ({ model, route: state.models[model].route }));
 }
 
-module.exports = { read, write, offered, routes, file, entries, entriesOn, entriesOnNow, setEntry };
+// Explicit preset choices remain independent of the model switch. In addition,
+// a model enabled on a chosen billing route offers that route's presets unless
+// the user explicitly excluded one. Always decide from one settings snapshot.
+function pickerEntriesNow(home) {
+  const state = loadAll(home);
+  return catalogIds().filter(([id, item]) => {
+    const model = state.models[item.model];
+    return !state.off.has(id) && (state.on.has(id) || (model.enabled && model.route === item.route));
+  }).map(([, item]) => item);
+}
+
+module.exports = { read, write, offered, routes, file, entries, entriesOn, entriesOnNow, setEntry, pickerEntriesNow };

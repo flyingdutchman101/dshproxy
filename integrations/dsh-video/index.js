@@ -9,6 +9,8 @@ import { createBridge } from './lib/bridge.js'
 import { resolveSettings } from './lib/config.js'
 import { createSubmitTools } from './lib/submit.js'
 import { createTools } from './lib/tools.js'
+import { createForeplayTools } from './lib/foreplay.js'
+import { foreplayAllowed, foreplayHome } from './lib/foreplay-policy.js'
 
 export const name = 'dshproxy-video'
 export const inject = ['tools']
@@ -27,8 +29,17 @@ function hostFacts() {
 // `deps.spawnImpl` replaces the process launcher in tests; `deps.questions`
 // supplies the service that asks the user.
 export function build(config, host = hostFacts(), deps = {}) {
-  const call = createBridge(resolveSettings(config, host), deps)
-  return [...createTools(call), ...createSubmitTools(call, deps)]
+  const settings = resolveSettings(config, host)
+  const home = foreplayHome(settings, host)
+  const allowed = () => foreplayAllowed(home, config?.foreplayEnabled === true)
+  const call = createBridge(settings, deps)
+  const tools = [...createTools(call), ...createSubmitTools(call, deps)]
+  if (allowed()) {
+    const env = { ...settings.env, DSHPROXY_HOME: home, DSHPROXY_FOREPLAY_LEGACY_OPT_IN: config?.foreplayEnabled === true ? '1' : '0' }
+    const research = createBridge({ ...settings, env }, deps)
+    tools.push(...createForeplayTools(research, { ...deps, allowed }))
+  }
+  return tools
 }
 
 // The plugin owns its registrations as one effect: unloading removes both

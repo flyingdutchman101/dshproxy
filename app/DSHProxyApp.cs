@@ -3178,12 +3178,72 @@ namespace DSHProxy
             return link;
         }
 
+        // Settings only: these commands never submit provider requests.
+        private Control BuildProviderPickerControls(string section)
+        {
+            var panel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+            var rows = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+            var status = new GlassLabel { Width = 590, Height = 48, Text = "Load local availability settings. No paid requests are made." };
+            var refresh = new PillButton { Text = "Refresh availability", AutoSize = true };
+            panel.Controls.Add(rows); panel.Controls.Add(refresh); panel.Controls.Add(status);
+            Action<string[]> run = null;
+            run = args => {
+                if (VideoSynthetic) { status.Text = "Sample mode: no command executed."; return; }
+                panel.Enabled = false;
+                var changed = args[args.Length - 1] == "on" || args[args.Length - 1] == "off";
+                ThreadPool.QueueUserWorkItem(_ => {
+                    var data = new List<Dictionary<string, object>>();
+                    var message = "Availability loaded. No paid request made.";
+                    try {
+                        var reply = cli.Run(args, null, 30000);
+                        if (reply.Code != 0) throw new InvalidOperationException("Availability command failed. Refresh to check saved state.");
+                        if (section == "voice") {
+                            var parsed = Json.Serializer.DeserializeObject(reply.Out);
+                            if (!(parsed is object[]) && !(parsed is ArrayList)) throw new FormatException();
+                            foreach (var item in Json.Arr(parsed)) {
+                                var row = Json.Obj(item);
+                                if (!(Json.Get(row, "enabled") is bool) || !(Json.Get(row, "id") is string) || !(Json.Get(row, "name") is string)) throw new FormatException();
+                                data.Add(row);
+                            }
+                        } else {
+                            var row = Json.Obj(Json.Serializer.DeserializeObject(reply.Out));
+                            if (!(Json.Get(row, "enabled") is bool)) throw new FormatException();
+                            row["id"] = section;
+                            row["name"] = section == "foreplay" ? "Foreplay model picker" : "Foreplay any-chat tools (enabling may need plugin reload)";
+                            data.Add(row);
+                        }
+                        if (changed) {
+                            var applied = cli.Run(new[] { "dsh", "apply" }, null, 120000);
+                            message = applied.Code == 0 ? "Availability saved; DSH profile refreshed. No paid request made." : "Availability saved, but DSH profile refresh failed. Use the existing Apply action.";
+                            if (section == "foreplay-tools" && args[args.Length - 1] == "on") message += " Plugin reload may be needed.";
+                        }
+                    } catch (Exception) { message = "Could not load or apply availability. Refresh to check saved state; no paid request made."; }
+                    try { BeginInvoke(new Action(() => {
+                        rows.Controls.Clear();
+                        foreach (var row in data) {
+                            var id = (string)Json.Get(row, "id");
+                            var toggle = new CheckBox { AutoSize = true, Text = (string)Json.Get(row, "name"), Checked = (bool)Json.Get(row, "enabled") };
+                            toggle.CheckedChanged += (s, e) => run(section == "voice" ? new[] { "provider-picker", "voice", id, toggle.Checked ? "on" : "off" } : new[] { "provider-picker", section, toggle.Checked ? "on" : "off" });
+                            rows.Controls.Add(toggle);
+                        }
+                        status.Text = message; panel.Enabled = true;
+                    })); } catch (InvalidOperationException) { }
+                });
+            };
+            refresh.Click += (s, e) => run(new[] { "provider-picker", section, section == "voice" ? "list" : "status" });
+            var loaded = false;
+            panel.VisibleChanged += (s, e) => { if (panel.Visible && !loaded && IsHandleCreated) { loaded = true; run(new[] { "provider-picker", section, section == "voice" ? "list" : "status" }); } };
+            return panel;
+        }
+
         private Panel BuildResearchPage()
         {
             var page = new Panel { Dock = DockStyle.Fill, Text = "Research" };
             var layout = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(18), AutoScroll = true };
             page.Controls.Add(layout);
             layout.Controls.Add(new GlassLabel { Text = "Foreplay research — offline until you confirm potential credit spend. No automatic retries.", AutoSize = true });
+            layout.Controls.Add(BuildProviderPickerControls("foreplay"));
+            layout.Controls.Add(BuildProviderPickerControls("foreplay-tools"));
             layout.Controls.Add(OfficialBrowserLink("Foreplay API overview", "https://app.foreplay.co/api-overview"));
             var key = new PillButton { Text = "Save Foreplay key…", AutoSize = true }; layout.Controls.Add(key);
             layout.Controls.Add(new GlassLabel { Text = "Search ads", AutoSize = true });
@@ -3255,6 +3315,7 @@ namespace DSHProxy
                 var keys = new PillButton { Text = "Manage shared key", AutoSize = true };
                 keys.Click += (s, e) => { videoSections.SelectedIndex = VideoKeysPage; tabs.SelectedIndex = VideoKeysPage; EnterVideoPage(); };
                 layout.Controls.Add(keys);
+                layout.Controls.Add(BuildProviderPickerControls("voice"));
                 layout.Controls.Add(OfficialBrowserLink("Browse ElevenLabs voice library", "https://elevenlabs.io/app/voice-library"));
                 var model = new ComboBox { Width = 590, DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "Voice model" };
                 model.Items.AddRange(new object[] { "eleven_v4", "eleven_v4_turbo", "eleven_flash_v2_5", "eleven_flash_v2", "scribe_v3", "scribe_v3_live", "scribe_v2_medical", "eleven_multilingual_sts_v2" });
@@ -3477,7 +3538,7 @@ namespace DSHProxy
             videoKeyRemove = new PillButton { Text = "Remove key", AutoSize = true, Enabled = false };
             videoKeyRemove.Click += (s, e) => RemoveVideoKey();
             AddVideoPage("API keys", videoKeysList,
-                VideoTop("Video API keys", "Save the key of a pay-per-use video provider here. It is stored encrypted in the DSHProxy data folder, like the Chat API keys, and is used by DSHProxy's video command; a key in the provider's environment variable is used instead when that is set. A saved key is not checked against the provider. Dashboard sign-in lets you create an API key; it is not a separate OAuth billing route. Video generation from DeepSeek Harness works on the Krea route only for now."),
+                VideoTop("Video API keys", "Save the key of a pay-per-use video provider here. It is stored encrypted in the DSHProxy data folder, like the Chat API keys, and is used by DSHProxy's video command; a key in the provider's environment variable is used instead when that is set. A saved key is not checked against the provider. Dashboard sign-in lets you create an API key; it is not a separate OAuth billing route. For Yotta Labs, enable Kling v3 Standard and select the Yotta Labs billing route to offer it in the model picker."),
                 VideoBottom(videoKeysStatus, videoKeyAdd, videoKeyRemove, OfficialBrowserLink("Create ElevenLabs API key (browser)", "https://elevenlabs.io/app/api/api-keys"), OfficialBrowserLink("Register with KovAPI (browser)", "https://kovapi.com/register"), new GlassLabel { Text = "The Krea workspace route uses a sign-in instead of a key: see Accounts.", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(12, 11, 0, 0) }));
             SetPageStatus(videoAccountsStatus, "The Krea sign-in state has not been read yet.", Theme.Muted);
             SetPageStatus(videoKeysStatus, "The saved video keys have not been read yet.", Theme.Muted);
@@ -4982,6 +5043,7 @@ namespace DSHProxy
                 case "kovapi": return "KovAPI";
                 case "callirra": return "Callirra";
                 case "elevenlabs": return "ElevenLabs";
+                case "yotta": return "Yotta Labs";
                 default: return route;
             }
         }
@@ -5018,6 +5080,7 @@ namespace DSHProxy
                 case "callirra": return "plan credits";
                 case "videorouter":
                 case "videorouter-replicate":
+                case "yotta":
                 case "kovapi": return "US dollars";
                 default: return "units not known to this app";
             }

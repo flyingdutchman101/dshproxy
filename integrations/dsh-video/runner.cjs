@@ -30,7 +30,8 @@ const validPrompt = (prompt) => typeof prompt === 'string' && Boolean(prompt.tri
 // credential or a second cap, makes the whole request invalid.
 function accepted(request) {
   if (!record(request) || request.v !== 1) return false;
-  if (request.op === 'options') return exactly(request, ['v', 'op']);
+  if (request.op === 'options' || request.op === 'foreplay_boards') return exactly(request, ['v', 'op']);
+  if (request.op === 'foreplay_search') return exactly(request, ['v','op','query']) && typeof request.query === 'string' && request.query.trim() && request.query.length <= 1024 && !request.query.startsWith('--') && !/[\x00-\x1f\x7f]/.test(request.query);
   if (typeof request.model !== 'string' || !MODEL.test(request.model)
       || typeof request.route !== 'string' || !ROUTE.test(request.route)) return false;
   const workspace = request.route === WORKSPACE_ROUTE;
@@ -70,13 +71,13 @@ async function readRequest(stream) {
 
 // Loads `run` from the one file this process may use, and only from a folder
 // that is a DSHProxy checkout. A link that leads out of the folder is refused.
-function loadCommand() {
+function loadCommand(domain = 'video') {
   if (process.versions.electron || Number(process.versions.node.split('.')[0]) < 22) throw new Refusal('RUNTIME');
   try {
     if (process.argv.length !== 3 || !path.isAbsolute(process.argv[2])) throw new Error();
     const root = fs.realpathSync(process.argv[2]);
     if (JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).name !== 'dshproxy') throw new Error();
-    const file = fs.realpathSync(path.join(root, 'src', 'video', 'command.js'));
+    const file = fs.realpathSync(path.join(root, 'src', domain, 'command.js'));
     if (!file.startsWith(root + path.sep)) throw new Error();
     const { run } = require(file);
     if (typeof run !== 'function') throw new Error();
@@ -184,8 +185,17 @@ function workspacePreset(listed, model) {
 }
 
 async function main() {
-  globalThis.fetch = noNetwork;
   const request = await readRequest(process.stdin);
+  if (request.op === 'foreplay_search' || request.op === 'foreplay_boards') {
+    const run = loadCommand('research');
+    const args = request.op === 'foreplay_search' ? ['search','--query',request.query,'--confirm-credits'] : ['boards','--confirm-credits'];
+    const lines = [];
+    const { foreplayAllowed } = await import('./lib/foreplay-policy.js');
+    if (!process.env.DSHPROXY_HOME || !foreplayAllowed(process.env.DSHPROXY_HOME, process.env.DSHPROXY_FOREPLAY_LEGACY_OPT_IN === '1')) throw new Refusal('FOREPLAY_DISABLED');
+    await run(args, text => lines.push(String(text)), {env: process.env});
+    return parsed(lines.join('\n'));
+  }
+  globalThis.fetch = noNetwork;
   const run = loadCommand();
 
   // A status check is about the job's own origin, so the current settings are

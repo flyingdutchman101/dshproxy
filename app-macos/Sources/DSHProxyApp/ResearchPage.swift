@@ -18,6 +18,7 @@ struct ResearchPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Foreplay Research").font(.title2.bold())
+                ProviderPickerControls(store: store, voice: false)
                 Text("Search ads and browse boards. Opening this tab is offline. Each request requires credit confirmation; no automatic retries.").foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Link("Foreplay website", destination: URL(string: "https://www.foreplay.co")!)

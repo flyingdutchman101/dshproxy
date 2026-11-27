@@ -25,7 +25,8 @@ const PROVIDERS = new Map([
   ['videorouter', { label: 'VideoRouter', variable: 'VIDEOROUTER_API_KEY', routes: ['videorouter', 'videorouter-replicate'] }],
   ['kovapi', { label: 'KovAPI', variable: 'KOVAPI_API_KEY', routes: ['kovapi'] }],
   ['callirra', { label: 'Callirra', variable: 'CALLIRRA_API_KEY', routes: ['callirra'] }],
-  ['elevenlabs', { label: 'ElevenLabs', variable: 'ELEVENLABS_API_KEY', routes: ['elevenlabs'] }]
+  ['elevenlabs', { label: 'ElevenLabs', variable: 'ELEVENLABS_API_KEY', routes: ['elevenlabs'] }],
+  ['yotta', { label: 'Yotta Labs', variable: 'YOTTA_API_KEY', routes: ['yotta'] }]
 ]);
 const NAMES = [...PROVIDERS.keys()].join(', ');
 

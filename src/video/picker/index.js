@@ -100,7 +100,11 @@ function create(options) {
 function wired({ home, spawnChild, exposed, clock, random, log } = {}) {
   const ops = require('./ops').real({ home, spawnChild });
   const { offeredNow } = require('./entries');
-  return create({
+  const guard = exposed === undefined ? () => require('../../dsh/profile').videoExposed() : exposed;
+  const provider = require('../../provider-picker').create({ home, exposed: guard });
+  const voiceModule = require('../../provider-picker/voice');
+  const voice = voiceModule.create({ home, exposed: guard });
+  const video = create({
     home,
     ops,
     entries: () => offeredNow(home),
@@ -109,6 +113,11 @@ function wired({ home, spawnChild, exposed, clock, random, log } = {}) {
     random,
     log
   });
+  return { answer(body, write, options) {
+    if (body && voiceModule.known(body.model)) return voice.answer(body, write, options);
+    return body && body.model === require('../../provider-picker/settings').ID
+      ? provider.answer(body, write, options) : video.answer(body, write, options);
+  } };
 }
 
 // Puts the picker in front of a server's own request listener: requests under

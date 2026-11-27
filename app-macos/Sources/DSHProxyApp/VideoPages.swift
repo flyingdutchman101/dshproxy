@@ -98,7 +98,7 @@ struct VideoKeysPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             PageHeader(title: "Video API keys",
-                       note: "Save the key of a pay-per-use video provider here. It is stored encrypted in the DSHProxy data folder, like the Chat API keys, and is used by DSHProxy's video command; a key in the provider's environment variable is used instead when that is set. A saved key is not checked against the provider. Video generation from DeepSeek Harness works on the Krea route only for now.")
+                       note: "Save the key of a pay-per-use video provider here. It is stored encrypted in the DSHProxy data folder, like the Chat API keys, and is used by DSHProxy's video command; a key in the provider's environment variable is used instead when that is set. A saved key is not checked against the provider. For Yotta Labs, enable Kling v3 Standard and select the Yotta Labs billing route to offer it in the model picker.")
             HStack {
                 Link("Create ElevenLabs API key (browser)", destination: URL(string: "https://elevenlabs.io/app/api/api-keys")!)
                 Link("Register with KovAPI (browser)", destination: URL(string: "https://kovapi.com/register")!)

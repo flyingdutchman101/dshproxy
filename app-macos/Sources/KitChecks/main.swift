@@ -874,6 +874,17 @@ let sampleVideoSettings = """
 }
 """
 
+await check("Provider picker: strict independent boolean state and voice entry identity") {
+    try expect(ProviderPickerState.decode("{\"enabled\":true}")?.enabled == true, "enabled state")
+    try expect(ProviderPickerState.decode("{\"enabled\":false}")?.enabled == false, "disabled state")
+    for invalid in ["{}", "{\"enabled\":1}", "{\"enabled\":\"true\"}", "[]"] {
+        try expect(ProviderPickerState.decode(invalid) == nil, "Reject malformed state")
+    }
+    let rows = try JSONDecoder().decode([ProviderPickerEntry].self, from: Data("[{\"id\":\"voice-tts\",\"model\":\"eleven_v4\",\"name\":\"ElevenLabs TTS\",\"enabled\":false}]".utf8))
+    try expectEqual(rows.first?.id, "voice-tts", "Use entry ID, not model")
+    try expectEqual(rows.first?.enabled, false, "Preserve disabled voice entry")
+}
+
 await check("Voice: separate speaker, file and WebSocket arguments, explicit approval") {
     try expectEqual(VoiceRequest.models.count, 8, "all choices")
     try expectEqual(VoiceRequest.arguments(model: "eleven_v4", speaker: "speaker123", input: "/tmp/input.txt", output: "/tmp/output.mp3"), ["voice", "tts", "eleven_v4", "--voice", "speaker123", "--text-file", "/tmp/input.txt", "--output", "/tmp/output.mp3", "--confirm-charge"], "speaker separate from model")
@@ -898,6 +909,8 @@ await check("Mapping: video settings -> rows, routes, billed in; set arguments; 
     try expectEqual(["callirra", "kovapi", "videorouter-replicate", "odd"].map(VideoSettings.units), ["plan credits", "US dollars", "US dollars", "units not known to this app"], "units")
     try expectEqual(VideoSettings.routeName("videorouter-replicate"), "VideoRouter (Replicate) \u{B7} videorouter-replicate", "route name")
     try expectEqual(VideoSettings.routeLabel("elevenlabs"), "ElevenLabs", "shared voice/video provider")
+    try expectEqual(VideoSettings.routeLabel("yotta"), "Yotta Labs", "Yotta Labs provider label")
+    try expectEqual(VideoSettings.units("yotta"), "US dollars", "Yotta Labs billing units")
     try expectEqual(VideoSettings.routeName("odd"), "odd", "unknown route name")
     try expectEqual(VideoSettings.company("seedance-2.0").logo, "bytedance", "company logo")
     try expectEqual(VideoSettings.company("minimax-h3").label, "MiniMax", "company")

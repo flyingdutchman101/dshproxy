@@ -17,12 +17,13 @@ function tempHome(t) {
 }
 
 const off = { enabled: false, route: null };
-const allOff = { models: { 'seedance-2.5': off, 'seedance-2.0': off, 'minimax-h3': off, 'wan-3.0': off, 'flux-3': off, 'seedance-2.0-fast': off, 'seedance-2.0-mini': off, 'veo-3.1': off, 'veo-3.1-fast': off, aurora: off } };
+const allOff = { models: { 'seedance-2.5': off, 'seedance-2.0': off, 'minimax-h3': off, 'wan-3.0': off, 'flux-3': off, 'seedance-2.0-fast': off, 'seedance-2.0-mini': off, 'veo-3.1': off, 'veo-3.1-fast': off, aurora: off, 'kling-v3-standard': off } };
 const withModels = (changes) => ({ models: { ...allOff.models, ...changes } });
 
 // Written out by hand from the catalog and the `video` command, not computed:
 // the priced API routes per model, plus the Krea workspace route for each.
 const allowedRoutes = {
+  'kling-v3-standard': ['yotta'],
   'seedance-2.5': ['videorouter', 'kovapi', 'elevenlabs', 'krea'],
   'seedance-2.0': ['videorouter', 'kovapi', 'elevenlabs', 'krea'],
   'minimax-h3': ['kovapi', 'callirra', 'krea'],
@@ -46,7 +47,7 @@ test('nothing saved: every catalog model is disabled with no route, and reading 
   const home = tempHome(t);
   const state = await video.read(home);
   assert.deepEqual(state, allOff);
-  assert.deepEqual(Object.keys(state.models), ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0', 'flux-3', 'seedance-2.0-fast', 'seedance-2.0-mini', 'veo-3.1', 'veo-3.1-fast', 'aurora']);
+  assert.deepEqual(Object.keys(state.models), ['seedance-2.5', 'seedance-2.0', 'minimax-h3', 'wan-3.0', 'flux-3', 'seedance-2.0-fast', 'seedance-2.0-mini', 'veo-3.1', 'veo-3.1-fast', 'aurora', 'kling-v3-standard']);
   assert.deepEqual(fs.readdirSync(home), []);
 
   const missing = path.join(home, 'not-created-yet');

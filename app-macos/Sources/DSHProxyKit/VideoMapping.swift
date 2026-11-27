@@ -78,6 +78,7 @@ public enum VideoSettings {
         case "kovapi": return "KovAPI"
         case "callirra": return "Callirra"
         case "elevenlabs": return "ElevenLabs"
+        case "yotta": return "Yotta Labs"
         default: return route
         }
     }
@@ -93,7 +94,7 @@ public enum VideoSettings {
         switch route {
         case "krea": return "workspace compute units"
         case "callirra": return "plan credits"
-        case "videorouter", "videorouter-replicate", "kovapi": return "US dollars"
+        case "videorouter", "videorouter-replicate", "kovapi", "yotta": return "US dollars"
         default: return "units not known to this app"
         }
     }

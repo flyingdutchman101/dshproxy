@@ -44,6 +44,10 @@ Usage:
   dshproxy key remove <provider>       Remove a saved API key
   dshproxy key list                    List API-key providers and their regions
   dshproxy key custom add|list|remove   Add a custom OpenAI-compatible endpoint (LiteLLM, One API, ...)
+  dshproxy provider-picker foreplay on|off|status  Configure the dedicated research entry; refresh with dshproxy dsh apply
+  dshproxy provider-picker foreplay-tools on|off|status  Offer research in any chat; reload the installed plugin after enabling
+  dshproxy provider-picker voice list               List supported speech model entry IDs and their switches
+  dshproxy provider-picker voice ENTRY_ID on|off    Change one speech model; refresh with dshproxy dsh apply after changing switches
   dshproxy research help               Search Foreplay ads and list saved boards
   dshproxy voice help                  ElevenLabs voices, narration, transcription and voice changing
   dshproxy video help                  Quote benchmark videos, save provider keys, submit once, or check a job
@@ -389,6 +393,21 @@ async function main(argv, out = console.log) {
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
+  }
+  if (argv[0] === 'provider-picker') {
+    if (argv[1] === 'voice') {
+      const voice = require('./provider-picker/voice');
+      const home = settingsFile.homeDir();
+      if (argv.length === 4 && ['on','off'].includes(argv[3])) await voice.set(home, argv[2], argv[3] === 'on');
+      else if (argv.length !== 3 || argv[2] !== 'list') throw new Error('Usage: dshproxy provider-picker voice list | voice ENTRY_ID on|off');
+      const enabled = new Set(voice.entries(home).map(entry => entry.id));
+      return out(JSON.stringify(voice.list.map(entry => ({ ...entry, enabled: enabled.has(entry.id) }))));
+    }
+    if (argv.length !== 3 || !['foreplay','foreplay-tools'].includes(argv[1]) || !['on', 'off', 'status'].includes(argv[2])) throw new Error('Usage: dshproxy provider-picker foreplay|foreplay-tools on|off|status');
+    const picker = argv[1] === 'foreplay-tools' ? require('./provider-picker/foreplay-tools') : require('./provider-picker/settings');
+    const home = settingsFile.homeDir();
+    if (argv[2] !== 'status') await picker.set(home, argv[2] === 'on');
+    return out(JSON.stringify({ enabled: picker.enabled(home) }));
   }
   if (argv[0] === 'research') return require('./research/command').run(argv.slice(1), out);
   if (argv[0] === "voice") return require('./voice/command').run(argv.slice(1), out);

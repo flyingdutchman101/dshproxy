@@ -19,7 +19,8 @@ const help = `dshproxy video list
   video key remove PROVIDER              Remove a saved provider key
 ElevenLabs: quote MODEL elevenlabs [--duration SECONDS]; pricing unavailable, paid CLI submission disabled.
 Veo uses 4/6/8 seconds (default 8). Aurora requires image+audio and has no fixed duration.
-API routes: elevenlabs, videorouter (not H3), videorouter-replicate (Wan only), kovapi (not Flux 3), callirra (H3 only). Workspace route: krea.
+Yotta: kling-v3-standard yotta uses the standard fixed tier, five seconds, no audio ($0.357 dated estimate); no pixel resolution is promised. Credential: YOTTA_API_KEY or video key set yotta.
+API routes: yotta (Kling v3 Standard only), elevenlabs, videorouter (not H3), videorouter-replicate (Wan only), kovapi (not Flux 3), callirra (H3 only). Workspace route: krea.
 Five seconds, 16:9, text only. Caps check the API estimate or workspace preflight, not the final bill.
 Without --resolution a clip is 720p (768p for H3). A model, resolution and route that video entries does not list
 is refused before any request. An entry that is on is offered for picking; that is not a spending limit.

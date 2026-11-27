@@ -46,8 +46,8 @@ test('with every catalog entry switched on, each submit-capable text entry has i
   const home = tempHome(t);
   await switchAllOn(home);
   const all = catalog.entries().filter((entry) => entry.route !== 'elevenlabs');
-  assert.equal(all.length, 41);
-  assert.equal((await settings.entriesOn(home)).length, 61, 'all entries remain enabled in settings');
+  assert.equal(all.length, 42);
+  assert.equal((await settings.entriesOn(home)).length, 62, 'all entries remain enabled in settings');
   const offered = await entries.offered(home);
   assert.ok(offered instanceof Map);
   for (const entry of catalog.entries().filter((entry) => entry.route === 'elevenlabs')) {
@@ -68,7 +68,7 @@ test('with every catalog entry switched on, each submit-capable text entry has i
     assert.equal(Object.hasOwn(entry, 'on'), false);
   }
   // All routes are offered, not only Krea.
-  assert.deepEqual([...new Set([...offered.values()].map((entry) => entry.route))].sort(), ['callirra', 'kovapi', 'krea', 'videorouter', 'videorouter-replicate']);
+  assert.deepEqual([...new Set([...offered.values()].map((entry) => entry.route))].sort(), ['callirra', 'kovapi', 'krea', 'videorouter', 'videorouter-replicate', 'yotta']);
 });
 
 test('only the entries that are switched on are offered, and switching one off takes it away at once', async (t) => {

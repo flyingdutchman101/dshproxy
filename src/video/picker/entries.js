@@ -69,7 +69,13 @@ async function offered(home) {
 
 // The same, answered at once (the settings file is read synchronously).
 function offeredNow(home) {
-  return byId(settings.entriesOnNow(home));
+  const result = byId(settings.pickerEntriesNow(home));
+  const provider = require('../../provider-picker/settings');
+  if (provider.enabled(home)) result.set(provider.ID, { ...provider.entry });
+  for (const item of require('../../provider-picker/voice').entries(home)) {
+    result.set(item.id, { ...item, label: `${item.name} - Text to speech - ElevenLabs` });
+  }
+  return result;
 }
 
 // The same entries as the models of a route in a DeepSeek Harness profile.

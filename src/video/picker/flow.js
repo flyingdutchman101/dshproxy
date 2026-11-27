@@ -64,7 +64,7 @@ const STATUS = /^[a-z][a-z0-9_-]{0,63}$/;
 const ROUTE = /^[a-z0-9][a-z0-9.-]{0,63}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-const PROVIDERS = { krea: 'Krea', videorouter: 'VideoRouter', 'videorouter-replicate': 'VideoRouter', kovapi: 'KovAPI', callirra: 'Callirra' };
+const PROVIDERS = { yotta: 'Yotta', krea: 'Krea', videorouter: 'VideoRouter', 'videorouter-replicate': 'VideoRouter', kovapi: 'KovAPI', callirra: 'Callirra' };
 
 const TEXT = {
   malformed: 'This request could not be read as a chat message. Nothing was quoted or bought.',

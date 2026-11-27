@@ -19,6 +19,8 @@ const vr = {
     provider: {only: [model.split('/')[2]], allow_fallbacks: false}}),
 };
 const providers = new Map([
+  ['yotta', {submit:'https://gateway.yottalabs.ai/api/maas/text-to-video/generations', jobs:'https://gateway.yottalabs.ai/api/maas/text-to-video/generations/',
+    body:(model,prompt)=>({model,parameters:{prompt,duration:5,aspect_ratio:'16:9',multi_shot:false,generate_audio:false}})}],
   ['elevenlabs', {submit:'https://api.elevenlabs.io/v1/flows/video', jobs:'https://api.elevenlabs.io/v1/flows/video/'}],
   ['videorouter', vr],
   ['videorouter-replicate', vr],
@@ -44,6 +46,7 @@ function clip(route, modelId, resolution) {
     && (resolution === undefined ? entry.default : entry.resolution === resolution));
 }
 const STATES = {
+  yotta: ['queued','pending','processing','running','completed','failed','cancelled'],
   elevenlabs: ['pending','generating','completed','failed'],
   videorouter: ['queued', 'in_progress', 'processing', 'completed', 'failed'],
   kovapi: ['queued', 'processing', 'succeeded', 'failed'],
@@ -64,9 +67,11 @@ async function request(isSubmit, {route, modelId, resolution, jobId, prompt, dur
   if (!entry) throw new Error('Invalid video route or model');
   const provider = providers.get(route);
   if (typeof key !== 'string' || !key || key.length > 4096 || /[^\x21-\x7e]/.test(key)) throw new Error('Invalid video provider credential');
+  if (isSubmit && route === 'yotta' && (image !== undefined || audio !== undefined || (durationSeconds !== undefined && durationSeconds !== 5))) throw new Error('Yotta supports only five-second text-only clips without audio.');
   const elevenBody = isSubmit && route === 'elevenlabs' ? require('./elevenlabs').body(entry, {prompt,durationSeconds,image,audio}) : undefined;
   if (isSubmit ? !elevenBody && (typeof prompt !== 'string' || !prompt.trim()) : !validId(jobId) || jobId.includes(key)) throw new Error(isSubmit ? 'Invalid video prompt' : 'Invalid video job ID');
   const init = {method: isSubmit ? 'POST' : 'GET', redirect: 'error', signal: AbortSignal.timeout(30_000), headers: {Authorization: `Bearer ${key}`}};
+  if (route === 'yotta') init.headers = {'X-API-KEY':key};
   if (route === 'elevenlabs') init.headers = {'xi-api-key':key};
   if (isSubmit) {
     init.headers['Content-Type'] = 'application/json';
@@ -79,7 +84,8 @@ async function request(isSubmit, {route, modelId, resolution, jobId, prompt, dur
       throw new Error();
     }
     const json = await response.json();
-    const job = route === 'callirra' ? json.job : json;
+    if (route === 'yotta' && (json.code !== 10000 || !json.data)) throw new Error();
+    const job = route === 'yotta' ? {...json.data, id:json.data.request_id ?? (isSubmit ? undefined : jobId), status:isSubmit ? 'queued' : json.data.status} : route === 'callirra' ? json.job : json;
     const {id, status} = job;
     const states = STATES[route === 'videorouter-replicate' ? 'videorouter' : route];
     if (!validId(id) || id.includes(key) || (!isSubmit && id !== jobId) || !states.includes(status)) throw new Error();
@@ -91,7 +97,7 @@ async function request(isSubmit, {route, modelId, resolution, jobId, prompt, dur
       result.reservedCredits = Number(job.credits_reserved) / 100;
     }
     if (status === 'succeeded' || status === 'completed') {
-      const url = outputLink(['callirra','elevenlabs'].includes(route) ? job.content_url : job.data?.[0]?.url, key);
+      const url = outputLink(route === 'yotta' ? job.output_url : ['callirra','elevenlabs'].includes(route) ? job.content_url : job.data?.[0]?.url, key);
       if (url) result.outputUrl = url;
     }
     return result;

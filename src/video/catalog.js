@@ -25,6 +25,7 @@ const PROVIDERS = Object.freeze({
   callirra: 'Callirra',
   krea: 'Krea',
   elevenlabs: 'ElevenLabs',
+  yotta: 'Yotta Labs',
 });
 
 // VideoRouter prices belong to one host, the last part of the model id; the
@@ -124,6 +125,10 @@ for (const {model, name, resolutions} of require('./elevenlabs').rows()) {
   if (!catalog[model]) catalog[model] = {name, defaultRoute:'elevenlabs', resolution:'720p', routes:{}};
   catalog[model].routes.elevenlabs = resolutions;
 }
+catalog['kling-v3-standard'] = {name:'Kling v3 Standard', defaultRoute:'yotta', resolution:'standard', routes:{
+    yotta: {standard: {modelId:'kling-v3-std-text', fixedTier:true, usdMicros:357000, verifiedOn:'2026-11-26',
+      sourceUrls:['https://docs.yottalabs.ai/products/ai-gateway.md']}}
+  }};
 const models = Object.freeze(Object.keys(catalog));
 
 function known(model) {

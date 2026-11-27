@@ -4,7 +4,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const KEYS = ['root', 'node', 'home', 'timeoutMs']
+const KEYS = ['root', 'node', 'home', 'timeoutMs', 'foreplayEnabled']
 // The same names DSHProxy hands to its own Krea helper. Provider keys, tokens
 // and every other variable of the host stay behind.
 const ENVIRONMENT = ['SystemRoot', 'LOCALAPPDATA', 'TEMP', 'TMP', 'USERPROFILE']

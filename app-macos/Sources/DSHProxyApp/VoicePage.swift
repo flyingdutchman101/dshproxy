@@ -16,6 +16,7 @@ struct VoicePage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("ElevenLabs Voice").font(.title2.bold())
+                ProviderPickerControls(store: store, voice: true)
                 Text("Uses the same elevenlabs API key as Video. No automatic generation, retry or provider fallback. Your input is sent only after you confirm a paid request.").foregroundStyle(.secondary)
                 Button("Manage shared ElevenLabs key") { store.go(.video, .apiKeys) }
                 Link("Browse official ElevenLabs voice library", destination: URL(string: "https://elevenlabs.io/app/voice-library")!)
