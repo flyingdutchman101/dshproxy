@@ -101,11 +101,13 @@ function create({home,exposed=()=>true,generate=run,now=Date.now}){return {async
     if(process.platform==='win32') {
       const {execFileSync}=require('node:child_process');
       const system=path.join(process.env.SystemRoot,'System32');
-      const opts={windowsHide:true,encoding:'utf8',timeout:10000};
-      const identity=execFileSync(path.join(system,'whoami.exe'),['/user','/fo','csv','/nh'],opts);
-      const sid=/"(S-1-[0-9-]+)"\s*$/.exec(identity)?.[1];
-      if(!sid)throw Error('Cannot identify the local file owner');
-      execFileSync(path.join(system,'icacls.exe'),[output,'/inheritance:r','/grant:r','*'+sid+':F'],opts);
+      const script=["$ErrorActionPreference='Stop'", "$p=$env:DSHPROXY_RESERVED_OUTPUT",
+        "$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
+        "$acl=[System.IO.File]::GetAccessControl($p)",
+        "$acl.SetSecurityDescriptorSddlForm('D:P(A;;FA;;;'+$sid+')',[System.Security.AccessControl.AccessControlSections]::Access)",
+        "[System.IO.File]::SetAccessControl($p,$acl)"].join(';');
+      execFileSync(path.join(system,'WindowsPowerShell','v1.0','powershell.exe'),['-NoProfile','-NonInteractive','-Command',script],
+        {env:{SystemRoot:process.env.SystemRoot,DSHPROXY_RESERVED_OUTPUT:output},windowsHide:true,timeout:15000});
     }
     const bytes=await generate(input,home,{signal:options.signal});if(!allowed())throw Error();if(!Buffer.isBuffer(bytes)||!bytes.length||bytes.length>50*1024*1024)throw Error();fs.writeFileSync(fd,bytes);}catch(error){fs.closeSync(fd);fs.unlinkSync(output);throw error;}fs.closeSync(fd);
  return write(`[Download MP3](<${pathToFileURL(output).href}>)\nSaved locally: ${output}`);
