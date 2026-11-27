@@ -4,7 +4,13 @@ const voice=require('../src/provider-picker/voice');
 const model='eleven-flash-v2/tts/elevenlabs';
 test('human quote, exact confirmation, private MP3 and durable replay protection',async()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'voice-test-'));await voice.set(home,model,true);assert.equal(voice.entries(home)[0].id,model);
- let calls=0;const create=()=>voice.create({home,exposed:()=>false,generate:async()=>{calls++;return Buffer.from('ID3synthetic');}});let answer;const write=s=>{answer=s;};const messages=[{role:'user',content:'speak Voice123 Hello world'}];await create().answer({model,messages},write);assert.match(answer,/not a price cap/);const quote=answer;messages.push({role:'assistant',content:quote},{role:'user',content:'yes'});await create().answer({model,messages},write);assert.match(answer,/Download MP3/);assert.equal(calls,1);const url=answer.match(/<(.*?)>/)[1];assert.equal(fs.readFileSync(new URL(url),'utf8'),'ID3synthetic');assert.equal(fs.statSync(new URL(url)).mode&0o777,0o600);await create().answer({model,messages},write);assert.equal(calls,1);assert.match(answer,/already used/);
+ let calls=0;const create=()=>voice.create({home,exposed:()=>false,generate:async()=>{calls++;return Buffer.from('ID3synthetic');}});let answer;const write=s=>{answer=s;};const messages=[{role:'user',content:'speak Voice123 Hello world'}];await create().answer({model,messages},write);assert.match(answer,/not a price cap/);const quote=answer;messages.push({role:'assistant',content:quote},{role:'user',content:'yes'});await create().answer({model,messages},write);assert.match(answer,/Download MP3/);assert.equal(calls,1);const url=answer.match(/<(.*?)>/)[1];assert.equal(fs.readFileSync(new URL(url),'utf8'),'ID3synthetic');
+ if(process.platform==='win32') {
+   const target=require('node:url').fileURLToPath(url);
+   const inspect="$a=Get-Acl -LiteralPath $env:VOICE_TEST_OUTPUT; $sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $rules=@($a.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])); if (!$a.AreAccessRulesProtected -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid -or $rules[0].AccessControlType -ne 'Allow') {exit 1}";
+   require('node:child_process').execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',inspect],{env:{...process.env,VOICE_TEST_OUTPUT:target}});
+ } else assert.equal(fs.statSync(new URL(url)).mode&0o777,0o600);
+ await create().answer({model,messages},write);assert.equal(calls,1);assert.match(answer,/already used/);
 });
 test('automation, refusal, disable, expiry and altered quote never spend',async()=>{
  for(const scenario of ['automation','refusal','disable','expiry','altered']){

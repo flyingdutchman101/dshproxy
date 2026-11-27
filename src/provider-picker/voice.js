@@ -96,7 +96,18 @@ function create({home,exposed=()=>true,generate=run,now=Date.now}){return {async
  if(r.kind==='refusal')return write('Cancelled. No request sent.');
  if(!allowed())return write('Voice request cancelled.');
  const output=path.join(folder,crypto.randomUUID()+'.mp3');const fd=fs.openSync(output,'wx',0o600);
- try{const bytes=await generate(input,home,{signal:options.signal});if(!allowed())throw Error();if(!Buffer.isBuffer(bytes)||!bytes.length||bytes.length>50*1024*1024)throw Error();fs.writeFileSync(fd,bytes);}catch(error){fs.closeSync(fd);fs.unlinkSync(output);throw error;}fs.closeSync(fd);
+ try{
+    // Windows ignores POSIX create modes. Protect the empty file before spending.
+    if(process.platform==='win32') {
+      const {execFileSync}=require('node:child_process');
+      const system=path.join(process.env.SystemRoot,'System32');
+      const opts={windowsHide:true,encoding:'utf8',timeout:10000};
+      const identity=execFileSync(path.join(system,'whoami.exe'),['/user','/fo','csv','/nh'],opts);
+      const sid=/"(S-1-[0-9-]+)"\s*$/.exec(identity)?.[1];
+      if(!sid)throw Error('Cannot identify the local file owner');
+      execFileSync(path.join(system,'icacls.exe'),[output,'/inheritance:r','/grant:r','*'+sid+':F'],opts);
+    }
+    const bytes=await generate(input,home,{signal:options.signal});if(!allowed())throw Error();if(!Buffer.isBuffer(bytes)||!bytes.length||bytes.length>50*1024*1024)throw Error();fs.writeFileSync(fd,bytes);}catch(error){fs.closeSync(fd);fs.unlinkSync(output);throw error;}fs.closeSync(fd);
  return write(`[Download MP3](<${pathToFileURL(output).href}>)\nSaved locally: ${output}`);
  }
  if(r.kind!=='prompt'||r.unfit||promptProblem(r.prompt))return write('Type speak VOICE_ID TEXT yourself. Automation is not supported.');
